@@ -1,0 +1,20 @@
+{
+  "name": "legacy-feature",
+  "description": "Legacy system feature enhancement workflow for Claude Code",
+  "version": "0.1.0",
+  "author": {
+    "name": "jxin",
+    "email": "jxin@thoughtworks.com"
+  },
+  "homepage": "https://github.com/Jxin-Cai/legacy-feature",
+  "repository": "https://github.com/Jxin-Cai/legacy-feature",
+  "license": "MIT",
+  "keywords": ["legacy-system", "feature-enhancement", "as-is", "to-be", "code-review"],
+  "agents": [
+    "./agents/agent-legacy-explorer.md",
+    "./agents/agent-legacy-planner.md",
+    "./agents/agent-legacy-coder.md",
+    "./agents/agent-legacy-architect-reviewer.md"
+  ],
+  "skills": ["./skills/"]
+}

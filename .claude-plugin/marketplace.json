@@ -1,0 +1,22 @@
+{
+  "name": "legacy-feature",
+  "description": "Claude Code plugin marketplace for legacy system feature enhancement",
+  "owner": {
+    "name": "jxin",
+    "email": "jxin@thoughtworks.com"
+  },
+  "plugins": [
+    {
+      "name": "legacy-feature",
+      "source": "./",
+      "description": "Legacy system feature enhancement workflow for Claude Code",
+      "version": "0.1.0",
+      "homepage": "https://github.com/Jxin-Cai/legacy-feature",
+      "repository": "https://github.com/Jxin-Cai/legacy-feature",
+      "author": {
+        "name": "jxin",
+        "email": "jxin@thoughtworks.com"
+      }
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+name: legacy-feature-orchestration
+version: 1
+description: 遗留系统新增功能端到端编排
+
+variables:
+  RUNTIME_DIR: .legacy-feature/{idea-name}
+  SCRIPTS: ../../scripts
+
+steps:
+  - id: receive-requirement
+    description: 接收需求并创建运行态目录
+    postcondition:
+      check: requirement-exists
+
+  - id: understand
+    description: 理解 as-is
+    action:
+      type: skill
+      name: legacy-understand
+      args: "{idea-name}"
+    postcondition:
+      check: as-is-complete
+
+  - id: understand-confirm
+    description: 用户确认 as-is 或补充澄清
+    postcondition:
+      check: as-is-confirmed
+
+  - id: plan
+    description: 生成 to-be 实现方案
+    action:
+      type: skill
+      name: legacy-plan
+      args: "{idea-name}"
+    postcondition:
+      check: to-be-exists
+
+  - id: plan-confirm
+    description: 用户确认 to-be 方案
+    postcondition:
+      check: to-be-confirmed
+
+  - id: tasks-init
+    description: 基于 to-be 拆 task 并初始化 task-workflow-state.yaml
+    postcondition:
+      check: task-workflow-exists
+
+  - id: implement
+    description: 按 task 依赖执行 coding subagent
+    action:
+      type: skill
+      name: legacy-implement
+      args: "{idea-name}"
+    postcondition:
+      check: task-report-exists
+
+  - id: review
+    description: 资深架构师 CR
+    action:
+      type: skill
+      name: legacy-review
+      args: "{idea-name}"
+    postcondition:
+      check: cr-complete
+
+  - id: final-summary
+    description: 汇总变更、CR、返修、验证方法
+    postcondition:
+      check: all-approved

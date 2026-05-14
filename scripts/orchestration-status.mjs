@@ -1,0 +1,104 @@
+#!/usr/bin/env node
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  allTasksApproved,
+  getBlockedReworkTasks,
+  getCodedTasksNeedingReview,
+  getNextTasks,
+  getReworkTasks,
+  readTaskState,
+  taskStateFile
+} from './workflow-lib.mjs';
+import { checkGate } from './gate-check.mjs';
+
+const IDEA_DIR = process.argv[2];
+
+if (!IDEA_DIR) {
+  process.stderr.write('用法: node orchestration-status.mjs <idea-dir|none>\n');
+  process.exit(1);
+}
+
+function emit(resumeStep, reason, phaseDetail = {}) {
+  console.log(`resume_step: ${resumeStep}`);
+  console.log(`reason: ${JSON.stringify(reason)}`);
+  const entries = Object.entries(phaseDetail).filter(([, value]) => value !== undefined && value !== '');
+  if (entries.length > 0) {
+    console.log('phase_detail:');
+    for (const [key, value] of entries) console.log(`  ${key}: ${Array.isArray(value) ? value.join(',') : value}`);
+  }
+}
+
+function has(rel) {
+  return existsSync(join(IDEA_DIR, rel));
+}
+
+function main() {
+  if (IDEA_DIR === 'none' || !existsSync(IDEA_DIR)) {
+    emit('receive-requirement', 'idea directory does not exist');
+    return;
+  }
+  if (!checkGate(IDEA_DIR, 'requirement-exists').pass) {
+    emit('receive-requirement', 'requirement.md does not exist');
+    return;
+  }
+  if (!checkGate(IDEA_DIR, 'as-is-complete').pass) {
+    emit('understand:explore', 'as-is documents are incomplete');
+    return;
+  }
+  if (!checkGate(IDEA_DIR, 'as-is-confirmed').pass) {
+    emit('understand:confirm', 'as-is has not been confirmed');
+    return;
+  }
+  if (!checkGate(IDEA_DIR, 'to-be-exists').pass) {
+    emit('plan:design', 'to-be implementation plan does not exist');
+    return;
+  }
+  if (!checkGate(IDEA_DIR, 'to-be-confirmed').pass) {
+    emit('plan:confirm', 'to-be implementation plan has not been confirmed');
+    return;
+  }
+  if (!has('task-workflow-state.yaml')) {
+    emit('tasks:init', 'task workflow state does not exist');
+    return;
+  }
+
+  const blocked = getBlockedReworkTasks(IDEA_DIR);
+  if (blocked.length > 0) {
+    emit('blocked', 'task reached max rework count', { blocked_tasks: blocked });
+    return;
+  }
+
+  const reworkTasks = getReworkTasks(IDEA_DIR);
+  if (reworkTasks.length > 0) {
+    emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks });
+    return;
+  }
+
+  const codeTasks = getNextTasks(IDEA_DIR);
+  if (codeTasks.length > 0) {
+    emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks });
+    return;
+  }
+
+  const reviewTasks = getCodedTasksNeedingReview(IDEA_DIR);
+  if (reviewTasks.length > 0) {
+    emit('review:cr', 'there are coded tasks needing architecture review', { next_tasks: reviewTasks });
+    return;
+  }
+
+  if (allTasksApproved(IDEA_DIR) && !has('.done')) {
+    emit('final:summary', 'all tasks approved, final summary is pending');
+    return;
+  }
+
+  if (has('.done')) {
+    emit('done', 'workflow is done');
+    return;
+  }
+
+  const state = readTaskState(taskStateFile(IDEA_DIR));
+  emit('blocked', 'no executable next step found', { task_count: Object.keys(state.tasks).length });
+}
+
+main();

@@ -1,0 +1,64 @@
+name: legacy-feature-workflow
+version: 1
+description: 遗留系统新增功能工作流
+
+phases:
+  - id: understand
+    order: 1
+    description: 理解 as-is：代码扫描、调用链、ER、接口契约、变更点
+    outputs:
+      - as-is/overview.md
+      - as-is/call-chain-sequence.md
+      - as-is/core-logic.md
+      - as-is/er-diagram.md
+      - as-is/api-contracts.md
+      - as-is/change-points.md
+      - as-is/evidence-index.md
+
+  - id: plan
+    order: 2
+    description: 设计 to-be 实现方案
+    requires: [understand]
+    outputs:
+      - to-be/implementation-plan.md
+      - to-be/impact-analysis.md
+      - to-be/data-change-plan.md
+      - to-be/api-change-plan.md
+      - to-be/risk-and-rollback.md
+
+  - id: implement
+    order: 3
+    description: 按 task 编码实现
+    requires: [plan]
+
+  - id: review
+    order: 4
+    description: 架构师 CR 与返修闭环
+    requires: [implement]
+
+state-machine:
+  tasks:
+    states: [pending, confirmed, coding, coded, reviewing, approved, needs_rework, repairing, failed, blocked]
+    transitions:
+      - from: pending
+        to: confirmed
+      - from: confirmed
+        to: coding
+      - from: coding
+        to: coded
+      - from: coding
+        to: failed
+      - from: failed
+        to: confirmed
+      - from: coded
+        to: reviewing
+      - from: reviewing
+        to: approved
+      - from: reviewing
+        to: needs_rework
+      - from: needs_rework
+        to: repairing
+      - from: repairing
+        to: coded
+      - from: needs_rework
+        to: blocked
