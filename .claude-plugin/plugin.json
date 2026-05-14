@@ -1,20 +1,20 @@
 {
-  "name": "legacy-feature",
+  "name": "chisel",
   "description": "Legacy system feature enhancement workflow for Claude Code",
   "version": "0.1.0",
   "author": {
     "name": "jxin",
     "email": "jxin@thoughtworks.com"
   },
-  "homepage": "https://github.com/Jxin-Cai/legacy-feature",
-  "repository": "https://github.com/Jxin-Cai/legacy-feature",
+  "homepage": "https://github.com/Jxin-Cai/chisel",
+  "repository": "https://github.com/Jxin-Cai/chisel",
   "license": "MIT",
-  "keywords": ["legacy-system", "feature-enhancement", "as-is", "to-be", "code-review"],
+  "keywords": ["chisel", "feature-enhancement", "as-is", "to-be", "code-review"],
   "agents": [
-    "./agents/agent-legacy-explorer.md",
-    "./agents/agent-legacy-planner.md",
-    "./agents/agent-legacy-coder.md",
-    "./agents/agent-legacy-architect-reviewer.md"
+    "./agents/agent-chisel-explorer.md",
+    "./agents/agent-chisel-planner.md",
+    "./agents/agent-chisel-coder.md",
+    "./agents/agent-chisel-architect-reviewer.md"
   ],
   "skills": ["./skills/"]
 }

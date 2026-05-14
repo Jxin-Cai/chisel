@@ -1,4 +1,4 @@
-# legacy-feature
+# chisel
 
 Claude Code plugin for adding features to legacy systems with a file-driven workflow.
 
@@ -7,13 +7,13 @@ Claude Code plugin for adding features to legacy systems with a file-driven work
 Use the main skill:
 
 ```text
-/legacy <需求描述或需求文件路径>
+/chisel <需求描述或需求文件路径>
 ```
 
 The plugin creates runtime artifacts in the target project:
 
 ```text
-.legacy-feature/<idea-name>/
+.chisel/<idea-name>/
 ```
 
 ## Workflow
@@ -30,8 +30,8 @@ The plugin creates runtime artifacts in the target project:
 
 ## Key files
 
-- `skills/legacy/SKILL.md` — main orchestrator.
+- `skills/chisel/SKILL.md` — main orchestrator.
 - `scripts/orchestration-status.mjs` — resume point detector.
 - `scripts/workflow-status.mjs` — task state manager.
 - `scripts/gate-check.mjs` — postcondition checker.
-- `agents/agent-legacy-coder.md` — task implementation agent.
+- `agents/agent-chisel-coder.md` — task implementation agent.

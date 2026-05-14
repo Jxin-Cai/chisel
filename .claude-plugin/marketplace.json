@@ -1,21 +1,21 @@
 {
-  "name": "legacy-feature",
-  "description": "Claude Code plugin marketplace for legacy system feature enhancement",
+  "name": "chisel",
+  "description": "Claude Code plugin marketplace for Chisel SDD framework",
   "owner": {
     "name": "jxin",
-    "email": "jxin@thoughtworks.com"
+    "email": "105760730@qq.com"
   },
   "plugins": [
     {
-      "name": "legacy-feature",
+      "name": "chisel",
       "source": "./",
       "description": "Legacy system feature enhancement workflow for Claude Code",
       "version": "0.1.0",
-      "homepage": "https://github.com/Jxin-Cai/legacy-feature",
-      "repository": "https://github.com/Jxin-Cai/legacy-feature",
+      "homepage": "https://github.com/Jxin-Cai/chisel",
+      "repository": "https://github.com/Jxin-Cai/chisel",
       "author": {
         "name": "jxin",
-        "email": "jxin@thoughtworks.com"
+        "email": "105760730@qq.com"
       }
     }
   ]

@@ -1,10 +1,10 @@
 ---
-name: legacy-help
-description: legacy-feature 插件的共享契约和模板索引。不单独执行。
+name: chisel-help
+description: chisel 插件的共享契约和模板索引。不单独执行。
 disable-model-invocation: true
 ---
 
-# legacy-help
+# chisel-help
 
 共享契约 skill，不直接面向用户。
 
@@ -22,7 +22,7 @@ disable-model-invocation: true
 
 ## 运行态目录
 
-`.legacy-feature/<idea-name>/`
+`.chisel/<idea-name>/`
 
 ## 加载方式
 

@@ -3,7 +3,7 @@ import { existsSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const cwd = process.cwd();
-const root = join(cwd, '.legacy-feature');
+const root = join(cwd, '.chisel');
 const maxAgeMs = 30 * 60 * 1000;
 
 function cleanIdeaDir(dir) {

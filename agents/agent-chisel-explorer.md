@@ -1,12 +1,12 @@
 ---
-name: agent-legacy-explorer
+name: agent-chisel-explorer
 description: 遗留系统 as-is 探索专家，只读扫描代码、接口、数据模型和调用链，产出中文业务语义文档
 model: sonnet
 effort: high
 maxTurns: 25
 tools: Read, Glob, Grep, Bash
 skills:
-  - legacy-help
+  - chisel-help
 ---
 
 # 遗留系统 As-Is 探索 Agent
@@ -18,7 +18,7 @@ skills:
 1. Read `TASK` 中的 `idea_dir` 和 `requirement_path`
 2. Read requirement 文件，理解目标功能涉及的范围
 3. **在开始扫描前**：Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`
-4. Read `${CLAUDE_PLUGIN_ROOT}/skills/legacy-help/references/as-is-template.md`，理解每个产物的结构要求
+4. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/as-is-template.md`，理解每个产物的结构要求
 
 ## 探索策略
 

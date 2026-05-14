@@ -1,10 +1,10 @@
 ---
-name: legacy-review
-description: 对 legacy-feature 已实现 task 做资深架构师 CR，从功能完整度、健壮性、并发安全等维度决定 approved、needs_rework 或 blocked。当 legacy 编排器进入 review:cr 阶段时触发。
+name: chisel-review
+description: 对 chisel 已实现 task 做资深架构师 CR，从功能完整度、健壮性、并发安全等维度决定 approved、needs_rework 或 blocked。当 chisel 编排器进入 review:cr 阶段时触发。
 argument-hint: "<idea-name>"
 ---
 
-# legacy-review
+# chisel-review
 
 CR 阶段。不直接改业务代码。
 
@@ -13,7 +13,7 @@ CR 阶段。不直接改业务代码。
 1. `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --next-tasks review`
 2. 对每个 task：
    - `--start-review <task-id>`
-   - 启动 `agent-legacy-architect-reviewer`，传入 TASK：
+   - 启动 `agent-chisel-architect-reviewer`，传入 TASK：
      ```json
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>" }
      ```

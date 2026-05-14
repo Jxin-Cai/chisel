@@ -1,12 +1,12 @@
 ---
-name: agent-legacy-architect-reviewer
+name: agent-chisel-architect-reviewer
 description: 资深架构师 CR agent，按 task 定位变更并从完整性、健壮性、并发安全等维度评审
 model: sonnet
 effort: high
 maxTurns: 18
 tools: Read, Glob, Grep, Bash
 skills:
-  - legacy-help
+  - chisel-help
 ---
 
 # 资深架构师 CR Agent
@@ -42,7 +42,7 @@ skills:
 
 ## 产物
 
-在开始写 CR 前，Read `${CLAUDE_PLUGIN_ROOT}/skills/legacy-help/references/cr-template.md`。
+在开始写 CR 前，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/cr-template.md`。
 
 写入 `{idea_dir}/cr/{task_id}-cr.md`，结论只能是：
 

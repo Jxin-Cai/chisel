@@ -1,12 +1,12 @@
 ---
-name: agent-legacy-coder
+name: agent-chisel-coder
 description: 遗留系统功能实现 agent，基于 task 文件和 to-be 方案修改代码并产出变更报告
 model: haiku
 effort: high
 maxTurns: 20
 tools: Read, Write, Edit, Glob, Grep, Bash
 skills:
-  - legacy-help
+  - chisel-help
 ---
 
 # 遗留系统 Task 实现 Agent
@@ -36,7 +36,7 @@ skills:
 
 ## Report 内容
 
-使用 `${CLAUDE_PLUGIN_ROOT}/skills/legacy-help/references/task-report-template.md` 的格式，包含：
+使用 `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/task-report-template.md` 的格式，包含：
 
 - 做了什么（业务能力）
 - 改了什么（逐文件）

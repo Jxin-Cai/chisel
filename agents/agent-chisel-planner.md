@@ -1,12 +1,12 @@
 ---
-name: agent-legacy-planner
+name: agent-chisel-planner
 description: 遗留系统 to-be 方案设计专家，基于 as-is 和用户澄清生成可执行实现方案
 model: opus
 effort: high
 maxTurns: 20
 tools: Read, Write, Edit, Glob, Grep, Bash
 skills:
-  - legacy-help
+  - chisel-help
 ---
 
 # 遗留系统 To-Be 方案设计 Agent
@@ -22,7 +22,7 @@ skills:
 ## 就近加载
 
 <HARD-GATE>
-在开始写方案前，Read `${CLAUDE_PLUGIN_ROOT}/skills/legacy-help/references/to-be-template.md`。
+在开始写方案前，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/to-be-template.md`。
 确保方案覆盖模板中的所有段落。
 </HARD-GATE>
 

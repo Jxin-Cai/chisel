@@ -1,21 +1,21 @@
 # CLAUDE.md
 
-This repository contains the `legacy-feature` Claude Code plugin.
+This repository contains the `chisel` Claude Code plugin.
 
 ## 项目概述
 
-`legacy-feature` 用于在遗留系统上增加功能。它通过文件驱动流程强制完成 as-is 理解、to-be 方案确认、task 化实现、架构师 CR 和返修闭环。
+`chisel` 用于在遗留系统上增加功能。它通过文件驱动流程强制完成 as-is 理解、to-be 方案确认、task 化实现、架构师 CR 和返修闭环。
 
 ## 架构要点
 
-- 单一插件 `legacy-feature`，主入口 skill 是 `/legacy`。
-- 运行态产物写入业务仓库的 `.legacy-feature/<idea-name>/`。
+- 单一插件 `chisel`，主入口 skill 是 `/chisel`。
+- 运行态产物写入业务仓库的 `.chisel/<idea-name>/`。
 - `scripts/orchestration-status.mjs` 是恢复点判定入口。
 - `scripts/workflow-status.mjs` 和 `scripts/workflow-lib.mjs` 管理 task 状态机。
 - `scripts/gate-check.mjs` 管理每步 postcondition。
-- `agent-legacy-explorer` 只读生成 as-is。
-- `agent-legacy-coder` 只按已确认 task 实现。
-- `agent-legacy-architect-reviewer` 只读 CR，不直接修改代码。
+- `agent-chisel-explorer` 只读生成 as-is。
+- `agent-chisel-coder` 只按已确认 task 实现。
+- `agent-chisel-architect-reviewer` 只读 CR，不直接修改代码。
 
 ## 关键约束
 
