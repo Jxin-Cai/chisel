@@ -75,19 +75,23 @@ function main() {
     return;
   }
 
-  const codeTasks = getNextTasks(IDEA_DIR);
-  if (codeTasks.length > 0) {
-    emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks });
-    return;
-  }
-
   const reviewTasks = getCodedTasksNeedingReview(IDEA_DIR);
   if (reviewTasks.length > 0) {
     emit('review:cr', 'there are coded tasks needing architecture review', { next_tasks: reviewTasks });
     return;
   }
 
+  const codeTasks = getNextTasks(IDEA_DIR);
+  if (codeTasks.length > 0) {
+    emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks });
+    return;
+  }
+
   if (allTasksApproved(IDEA_DIR) && !has('.done')) {
+    if (!has('knowledge-candidates')) {
+      emit('knowledge:extract', 'all tasks approved, knowledge candidate extraction is pending');
+      return;
+    }
     emit('final:summary', 'all tasks approved, final summary is pending');
     return;
   }

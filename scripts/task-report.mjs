@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { readTaskState, taskStateFile, writeTaskState } from './workflow-lib.mjs';
+import { readTaskExpectedFiles, readTaskState, taskStateFile, writeTaskState } from './workflow-lib.mjs';
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -26,9 +26,16 @@ function main(argv) {
   if (!ideaDir) fail('用法: task-report.mjs <idea-dir> [task-id]');
   if (!existsSync(taskStateFile(ideaDir))) fail('task-workflow-state.yaml missing');
 
+  const state = readTaskState(taskStateFile(ideaDir));
+  const task = taskId ? state.tasks[taskId] : null;
+  const taskFile = task ? join(ideaDir, task.file) : '';
+  const expectedFiles = readTaskExpectedFiles(taskFile);
+  const scopedFiles = expectedFiles.length > 0 ? expectedFiles : task?.expected_files || [];
   let rows = [];
   try {
-    rows = parseNumstat(execFileSync('git', ['diff', '--numstat'], { encoding: 'utf8' }));
+    const args = ['diff', '--numstat'];
+    if (scopedFiles.length > 0) args.push('--', ...scopedFiles);
+    rows = parseNumstat(execFileSync('git', args, { encoding: 'utf8' }));
   } catch {
     rows = [];
   }
@@ -42,8 +49,8 @@ function main(argv) {
   writeFileSync(join(metricsDir, 'changed-files.json'), `${JSON.stringify(changedFiles, null, 2)}\n`);
   writeFileSync(join(metricsDir, 'loc-delta.json'), `${JSON.stringify({ added: locAdded, deleted: locDeleted }, null, 2)}\n`);
 
-  const state = readTaskState(taskStateFile(ideaDir));
   if (taskId && state.tasks[taskId]) {
+    state.tasks[taskId].expected_files = scopedFiles;
     state.tasks[taskId].changed_files = changedFiles;
     state.tasks[taskId].loc_added = locAdded;
     state.tasks[taskId].loc_deleted = locDeleted;
@@ -52,6 +59,7 @@ function main(argv) {
 
   const summary = {
     task_id: taskId || null,
+    expected_files: scopedFiles,
     changed_files: changedFiles,
     loc_added: locAdded,
     loc_deleted: locDeleted

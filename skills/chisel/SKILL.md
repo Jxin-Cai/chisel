@@ -62,7 +62,10 @@ LOOP:
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
-| `final:summary` | 汇总变更 + `touch {IDEA_DIR}/.done` | `done` |
+| `knowledge:extract` | 从本次迭代产物中提取知识候选，写入 `{IDEA_DIR}/knowledge-candidates/` | `knowledge-candidates-exists` |
+| `final:summary` | 汇总变更 + 呈现知识候选 + `touch {IDEA_DIR}/.done` | `done` |
+
+当同时存在待 CR、待返修和待编码任务时，优先清空 review / rework backlog，再进入新 coding。
 | `blocked` | 停止，报告阻塞原因 | — |
 | `done` | 报告完成 | — |
 
@@ -74,7 +77,32 @@ LOOP:
 
 1. Read `{IDEA_DIR}/to-be/implementation-plan.md` 中的 task 拆分建议
 2. 在 `{IDEA_DIR}/tasks/` 下创建 task 文件（参考 `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/task-template.md`）
-3. 调用 `workflow-status.mjs {IDEA_DIR} --init-tasks <idea-name> "task-001:dep1,dep2:描述:tasks/task-001.md" ...`
+3. 调用 `workflow-status.mjs {IDEA_DIR} --init-tasks <idea-name> "task-001:dep1,dep2:描述:tasks/task-001.md:src/a.ts,src/b.ts" ...`；最后一段是该 task 的 expected_files，可为空但不应省略已知修改范围。
+
+---
+
+## Wiki 感知
+
+如果 `.chisel/wiki/index.md` 存在，说明项目已有长期知识沉淀。
+
+- as-is 阶段：explorer 应参考 wiki 中的禁区、包袱、坏味道、术语，但以代码事实为准。
+- to-be 阶段：planner 应在方案中引用 wiki 的禁区和包袱，明确允许/禁止修改范围。
+- task 创建时：填写 `Context to Load` 引用 wiki 相关文件。
+- CR 阶段：reviewer 应检查是否触碰了 wiki 中登记的禁区或包袱。
+
+不要一次性加载整个 wiki。按需读取当前阶段相关的文件。
+
+---
+
+## Knowledge Candidate 提取
+
+当 `resume_step` = `knowledge:extract`：
+
+1. 扫描 `{IDEA_DIR}/as-is/`、`{IDEA_DIR}/task-reports/`、`{IDEA_DIR}/cr/` 中与禁区、包袱、坏味道、术语相关的发现
+2. 参考 `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/knowledge-candidates-template.md`
+3. 在 `{IDEA_DIR}/knowledge-candidates/` 下创建候选文件
+4. 呈现候选摘要给用户，但不自动合入 `.chisel/wiki/`
+5. 用户确认后，可手动或作为独立 task 合入长期 wiki
 
 ---
 

@@ -13,4 +13,4 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs .chisel/<idea-name>
 node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs .chisel/<idea-name> --summary
 ```
 
-报告内容：当前恢复点、下一步、task 状态总览、待实现/待 CR/待返修/blocked task、关键产物路径。
+报告内容：当前恢复点、下一步、task 状态总览、待实现/待 CR/待返修/blocked task、关键产物路径。优先展示 review/rework backlog，再展示可编码任务。

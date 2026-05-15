@@ -19,6 +19,7 @@ skills:
 2. Read requirement 文件，理解目标功能涉及的范围
 3. **在开始扫描前**：Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`
 4. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/as-is-template.md`，理解每个产物的结构要求
+5. 如果 `.chisel/wiki/index.md` 存在，Read 它，按渐进加载规则加载相关 wiki 文件（禁区、包袱、坏味道、术语），但以代码事实为准
 
 ## 探索策略
 
@@ -37,16 +38,19 @@ skills:
 
 ## 产物
 
-在 `{idea_dir}/as-is/` 下写入七个文件：
+在 `{idea_dir}/as-is/` 下写入以下文件：
 
 | 文件 | 内容要求 |
 |------|---------|
-| `overview.md` | 需求范围、当前能力边界、相关模块、已确认事实与推断 |
+| `overview.md` | 需求范围、当前能力边界、相关模块、已确认事实与推断、已知禁区/包袱/坏味道 |
+| `entrypoints.md` | 入口类型、位置、参数、鉴权、下游调用目标 |
 | `call-chain-sequence.md` | 中文业务语义 Mermaid 时序图，消息名写业务动作而非函数名 |
-| `core-logic.md` | 核心业务流程、分支条件、状态变化、异常路径 |
+| `core-logic.md` | 核心业务流程、分支条件、状态变化、异常路径、兼容行为和历史约束 |
+| `data-flow.md` | 输入来源、中间状态、输出去向、持久化读写、外部交互 |
 | `er-diagram.md` | 表名、字段、字段说明、主外键、关联证据、Mermaid ER 图 |
 | `api-contracts.md` | 入口类型/方法/路径/请求/响应/错误码/鉴权/幂等性 |
-| `change-points.md` | 与需求相关的可能变更位置 |
+| `tests-and-verification.md` | 已有测试、可复用验证命令、缺失测试、回归风险 |
+| `knowledge-candidates.md` | 本次发现的禁区/包袱/坏味道/术语候选（待用户确认） |
 | `evidence-index.md` | 所有结论的证据路径索引 |
 
 ## 限制

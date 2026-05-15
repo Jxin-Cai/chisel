@@ -63,7 +63,12 @@ steps:
     postcondition:
       check: cr-complete
 
+  - id: knowledge-extract
+    description: 从本次迭代产物中提取长期知识候选，写入 knowledge-candidates 目录
+    postcondition:
+      check: knowledge-candidates-exists
+
   - id: final-summary
-    description: 汇总变更、CR、返修、验证方法
+    description: 汇总变更、CR、返修、验证方法，呈现知识候选摘要
     postcondition:
       check: all-approved

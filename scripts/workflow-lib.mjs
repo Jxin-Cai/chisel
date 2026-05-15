@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 export const TASK_STATES = ['pending', 'confirmed', 'coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'];
+export const MAX_REWORK_COUNT = 3;
 
 const VALID_TRANSITIONS = new Set([
   'pending:confirmed',
@@ -43,21 +44,29 @@ export function quoteYaml(value) {
   return JSON.stringify(String(value ?? ''));
 }
 
+function atomicWriteFile(file, content) {
+  ensureDir(dirname(file));
+  const tmpFile = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmpFile, content);
+  renameSync(tmpFile, file);
+}
+
 export function parseList(value) {
-  const raw = String(value || '').trim();
+  const raw = String(value || '').replace(/\s+#.*$/, '').trim();
   if (!raw || raw === '[]') return [];
   return raw.replace(/^\[/, '').replace(/\]$/, '').split(',').map(s => s.trim().replace(/^['"]|['"]$/g, '')).filter(Boolean);
 }
 
 export function parseTaskSpec(spec) {
   const parts = String(spec).split(':');
-  const [taskId, dependsRaw = '', description = '', file = ''] = parts;
+  const [taskId, dependsRaw = '', description = '', file = '', expectedRaw = ''] = parts;
   if (!taskId) throw new Error(`invalid task spec: ${spec}`);
   return {
     taskId,
     depends_on: dependsRaw && dependsRaw !== '-' ? dependsRaw.split(',').filter(Boolean) : [],
     description,
-    file: file || `tasks/${taskId}.md`
+    file: file || `tasks/${taskId}.md`,
+    expected_files: expectedRaw ? expectedRaw.split(',').filter(Boolean) : []
   };
 }
 
@@ -68,6 +77,34 @@ function parseScalar(value) {
   if (trimmed === 'true') return true;
   if (trimmed === 'false') return false;
   return trimmed.replace(/^['"]|['"]$/g, '');
+}
+
+export function readTaskExpectedFiles(taskFile) {
+  if (!taskFile || !existsSync(taskFile)) return [];
+  const text = readFileSync(taskFile, 'utf8');
+  const parsed = readFrontmatter(text);
+  return Array.isArray(parsed.expected_files) ? parsed.expected_files : [];
+}
+
+export function readFrontmatter(text) {
+  const lines = String(text || '').split('\n');
+  if (lines[0] !== '---') return {};
+  let end = -1;
+  for (let i = 1; i < lines.length; i += 1) {
+    if (lines[i] === '---') {
+      end = i;
+      break;
+    }
+  }
+  if (end === -1) return {};
+  const result = {};
+  for (const line of lines.slice(1, end)) {
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!match) continue;
+    const [, key, raw] = match;
+    result[key] = parseScalar(raw);
+  }
+  return result;
 }
 
 export function readTaskState(file) {
@@ -105,6 +142,7 @@ export function writeTaskState(file, state) {
     out.push(`    depends_on: [${(task.depends_on || []).join(', ')}]`);
     out.push(`    description: ${quoteYaml(task.description || '')}`);
     out.push(`    file: ${quoteYaml(task.file || `tasks/${taskId}.md`)}`);
+    out.push(`    expected_files: [${(task.expected_files || []).join(', ')}]`);
     out.push(`    report_file: ${quoteYaml(task.report_file || `task-reports/${taskId}-report.md`)}`);
     out.push(`    cr_file: ${quoteYaml(task.cr_file || `cr/${taskId}-cr.md`)}`);
     out.push(`    rework_count: ${Number(task.rework_count || 0)}`);
@@ -112,12 +150,12 @@ export function writeTaskState(file, state) {
     out.push(`    loc_added: ${Number(task.loc_added || 0)}`);
     out.push(`    loc_deleted: ${Number(task.loc_deleted || 0)}`);
   }
-  writeFileSync(file, `${out.join('\n')}\n`);
+  atomicWriteFile(file, `${out.join('\n')}\n`);
 }
 
 export function initWorkflowState(ideaDir, ideaName) {
   ensureDir(ideaDir);
-  writeFileSync(workflowStateFile(ideaDir), [
+  atomicWriteFile(workflowStateFile(ideaDir), [
     `idea: ${ideaName}`,
     'phase:',
     '  requirement: done',
@@ -137,11 +175,13 @@ export function initTaskState(ideaDir, ideaName, specs) {
   const state = { idea: ideaName, tasks: { ...existing.tasks } };
   for (const spec of specs) {
     const task = typeof spec === 'string' ? parseTaskSpec(spec) : spec;
+    const taskFile = task.file || `tasks/${task.taskId}.md`;
     state.tasks[task.taskId] = {
       status: task.status || state.tasks[task.taskId]?.status || 'confirmed',
       depends_on: task.depends_on || [],
       description: task.description || '',
-      file: task.file || `tasks/${task.taskId}.md`,
+      file: taskFile,
+      expected_files: task.expected_files?.length ? task.expected_files : readTaskExpectedFiles(join(ideaDir, taskFile)),
       report_file: task.report_file || `task-reports/${task.taskId}-report.md`,
       cr_file: task.cr_file || `cr/${task.taskId}-cr.md`,
       rework_count: Number(task.rework_count || 0),
@@ -169,12 +209,12 @@ export function getCodedTasksNeedingReview(ideaDir) {
 
 export function getReworkTasks(ideaDir) {
   const state = readTaskState(taskStateFile(ideaDir));
-  return Object.entries(state.tasks).filter(([, task]) => task.status === 'needs_rework' && Number(task.rework_count || 0) < 3).map(([taskId]) => taskId);
+  return Object.entries(state.tasks).filter(([, task]) => task.status === 'needs_rework' && Number(task.rework_count || 0) < MAX_REWORK_COUNT).map(([taskId]) => taskId);
 }
 
 export function getBlockedReworkTasks(ideaDir) {
   const state = readTaskState(taskStateFile(ideaDir));
-  return Object.entries(state.tasks).filter(([, task]) => task.status === 'blocked' || (task.status === 'needs_rework' && Number(task.rework_count || 0) >= 3)).map(([taskId]) => taskId);
+  return Object.entries(state.tasks).filter(([, task]) => task.status === 'blocked' || (task.status === 'needs_rework' && Number(task.rework_count || 0) >= MAX_REWORK_COUNT)).map(([taskId]) => taskId);
 }
 
 export function allTasksApproved(ideaDir) {
@@ -204,7 +244,7 @@ export function incrementRework(ideaDir, taskId) {
   const task = state.tasks[taskId];
   if (!task) throw new Error(`unknown task: ${taskId}`);
   task.rework_count = Number(task.rework_count || 0) + 1;
-  if (task.rework_count >= 3 && task.status === 'needs_rework') task.status = 'blocked';
+  if (task.rework_count >= MAX_REWORK_COUNT && task.status === 'needs_rework') task.status = 'blocked';
   writeTaskState(file, state);
   return task.rework_count;
 }
@@ -220,7 +260,7 @@ export function markCr(ideaDir, taskId, result) {
   }
   if (result === 'needs_rework') task.rework_count = Number(task.rework_count || 0) + 1;
   task.status = status;
-  if (task.rework_count >= 3 && status === 'needs_rework') task.status = 'blocked';
+  if (task.rework_count >= MAX_REWORK_COUNT && status === 'needs_rework') task.status = 'blocked';
   writeTaskState(file, state);
   return task;
 }

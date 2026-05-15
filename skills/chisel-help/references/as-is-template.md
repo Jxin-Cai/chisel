@@ -1,5 +1,7 @@
 # As-Is 产物模板
 
+as-is 用于先理解现状，再进入方案设计。它需要记录已确认事实、证据、不确定点，以及本次迭代中发现的长期知识候选。
+
 ## overview.md
 
 - 需求摘要
@@ -7,6 +9,18 @@
 - 相关模块
 - 已确认事实
 - 推断与不确定点
+- 当前已知禁区
+- 当前已知包袱
+- 当前已知暂不重构坏味道
+
+## entrypoints.md
+
+- 入口类型：HTTP/RPC/message/job/CLI/hook/其他
+- 入口位置
+- 入口参数
+- 鉴权 / 权限 / 环境依赖
+- 下游调用目标
+- 证据文件
 
 ## call-chain-sequence.md
 
@@ -38,6 +52,17 @@ sequenceDiagram
 - 关键状态变化
 - 失败/异常路径
 - 事务、缓存、异步、定时任务线索
+- 兼容行为和历史约束
+- 本次需求相关的 safe-to-change area
+
+## data-flow.md
+
+- 输入数据来源
+- 中间状态变化
+- 输出数据去向
+- 持久化读写
+- 外部系统交互
+- 幂等性和并发线索
 
 ## er-diagram.md
 
@@ -54,6 +79,42 @@ sequenceDiagram
 - 幂等性线索
 - 兼容性风险
 - 证据文件
+
+## tests-and-verification.md
+
+- 已有测试
+- 可复用验证命令
+- 缺失测试
+- 必须人工验证的行为面
+- 回归风险
+
+## knowledge-candidates.md
+
+记录本次 as-is 发现但尚未确认的长期知识候选。候选知识不要直接合入 `.chisel/wiki/`。
+
+### Forbidden Zone Candidates
+
+- 范围：
+- 发现原因：
+- 证据：
+
+### Weird But Intentional Candidates
+
+- 现象：
+- 可能原因：
+- 证据：
+
+### Do Not Refactor Yet Candidates
+
+- 坏味道：
+- 本次不要处理的原因：
+- 证据：
+
+### Glossary Candidates
+
+- 术语：
+- 可能定义：
+- 出现位置：
 
 ## evidence-index.md
 

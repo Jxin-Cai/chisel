@@ -39,6 +39,7 @@ phases:
 state-machine:
   tasks:
     states: [pending, confirmed, coding, coded, reviewing, approved, needs_rework, repairing, failed, blocked]
+    note: failed 仅表示本轮 coding 失败，可回到 confirmed；review/rework 优先于新 coding。
     transitions:
       - from: pending
         to: confirmed
