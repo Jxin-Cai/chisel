@@ -5,8 +5,6 @@ model: opus
 effort: high
 maxTurns: 20
 tools: Read, Write, Edit, Glob, Grep, Bash
-skills:
-  - chisel-help
 ---
 
 # 遗留系统 To-Be 方案设计 Agent

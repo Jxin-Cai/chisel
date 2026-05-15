@@ -1,6 +1,6 @@
 ---
 name: chisel-understand
-description: 只读理解遗留系统当前 as-is 逻辑，生成中文业务语义调用链、核心逻辑、ER 图、接口契约、变更点和证据索引。当 chisel 编排器进入 understand:explore 阶段时触发。
+description: 只读理解遗留系统当前 as-is 逻辑，生成中文业务语义入口、调用链、核心逻辑、数据流、ER 图、接口契约、测试现状、知识候选和证据索引。当 chisel 编排器进入 understand:explore 阶段时触发。
 argument-hint: "<idea-name>"
 ---
 
@@ -20,6 +20,6 @@ argument-hint: "<idea-name>"
 ```
 
 <HARD-GATE>
-explorer 必须产出完整的七个 as-is 文件。
+explorer 必须产出完整的十个 as-is 文件（overview、entrypoints、call-chain-sequence、core-logic、data-flow、er-diagram、api-contracts、tests-and-verification、knowledge-candidates、evidence-index）。
 如果 explorer 返回的产物不完整，重新启动补充，不要自行补写。
 </HARD-GATE>

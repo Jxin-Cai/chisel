@@ -2,7 +2,7 @@
 set -euo pipefail
 
 cat <<'EOF'
-legacy-feature plugin is available.
-Use /legacy <需求描述或需求文件路径> for legacy system feature enhancement.
-Runtime artifacts are stored under .legacy-feature/<idea-name>/ in the target project.
+chisel plugin is available.
+Use /chisel <需求描述或需求文件路径> for legacy system feature enhancement.
+Runtime artifacts are stored under .chisel/<idea-name>/ in the target project.
 EOF

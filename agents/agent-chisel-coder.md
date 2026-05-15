@@ -5,8 +5,6 @@ model: haiku
 effort: high
 maxTurns: 20
 tools: Read, Write, Edit, Glob, Grep, Bash
-skills:
-  - chisel-help
 ---
 
 # 遗留系统 Task 实现 Agent

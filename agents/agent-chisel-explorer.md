@@ -5,8 +5,6 @@ model: sonnet
 effort: high
 maxTurns: 25
 tools: Read, Write, Glob, Grep, Bash
-skills:
-  - chisel-help
 ---
 
 # 遗留系统 As-Is 探索 Agent
@@ -55,6 +53,7 @@ skills:
 
 ## 限制
 
+- Write 只用于在 `{idea_dir}/as-is/` 下创建产物文件，不修改任何业务代码
 - Bash 只能运行只读命令（grep、find、cat、git log/show/blame）
-- 不使用 Write 或 Edit
-- 不修改任何文件
+- 不使用 Edit
+- 不修改 `{idea_dir}/as-is/` 以外的任何文件

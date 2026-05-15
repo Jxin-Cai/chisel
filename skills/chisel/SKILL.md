@@ -98,11 +98,17 @@ LOOP:
 
 当 `resume_step` = `knowledge:extract`：
 
-1. 扫描 `{IDEA_DIR}/as-is/`、`{IDEA_DIR}/task-reports/`、`{IDEA_DIR}/cr/` 中与禁区、包袱、坏味道、术语相关的发现
-2. 参考 `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/knowledge-candidates-template.md`
+1. 扫描 `{IDEA_DIR}/as-is/knowledge-candidates.md`、`{IDEA_DIR}/task-reports/`、`{IDEA_DIR}/cr/` 中与禁区、包袱、坏味道、术语相关的发现
+2. 参考以下模板（按需 Read，不要一次全加载）：
+   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/knowledge-candidates-template.md` — 候选文件结构
+   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/forbidden-zones-template.md` — 禁区格式
+   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/weird-but-intentional-template.md` — 包袱格式
+   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/do-not-refactor-yet-template.md` — 坏味道格式
+   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/glossary-template.md` — 术语格式
 3. 在 `{IDEA_DIR}/knowledge-candidates/` 下创建候选文件
-4. 呈现候选摘要给用户，但不自动合入 `.chisel/wiki/`
-5. 用户确认后，可手动或作为独立 task 合入长期 wiki
+4. 如果 `.chisel/wiki/` 还不存在且候选内容足够，参考 `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/llm-wiki-index-template.md` 和 `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/module-map-template.md` 建议用户初始化 wiki
+5. 呈现候选摘要给用户，但不自动合入 `.chisel/wiki/`
+6. 用户确认后，可手动或作为独立 task 合入长期 wiki
 
 ---
 
