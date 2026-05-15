@@ -10,6 +10,6 @@
 | "这个 task 太简单了，直接改不用写 report" | report 是 CR 和最终汇总的必需输入。没有 report 的 task 无法通过 gate。 |
 | "CR 已经通过一次，这次肯定也没问题" | 每次 coded 后都必须独立 CR。上次通过不等于这次通过。 |
 | "返修内容很小，不用走完整 coding → coded → reviewing 流程" | 状态机不能跳转。即使改一行也要走 `repairing → coded → reviewing`。 |
-| "gate 报 pass 了但产物质量不够，我来手动补" | gate 只检查存在性。质量由 as-is/to-be/CR 阶段保障，不要事后插入不在计划中的修改。 |
+| "gate 报 pass 了但产物质量不够，我来手动补" | gate 已检查关键段落完整性。如果 gate pass 但你仍觉得不够，在当前步骤内补充，不要跨步插入不在计划中的修改。 |
 | "并行做几个 task 可以更快" | 只有 `--next-tasks` 返回的无依赖 task 才能并行。有依赖的 task 串行。 |
 | "用户催得急，先 code 再补 task 文件" | task 文件是 coder 的输入契约。没有 task 文件不能启动 coder。 |

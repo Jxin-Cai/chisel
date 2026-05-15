@@ -64,10 +64,10 @@ LOOP:
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
 | `knowledge:extract` | 从本次迭代产物中提取知识候选，写入 `{IDEA_DIR}/knowledge-candidates/` | `knowledge-candidates-exists` |
 | `final:summary` | 汇总变更 + 呈现知识候选 + `touch {IDEA_DIR}/.done` | `done` |
-
-当同时存在待 CR、待返修和待编码任务时，优先清空 review / rework backlog，再进入新 coding。
 | `blocked` | 停止，报告阻塞原因 | — |
 | `done` | 报告完成 | — |
+
+当同时存在待 CR、待返修和待编码任务时，优先清空 review / rework backlog，再进入新 coding。
 
 ---
 

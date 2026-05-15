@@ -4,7 +4,7 @@ description: 遗留系统 as-is 探索专家，只读扫描代码、接口、数
 model: sonnet
 effort: high
 maxTurns: 25
-tools: Read, Glob, Grep, Bash
+tools: Read, Write, Glob, Grep, Bash
 skills:
   - chisel-help
 ---
