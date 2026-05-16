@@ -1,7 +1,7 @@
 ---
 name: agent-chisel-coder
 description: 遗留系统功能实现 agent，基于 task 文件和 to-be 方案修改代码并产出变更报告
-model: haiku
+model: sonnet
 effort: high
 maxTurns: 20
 tools: Read, Write, Edit, Glob, Grep, Bash
@@ -17,11 +17,12 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 2. Read task 文件，理解目标、修改范围和验证方式
 3. Read requirement（快速过一遍目标和约束）
 4. Read to-be/implementation-plan.md（定位本 task 对应的方案段落）
-5. 如果 task 文件有 `Context to Load`，按列表加载相关 wiki、模块地图或 ADR（不要一次全加载）
+5. 如果 `{idea_dir}/cr/{task_id}-cr.md` 存在，Read 它——说明当前是返修模式，必须按 CR 返修清单逐项修改
+6. 如果 task 文件有 `Context to Load`，按列表加载相关 wiki、模块地图或 ADR（不要一次全加载）
 
 <HARD-GATE>
-在开始写代码前，先扫描 as-is 中与本 task 相关的文件（至少 `core-logic.md` 和 `data-flow.md`），
-理解现有风格——命名约定、分层方式、错误处理模式、测试组织。
+在开始写代码前，先扫描 as-is/ai-input 中与本 task 相关的文件（至少 `constraints.md` 和 `change-surface.md`），
+理解约束和可修改范围。再按需查看 `as-is/core-walkthrough.md` 了解现有风格。
 代码实现必须靠齐这个风格。
 </HARD-GATE>
 
@@ -29,9 +30,10 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 
 1. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
 2. **实现** — 修改代码，靠齐 as-is 风格
-3. **验证** — 运行 task 文件中指定的验证命令（如果有的话）
-4. **写 report** — 在 `{idea_dir}/task-reports/{task_id}-report.md` 写变更报告
-5. **标状态** — 成功时 `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {idea_dir} --finish-task {task_id} coded`；失败时用 `failed`
+3. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
+4. **验证** — 运行 task 文件中指定的验证命令（如果有的话）
+5. **写 report** — 在 `{idea_dir}/task-reports/{task_id}-report.md` 写变更报告
+6. **标状态** — 成功时 `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {idea_dir} --finish-task {task_id} coded`；失败时用 `failed`
 
 ## Report 内容
 
@@ -56,3 +58,4 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 - 不改 as-is/to-be 文档
 - 不修改 task 文件中 `Forbidden Files / Areas` 列出的文件
 - 如果发现代码坏味道，记录在 report 的 Knowledge Candidates 中，不要顺手重构
+- 发现知识候选时，同时写入 `{idea_dir}/knowledge-candidates/` 对应文件（fz-*.md / wbi-*.md / dnr-*.md / term-*.md），格式参考 knowledge-candidates-template.md

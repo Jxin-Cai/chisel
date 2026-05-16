@@ -23,7 +23,7 @@ function parseNumstat(output) {
 function main(argv) {
   const ideaDir = argv[0];
   const taskId = argv[1] || '';
-  if (!ideaDir) fail('用法: task-report.mjs <idea-dir> [task-id]');
+  if (!ideaDir) fail('用法: task-metrics.mjs <idea-dir> [task-id]');
   if (!existsSync(taskStateFile(ideaDir))) fail('task-workflow-state.yaml missing');
 
   const state = readTaskState(taskStateFile(ideaDir));

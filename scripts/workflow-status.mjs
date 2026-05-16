@@ -6,7 +6,6 @@ import {
   getCodedTasksNeedingReview,
   getNextTasks,
   getReworkTasks,
-  incrementRework,
   initTaskState,
   initWorkflowState,
   markCr,
@@ -87,13 +86,6 @@ export async function main(argv) {
         if (!['approved', 'needs_rework', 'blocked'].includes(result)) fail('--mark-cr 仅支持 approved|needs_rework|blocked');
         const task = markCr(ideaDir, taskId, result);
         print({ updated: true, task_id: taskId, status: task.status, rework_count: task.rework_count || 0 });
-        break;
-      }
-      case '--increment-rework': {
-        const taskId = argv[2];
-        if (!taskId) fail('--increment-rework 需要 task-id');
-        const count = incrementRework(ideaDir, taskId);
-        print({ updated: true, task_id: taskId, rework_count: count });
         break;
       }
       case '--summary':

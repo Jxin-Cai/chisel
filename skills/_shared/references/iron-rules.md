@@ -12,7 +12,8 @@
 
 | 阶段 | 前置条件 |
 |------|---------|
-| to-be 方案 | as-is 已确认（`.as-is-confirmed` 存在） |
+| to-be 方案 | as-is 已确认（`.as-is-confirmed` 存在）且 AI 输入版已生成（`as-is/ai-input/` 6 个文件存在）且澄清完成（`clarifications.md` 存在） |
+| AI 输入版生成 | as-is 已确认（`.as-is-confirmed` 存在）且澄清完成（`clarifications.md` 存在） |
 | task 拆分 | to-be 已确认（`.to-be-confirmed` 存在） |
 | coding | task 初始化且 `--next-tasks` 返回该 task |
 | CR | task 状态为 `coded` 且 report 文件存在 |

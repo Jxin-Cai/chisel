@@ -8,9 +8,11 @@ import {
   getNextTasks,
   getReworkTasks,
   readTaskState,
-  taskStateFile
+  taskStateFile,
+  updateWorkflowPhase
 } from './workflow-lib.mjs';
 import { checkGate } from './gate-check.mjs';
+import { appendAuditLog, lastStepTransition } from './audit-log.mjs';
 
 const IDEA_DIR = process.argv[2];
 
@@ -26,6 +28,11 @@ function emit(resumeStep, reason, phaseDetail = {}) {
   if (entries.length > 0) {
     console.log('phase_detail:');
     for (const [key, value] of entries) console.log(`  ${key}: ${Array.isArray(value) ? value.join(',') : value}`);
+  }
+  if (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)) {
+    const prev = lastStepTransition(IDEA_DIR);
+    appendAuditLog(IDEA_DIR, { type: 'step_transition', from: prev?.to || 'unknown', to: resumeStep, reason });
+    updateWorkflowPhase(IDEA_DIR, resumeStep);
   }
 }
 
@@ -48,6 +55,10 @@ function main() {
   }
   if (!checkGate(IDEA_DIR, 'as-is-confirmed').pass) {
     emit('understand:confirm', 'as-is has not been confirmed');
+    return;
+  }
+  if (!checkGate(IDEA_DIR, 'ai-input-ready').pass) {
+    emit('understand:generate-ai-input', 'ai-input documents have not been generated from confirmed as-is');
     return;
   }
   if (!checkGate(IDEA_DIR, 'to-be-exists').pass) {
@@ -88,7 +99,7 @@ function main() {
   }
 
   if (allTasksApproved(IDEA_DIR) && !has('.done')) {
-    if (!has('knowledge-candidates')) {
+    if (!has('.knowledge-extracted')) {
       emit('knowledge:extract', 'all tasks approved, knowledge candidate extraction is pending');
       return;
     }

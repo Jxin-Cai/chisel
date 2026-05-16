@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { appendAuditLog } from './audit-log.mjs';
 
 export const TASK_STATES = ['pending', 'confirmed', 'coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'];
 export const MAX_REWORK_COUNT = 3;
@@ -32,19 +33,15 @@ export function taskStateFile(ideaDir) {
   return join(ideaDir, 'task-workflow-state.yaml');
 }
 
-export function workflowStateFile(ideaDir) {
+function workflowStateFile(ideaDir) {
   return join(ideaDir, 'workflow-state.yaml');
-}
-
-export function crStateFile(ideaDir) {
-  return join(ideaDir, 'cr-workflow-state.yaml');
 }
 
 export function quoteYaml(value) {
   return JSON.stringify(String(value ?? ''));
 }
 
-function atomicWriteFile(file, content) {
+export function atomicWriteFile(file, content) {
   ensureDir(dirname(file));
   const tmpFile = `${file}.${process.pid}.tmp`;
   writeFileSync(tmpFile, content);
@@ -58,7 +55,19 @@ export function parseList(value) {
 }
 
 export function parseTaskSpec(spec) {
-  const parts = String(spec).split(':');
+  const raw = String(spec).trim();
+  if (raw.startsWith('{')) {
+    const obj = JSON.parse(raw);
+    if (!obj.taskId) throw new Error(`invalid task spec JSON: missing taskId`);
+    return {
+      taskId: obj.taskId,
+      depends_on: Array.isArray(obj.depends_on) ? obj.depends_on : [],
+      description: obj.description || '',
+      file: obj.file || `tasks/${obj.taskId}.md`,
+      expected_files: Array.isArray(obj.expected_files) ? obj.expected_files : []
+    };
+  }
+  const parts = raw.split(':');
   const [taskId, dependsRaw = '', description = '', file = '', expectedRaw = ''] = parts;
   if (!taskId) throw new Error(`invalid task spec: ${spec}`);
   return {
@@ -155,8 +164,12 @@ export function writeTaskState(file, state) {
 
 export function initWorkflowState(ideaDir, ideaName) {
   ensureDir(ideaDir);
+  const now = new Date().toISOString();
   atomicWriteFile(workflowStateFile(ideaDir), [
     `idea: ${ideaName}`,
+    `started_at: ${now}`,
+    `last_updated_at: ${now}`,
+    `current_step: receive-requirement`,
     'phase:',
     '  requirement: done',
     '  understand: pending',
@@ -164,9 +177,39 @@ export function initWorkflowState(ideaDir, ideaName) {
     '  tasks: pending',
     '  implement: pending',
     '  review: pending',
+    '  knowledge: pending',
     '  final: pending',
     ''
   ].join('\n'));
+}
+
+const STEP_TO_PHASE = {
+  'receive-requirement': 'requirement',
+  'understand:explore': 'understand',
+  'understand:confirm': 'understand',
+  'understand:generate-ai-input': 'understand',
+  'plan:design': 'plan',
+  'plan:confirm': 'plan',
+  'tasks:init': 'tasks',
+  'implement:code': 'implement',
+  'repair:code': 'implement',
+  'review:cr': 'review',
+  'knowledge:extract': 'knowledge',
+  'final:summary': 'final'
+};
+
+export function updateWorkflowPhase(ideaDir, stepId) {
+  const file = workflowStateFile(ideaDir);
+  if (!existsSync(file)) return;
+  let text = readFileSync(file, 'utf8');
+  const now = new Date().toISOString();
+  text = text.replace(/^last_updated_at:.*$/m, `last_updated_at: ${now}`);
+  text = text.replace(/^current_step:.*$/m, `current_step: ${stepId}`);
+  const phase = STEP_TO_PHASE[stepId];
+  if (phase) {
+    text = text.replace(new RegExp(`^(  ${phase}:).*$`, 'm'), `$1 in_progress`);
+  }
+  atomicWriteFile(file, text);
 }
 
 export function initTaskState(ideaDir, ideaName, specs) {
@@ -235,18 +278,8 @@ export function updateTaskStatus(ideaDir, taskId, nextStatus) {
   }
   task.status = nextStatus;
   writeTaskState(file, state);
+  appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from: current, to: nextStatus });
   return task;
-}
-
-export function incrementRework(ideaDir, taskId) {
-  const file = taskStateFile(ideaDir);
-  const state = readTaskState(file);
-  const task = state.tasks[taskId];
-  if (!task) throw new Error(`unknown task: ${taskId}`);
-  task.rework_count = Number(task.rework_count || 0) + 1;
-  if (task.rework_count >= MAX_REWORK_COUNT && task.status === 'needs_rework') task.status = 'blocked';
-  writeTaskState(file, state);
-  return task.rework_count;
 }
 
 export function markCr(ideaDir, taskId, result) {
@@ -255,6 +288,7 @@ export function markCr(ideaDir, taskId, result) {
   const state = readTaskState(file);
   const task = state.tasks[taskId];
   if (!task) throw new Error(`unknown task: ${taskId}`);
+  const current = task.status;
   if (task.status !== 'reviewing' && task.status !== 'coded' && task.status !== status) {
     throw new Error(`task ${taskId} is not reviewable from ${task.status}`);
   }
@@ -262,5 +296,6 @@ export function markCr(ideaDir, taskId, result) {
   task.status = status;
   if (task.rework_count >= MAX_REWORK_COUNT && status === 'needs_rework') task.status = 'blocked';
   writeTaskState(file, state);
+  appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from: current, to: task.status, detail: { cr_result: result, rework_count: task.rework_count || 0 } });
   return task;
 }

@@ -15,8 +15,11 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 
 1. Read `TASK` 中的 `idea_dir`
 2. Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`
-3. Read requirement 和 as-is 全量文档（按需逐个加载，不要一次全部读完）
-4. 如果 `.chisel/wiki/index.md` 存在，Read 它，按渐进加载规则加载禁区、包袱、术语（方案必须引用这些约束）
+3. Read requirement 文件
+4. 从 `{idea_dir}/as-is/ai-input/` 加载结构化输入：先读 `facts.md` 和 `constraints.md` 建立全局认知，再按需读取 `call-graph.md`、`data-schema.md`、`api-surface.md`、`change-surface.md`（不要一次全读）
+5. 如果 `{idea_dir}/clarifications.md` 存在，Read 它——包含用户在 confirm 阶段的澄清
+6. 按需参考 `{idea_dir}/as-is/` 下的人类学习版获取更多上下文（overview.md、core-walkthrough.md、details/*，不要一次全读）
+7. 如果 `.chisel/wiki/index.md` 存在，Read 它，按渐进加载规则加载禁区、包袱、术语（方案必须引用这些约束）
 
 ## 就近加载
 

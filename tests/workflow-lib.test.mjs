@@ -1,0 +1,227 @@
+import { describe, it, beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  readTaskState,
+  writeTaskState,
+  initTaskState,
+  parseTaskSpec,
+  getNextTasks,
+  getCodedTasksNeedingReview,
+  getReworkTasks,
+  getBlockedReworkTasks,
+  allTasksApproved,
+  updateTaskStatus,
+  markCr,
+  taskStateFile,
+  MAX_REWORK_COUNT
+} from '../scripts/workflow-lib.mjs';
+
+const TEST_DIR = join(import.meta.dirname, '.tmp-test-workflow');
+
+beforeEach(() => {
+  mkdirSync(TEST_DIR, { recursive: true });
+});
+
+afterEach(() => {
+  rmSync(TEST_DIR, { recursive: true, force: true });
+});
+
+describe('parseTaskSpec', () => {
+  it('parses a full spec', () => {
+    const spec = parseTaskSpec('task-001:dep1,dep2:add login:tasks/task-001.md:src/a.ts,src/b.ts');
+    assert.equal(spec.taskId, 'task-001');
+    assert.deepEqual(spec.depends_on, ['dep1', 'dep2']);
+    assert.equal(spec.description, 'add login');
+    assert.equal(spec.file, 'tasks/task-001.md');
+    assert.deepEqual(spec.expected_files, ['src/a.ts', 'src/b.ts']);
+  });
+
+  it('handles minimal spec', () => {
+    const spec = parseTaskSpec('task-002');
+    assert.equal(spec.taskId, 'task-002');
+    assert.deepEqual(spec.depends_on, []);
+    assert.equal(spec.file, 'tasks/task-002.md');
+  });
+
+  it('handles dash as empty depends', () => {
+    const spec = parseTaskSpec('task-003:-:desc');
+    assert.deepEqual(spec.depends_on, []);
+    assert.equal(spec.description, 'desc');
+  });
+
+  it('parses JSON format', () => {
+    const spec = parseTaskSpec('{"taskId":"task-004","depends_on":["task-001"],"description":"path with:colon","file":"tasks/task-004.md","expected_files":["src/c:d.ts"]}');
+    assert.equal(spec.taskId, 'task-004');
+    assert.deepEqual(spec.depends_on, ['task-001']);
+    assert.equal(spec.description, 'path with:colon');
+    assert.deepEqual(spec.expected_files, ['src/c:d.ts']);
+  });
+
+  it('JSON format defaults missing fields', () => {
+    const spec = parseTaskSpec('{"taskId":"task-005"}');
+    assert.equal(spec.taskId, 'task-005');
+    assert.deepEqual(spec.depends_on, []);
+    assert.equal(spec.file, 'tasks/task-005.md');
+    assert.deepEqual(spec.expected_files, []);
+  });
+});
+
+describe('task state read/write', () => {
+  it('round-trips state', () => {
+    const file = taskStateFile(TEST_DIR);
+    const state = {
+      idea: 'test-idea',
+      tasks: {
+        'task-001': {
+          status: 'confirmed',
+          depends_on: [],
+          description: 'test',
+          file: 'tasks/task-001.md',
+          expected_files: ['src/a.ts'],
+          report_file: 'task-reports/task-001-report.md',
+          cr_file: 'cr/task-001-cr.md',
+          rework_count: 0,
+          changed_files: [],
+          loc_added: 0,
+          loc_deleted: 0
+        }
+      }
+    };
+    writeTaskState(file, state);
+    const read = readTaskState(file);
+    assert.equal(read.idea, 'test-idea');
+    assert.equal(read.tasks['task-001'].status, 'confirmed');
+    assert.deepEqual(read.tasks['task-001'].expected_files, ['src/a.ts']);
+  });
+});
+
+describe('initTaskState', () => {
+  it('creates tasks from specs', () => {
+    const state = initTaskState(TEST_DIR, 'test', ['task-001:-:desc1:tasks/task-001.md:']);
+    assert.equal(Object.keys(state.tasks).length, 1);
+    assert.equal(state.tasks['task-001'].status, 'confirmed');
+  });
+});
+
+describe('task scheduling', () => {
+  function setupTasks(tasks) {
+    const file = taskStateFile(TEST_DIR);
+    writeTaskState(file, { idea: 'test', tasks });
+  }
+
+  it('getNextTasks returns confirmed tasks with resolved deps', () => {
+    setupTasks({
+      'task-001': { status: 'approved', depends_on: [] },
+      'task-002': { status: 'confirmed', depends_on: ['task-001'] },
+      'task-003': { status: 'confirmed', depends_on: ['task-002'] }
+    });
+    const next = getNextTasks(TEST_DIR);
+    assert.deepEqual(next, ['task-002']);
+  });
+
+  it('getNextTasks returns nothing when deps not met', () => {
+    setupTasks({
+      'task-001': { status: 'coding', depends_on: [] },
+      'task-002': { status: 'confirmed', depends_on: ['task-001'] }
+    });
+    assert.deepEqual(getNextTasks(TEST_DIR), []);
+  });
+
+  it('getCodedTasksNeedingReview returns coded tasks', () => {
+    setupTasks({
+      'task-001': { status: 'coded', depends_on: [] },
+      'task-002': { status: 'confirmed', depends_on: [] }
+    });
+    assert.deepEqual(getCodedTasksNeedingReview(TEST_DIR), ['task-001']);
+  });
+
+  it('getReworkTasks returns needs_rework under limit', () => {
+    setupTasks({
+      'task-001': { status: 'needs_rework', depends_on: [], rework_count: 1 }
+    });
+    assert.deepEqual(getReworkTasks(TEST_DIR), ['task-001']);
+  });
+
+  it('getReworkTasks excludes tasks at limit', () => {
+    setupTasks({
+      'task-001': { status: 'needs_rework', depends_on: [], rework_count: MAX_REWORK_COUNT }
+    });
+    assert.deepEqual(getReworkTasks(TEST_DIR), []);
+  });
+
+  it('getBlockedReworkTasks returns tasks at limit', () => {
+    setupTasks({
+      'task-001': { status: 'needs_rework', depends_on: [], rework_count: MAX_REWORK_COUNT }
+    });
+    assert.deepEqual(getBlockedReworkTasks(TEST_DIR), ['task-001']);
+  });
+
+  it('allTasksApproved returns true when all approved', () => {
+    setupTasks({
+      'task-001': { status: 'approved', depends_on: [] },
+      'task-002': { status: 'approved', depends_on: [] }
+    });
+    assert.equal(allTasksApproved(TEST_DIR), true);
+  });
+
+  it('allTasksApproved returns false when not all approved', () => {
+    setupTasks({
+      'task-001': { status: 'approved', depends_on: [] },
+      'task-002': { status: 'coded', depends_on: [] }
+    });
+    assert.equal(allTasksApproved(TEST_DIR), false);
+  });
+});
+
+describe('state transitions', () => {
+  function setupTask(status) {
+    const file = taskStateFile(TEST_DIR);
+    writeTaskState(file, {
+      idea: 'test',
+      tasks: { 'task-001': { status, depends_on: [], rework_count: 0 } }
+    });
+  }
+
+  it('valid transition confirmed → coding', () => {
+    setupTask('confirmed');
+    const task = updateTaskStatus(TEST_DIR, 'task-001', 'coding');
+    assert.equal(task.status, 'coding');
+  });
+
+  it('invalid transition confirmed → approved throws', () => {
+    setupTask('confirmed');
+    assert.throws(() => updateTaskStatus(TEST_DIR, 'task-001', 'approved'), /invalid transition/);
+  });
+});
+
+describe('markCr', () => {
+  function setupReviewingTask(reworkCount = 0) {
+    const file = taskStateFile(TEST_DIR);
+    writeTaskState(file, {
+      idea: 'test',
+      tasks: { 'task-001': { status: 'reviewing', depends_on: [], rework_count: reworkCount } }
+    });
+  }
+
+  it('approved sets status to approved', () => {
+    setupReviewingTask();
+    const task = markCr(TEST_DIR, 'task-001', 'approved');
+    assert.equal(task.status, 'approved');
+  });
+
+  it('needs_rework increments rework_count', () => {
+    setupReviewingTask(1);
+    const task = markCr(TEST_DIR, 'task-001', 'needs_rework');
+    assert.equal(task.status, 'needs_rework');
+    assert.equal(task.rework_count, 2);
+  });
+
+  it('rework at max becomes blocked', () => {
+    setupReviewingTask(MAX_REWORK_COUNT - 1);
+    const task = markCr(TEST_DIR, 'task-001', 'needs_rework');
+    assert.equal(task.status, 'blocked');
+    assert.equal(task.rework_count, MAX_REWORK_COUNT);
+  });
+});

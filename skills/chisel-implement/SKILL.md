@@ -10,15 +10,15 @@ argument-hint: "<idea-name>"
 
 ## 执行流程
 
-1. `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --next-tasks code`
-2. 如果没有 code task，运行 `--next-tasks rework`
+1. `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --next-tasks rework`
+2. 如果没有 rework task，运行 `--next-tasks code`
 3. 对每个 task：
    - `--start-task <task-id>`
    - 启动 `agent-chisel-coder`，传入 TASK：
      ```json
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>", "task_file": "tasks/<task-id>.md" }
      ```
-   - coder 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-report.mjs {IDEA_DIR} <task-id>`
+   - coder 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-metrics.mjs {IDEA_DIR} <task-id>`
 
 <HARD-GATE>
 只有 `--next-tasks` 返回的 task 才能启动。

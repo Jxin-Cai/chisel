@@ -20,6 +20,7 @@ argument-hint: "<idea-name>"
 ```
 
 <HARD-GATE>
-explorer 必须产出完整的十个 as-is 文件（overview、entrypoints、call-chain-sequence、core-logic、data-flow、er-diagram、api-contracts、tests-and-verification、knowledge-candidates、evidence-index）。
-如果 explorer 返回的产物不完整，重新启动补充，不要自行补写。
+explorer 必须产出四个主干 as-is 文件（overview、core-walkthrough、evidence-index、knowledge-candidates）。
+枝干文件（details/）由 explorer 根据需求复杂度按需产出。
+如果 explorer 返回的主干产物不完整，重新启动补充，不要自行补写。
 </HARD-GATE>

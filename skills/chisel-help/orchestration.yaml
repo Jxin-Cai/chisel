@@ -22,9 +22,14 @@ steps:
       check: as-is-complete
 
   - id: understand-confirm
-    description: 用户确认 as-is 或补充澄清
+    description: 用户确认 as-is，回答待澄清问题并写入 clarifications.md；实时捕获知识候选
     postcondition:
       check: as-is-confirmed
+
+  - id: understand-generate-ai-input
+    description: 基于已确认的 as-is 人类学习版生成面向 AI 的结构化输入
+    postcondition:
+      check: ai-input-ready
 
   - id: plan
     description: 生成 to-be 实现方案
@@ -36,7 +41,7 @@ steps:
       check: to-be-exists
 
   - id: plan-confirm
-    description: 用户确认 to-be 方案
+    description: 用户确认 to-be 方案；实时捕获知识候选
     postcondition:
       check: to-be-confirmed
 
@@ -64,11 +69,11 @@ steps:
       check: cr-complete
 
   - id: knowledge-extract
-    description: 从本次迭代产物中提取长期知识候选，写入 knowledge-candidates 目录
+    description: 从本次迭代产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule
     postcondition:
-      check: knowledge-candidates-exists
+      check: knowledge-extracted
 
   - id: final-summary
     description: 汇总变更、CR、返修、验证方法，呈现知识候选摘要
     postcondition:
-      check: all-approved
+      check: done

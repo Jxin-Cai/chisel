@@ -17,7 +17,8 @@ CR 阶段。不直接改业务代码。
      ```json
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>" }
      ```
-   - 根据 CR 结论运行 `--mark-cr <task-id> approved|needs_rework|blocked`
+   - CR 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-parse.mjs {IDEA_DIR} <task-id>` 解析结论
+   - 用解析到的结论运行 `--mark-cr <task-id> <result>`（如果 cr-parse 返回 confidence: low，先展示给用户确认）
 
 <HARD-GATE>
 每个 coded task 必须独立 CR。

@@ -5,18 +5,12 @@ description: 遗留系统新增功能工作流
 phases:
   - id: understand
     order: 1
-    description: 理解 as-is：代码扫描、调用链、数据流、ER、接口契约、测试、知识候选
+    description: 理解 as-is：需求驱动裁剪，主干（overview、core-walkthrough、evidence-index、knowledge-candidates）必产出，枝干按需
     outputs:
       - as-is/overview.md
-      - as-is/entrypoints.md
-      - as-is/call-chain-sequence.md
-      - as-is/core-logic.md
-      - as-is/data-flow.md
-      - as-is/er-diagram.md
-      - as-is/api-contracts.md
-      - as-is/tests-and-verification.md
-      - as-is/knowledge-candidates.md
+      - as-is/core-walkthrough.md
       - as-is/evidence-index.md
+      - as-is/knowledge-candidates.md
 
   - id: plan
     order: 2
