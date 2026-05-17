@@ -108,6 +108,8 @@ LOOP:
 
 使用 `knowledge-candidates-template.md` 格式，标注 `source_step` 和 `confirmed: false`。候选由 `knowledge:extract` 阶段统一去重。
 
+如果对话结束时未识别到任何知识信号，不创建任何候选文件，直接继续下一步。
+
 ---
 
 ## 合理化预防

@@ -12,7 +12,7 @@ steps:
     postcondition:
       check: requirement-exists
 
-  - id: understand
+  - id: understand:explore
     description: 理解 as-is
     action:
       type: skill
@@ -21,17 +21,17 @@ steps:
     postcondition:
       check: as-is-complete
 
-  - id: understand-confirm
+  - id: understand:confirm
     description: 用户确认 as-is，回答待澄清问题并写入 clarifications.md；实时捕获知识候选
     postcondition:
       check: as-is-confirmed
 
-  - id: understand-generate-ai-input
+  - id: understand:generate-ai-input
     description: 基于已确认的 as-is 人类学习版生成面向 AI 的结构化输入
     postcondition:
       check: ai-input-ready
 
-  - id: plan
+  - id: plan:design
     description: 生成 to-be 实现方案
     action:
       type: skill
@@ -40,18 +40,18 @@ steps:
     postcondition:
       check: to-be-exists
 
-  - id: plan-confirm
+  - id: plan:confirm
     description: 用户确认 to-be 方案；实时捕获知识候选
     postcondition:
       check: to-be-confirmed
 
-  - id: tasks-init
+  - id: tasks:init
     description: 基于 to-be 拆 task 并初始化 task-workflow-state.yaml
     postcondition:
       check: task-workflow-exists
 
-  - id: implement
-    description: 按 task 依赖执行 coding subagent
+  - id: implement:code
+    description: 按 task 依赖执行 coding subagent（无依赖 task 可并行）
     action:
       type: skill
       name: chisel-implement
@@ -59,8 +59,8 @@ steps:
     postcondition:
       check: task-report-exists
 
-  - id: review
-    description: 资深架构师 CR
+  - id: review:cr
+    description: 资深架构师 CR（多 task 可并行审查）
     action:
       type: skill
       name: chisel-review
@@ -68,12 +68,21 @@ steps:
     postcondition:
       check: cr-complete
 
-  - id: knowledge-extract
+  - id: repair:code
+    description: 按 CR 返修清单修复代码
+    action:
+      type: skill
+      name: chisel-implement
+      args: "{idea-name}"
+    postcondition:
+      check: task-report-exists
+
+  - id: knowledge:extract
     description: 从本次迭代产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule
     postcondition:
       check: knowledge-extracted
 
-  - id: final-summary
+  - id: final:summary
     description: 汇总变更、CR、返修、验证方法，呈现知识候选摘要
     postcondition:
       check: done

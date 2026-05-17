@@ -49,6 +49,18 @@ tools: Read, Write, Glob, Grep, Bash
 
 在开始写 CR 前，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/cr-template.md`。
 
+<HARD-GATE>
+CR 文件**必须**包含 frontmatter，且 `result` 字段为三个值之一：
+```yaml
+---
+task_id: <task-id>
+result: approved | needs_rework | blocked
+rework_count: <N>
+---
+```
+自动解析器依赖此字段判定结论。缺少 frontmatter 会导致状态更新失败。
+</HARD-GATE>
+
 写入 `{idea_dir}/cr/{task_id}-cr.md`，结论只能是：
 
 - **approved** — 无需修改
