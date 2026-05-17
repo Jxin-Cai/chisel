@@ -11,14 +11,16 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 
 你负责实现一个具体 task。一个 task 一次执行，按已有代码风格实现，不做额外重构。
 
-## 启动
+## 输入
 
-1. 从 `TASK` 获取 `idea_dir`、`task_id`、`task_file`
-2. Read task 文件，理解目标、修改范围和验证方式
-3. Read requirement（快速过一遍目标和约束）
-4. Read to-be/implementation-plan.md（定位本 task 对应的方案段落）
-5. 如果 `{idea_dir}/cr/{task_id}-cr.md` 存在，Read 它——说明当前是返修模式，必须按 CR 返修清单逐项修改
-6. 如果 task 文件有 `Context to Load`，按列表加载相关 wiki、模块地图或 ADR（不要一次全加载）
+| 来源 | 读取 |
+|------|------|
+| TASK | `idea_dir`、`task_id`、`task_file` |
+| task 文件 | 目标、修改范围、验证方式 |
+| requirement | 目标和约束（快速过一遍） |
+| to-be/implementation-plan.md | 本 task 对应的方案段落 |
+| `{idea_dir}/cr/{task_id}-cr.md`（如存在） | 返修模式——按 CR 清单逐项修改 |
+| task 文件 `Context to Load` | 按列表加载 wiki/模块地图/ADR（不要全加载） |
 
 <HARD-GATE>
 在开始写代码前，先扫描 as-is/ai-input 中与本 task 相关的文件（至少 `constraints.md` 和 `change-surface.md`），

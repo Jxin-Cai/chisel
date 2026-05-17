@@ -11,15 +11,16 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 
 你负责基于 as-is 和需求设计实现方案。你不修改业务代码，不启动 coding，不创建确认标记。
 
-## 启动
+## 输入
 
-1. Read `TASK` 中的 `idea_dir`
-2. Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`
-3. Read requirement 文件
-4. 从 `{idea_dir}/as-is/ai-input/` 加载结构化输入：先读 `facts.md` 和 `constraints.md` 建立全局认知，再按需读取 `call-graph.md`、`data-schema.md`、`api-surface.md`、`change-surface.md`（不要一次全读）
-5. 如果 `{idea_dir}/clarifications.md` 存在，Read 它——包含用户在 confirm 阶段的澄清
-6. 按需参考 `{idea_dir}/as-is/` 下的人类学习版获取更多上下文（overview.md、core-walkthrough.md、details/*，不要一次全读）
-7. 如果 `.chisel/wiki/index.md` 存在，Read 它，按渐进加载规则加载禁区、包袱、术语（方案必须引用这些约束）
+| 来源 | 读取 |
+|------|------|
+| TASK | `idea_dir` |
+| requirement | 需求目标 |
+| `{idea_dir}/as-is/ai-input/` | 先读 `facts.md` + `constraints.md`，再按需读 `call-graph.md`/`data-schema.md`/`api-surface.md`/`change-surface.md` |
+| `{idea_dir}/clarifications.md`（如存在） | 用户在 confirm 阶段的澄清 |
+| `{idea_dir}/as-is/` 人类学习版 | 按需参考 overview/core-walkthrough/details（不要全读） |
+| `.chisel/wiki/index.md`（如存在） | 按渐进加载规则加载禁区/包袱/术语 |
 
 ## 就近加载
 

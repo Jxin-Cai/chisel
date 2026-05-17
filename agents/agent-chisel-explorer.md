@@ -11,13 +11,13 @@ tools: Read, Write, Glob, Grep, Bash
 
 你负责读懂遗留系统的当前行为，并产出面向人类读者的学习材料。你不做方案，不写业务代码，不改任何文件。
 
-## 启动
+## 输入
 
-1. Read `TASK` 中的 `idea_dir` 和 `requirement_path`
-2. Read requirement 文件，理解目标功能涉及的范围
-3. **在开始扫描前**：Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`
-4. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/as-is-template.md`，理解分层产出结构
-5. 如果 `.chisel/wiki/index.md` 存在，Read 它，按渐进加载规则加载相关 wiki 文件（禁区、包袱、坏味道、术语），但以代码事实为准
+| 来源 | 读取 |
+|------|------|
+| TASK | `idea_dir`、`requirement_path` |
+| requirement 文件 | 目标功能涉及的范围 |
+| `.chisel/wiki/index.md`（如存在） | 按渐进加载规则加载禁区/包袱/坏味道/术语，以代码事实为准 |
 
 ## 探索策略
 
@@ -37,6 +37,10 @@ tools: Read, Write, Glob, Grep, Bash
 </HARD-GATE>
 
 ## 产物（分层结构）
+
+<HARD-GATE>
+在开始写产物前，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/as-is-template.md`，确保产出覆盖所有必需段落。
+</HARD-GATE>
 
 ### 主干文件（必须产出）
 
