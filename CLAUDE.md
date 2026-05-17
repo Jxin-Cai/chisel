@@ -42,3 +42,11 @@ This repository contains the `chisel` Claude Code plugin.
 - 不要凭上下文记忆决定下一步，始终调用 `orchestration-status.mjs`。
 - 同一 task 最多返修 3 次，超过后进入 blocked。
 - 知识候选不自动合入 wiki，必须用户确认。
+
+## 并行开发
+
+- 启动时检测 worktree 隔离状态，建议用户使用 `EnterWorktree` 保护当前分支。
+- `getNextTasks()` 返回多个 task 时，`chisel-implement` 通过 `--check-overlap` 检测文件重叠。
+- 无重叠 task 使用 `Agent(isolation: "worktree")` 并行编码，合并后统一更新状态。
+- 有重叠 task 串行执行；返修 task 始终串行。
+- `chisel-review` 对多个 coded task 并行派发 reviewer（reviewer 只读，无需 worktree）。

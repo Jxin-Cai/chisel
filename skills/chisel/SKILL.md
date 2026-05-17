@@ -15,10 +15,13 @@ argument-hint: "<需求描述或需求文件路径>"
 ## 启动
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/orchestration.yaml`
-2. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
-3. 设 `{IDEA_DIR}` = `.chisel/<idea-name>/`
-4. 如果目录不存在，设 idea-dir = `none`
-5. 进入步骤执行循环
+2. **Worktree 检测**：运行 `git rev-parse --git-dir` 和 `git rev-parse --git-common-dir`
+   - 两者不同且非 submodule → 已在隔离 worktree 中，跳过
+   - 两者相同 → 建议用户使用 `EnterWorktree` 创建隔离工作空间，保护当前分支
+3. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
+4. 设 `{IDEA_DIR}` = `.chisel/<idea-name>/`
+5. 如果目录不存在，设 idea-dir = `none`
+6. 进入步骤执行循环
 
 ---
 

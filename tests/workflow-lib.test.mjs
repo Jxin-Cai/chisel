@@ -15,6 +15,7 @@ import {
   updateTaskStatus,
   markCr,
   taskStateFile,
+  getTasksFileOverlap,
   MAX_REWORK_COUNT
 } from '../scripts/workflow-lib.mjs';
 
@@ -223,5 +224,52 @@ describe('markCr', () => {
     const task = markCr(TEST_DIR, 'task-001', 'needs_rework');
     assert.equal(task.status, 'blocked');
     assert.equal(task.rework_count, MAX_REWORK_COUNT);
+  });
+});
+
+describe('getTasksFileOverlap', () => {
+  function setupOverlapTasks(tasks) {
+    const file = taskStateFile(TEST_DIR);
+    writeTaskState(file, { idea: 'test', tasks });
+  }
+
+  it('detects overlapping expected_files', () => {
+    setupOverlapTasks({
+      'task-001': { status: 'confirmed', depends_on: [], expected_files: ['src/a.ts', 'src/b.ts'] },
+      'task-002': { status: 'confirmed', depends_on: [], expected_files: ['src/b.ts', 'src/c.ts'] }
+    });
+    const overlaps = getTasksFileOverlap(TEST_DIR, ['task-001', 'task-002']);
+    assert.equal(overlaps.length, 1);
+    assert.equal(overlaps[0].file, 'src/b.ts');
+    assert.deepEqual(overlaps[0].tasks, ['task-001', 'task-002']);
+  });
+
+  it('returns empty when no overlap', () => {
+    setupOverlapTasks({
+      'task-001': { status: 'confirmed', depends_on: [], expected_files: ['src/a.ts'] },
+      'task-002': { status: 'confirmed', depends_on: [], expected_files: ['src/b.ts'] }
+    });
+    const overlaps = getTasksFileOverlap(TEST_DIR, ['task-001', 'task-002']);
+    assert.equal(overlaps.length, 0);
+  });
+
+  it('handles tasks with no expected_files', () => {
+    setupOverlapTasks({
+      'task-001': { status: 'confirmed', depends_on: [], expected_files: ['src/a.ts'] },
+      'task-002': { status: 'confirmed', depends_on: [], expected_files: [] }
+    });
+    const overlaps = getTasksFileOverlap(TEST_DIR, ['task-001', 'task-002']);
+    assert.equal(overlaps.length, 0);
+  });
+
+  it('detects multi-task overlap on same file', () => {
+    setupOverlapTasks({
+      'task-001': { status: 'confirmed', depends_on: [], expected_files: ['src/shared.ts'] },
+      'task-002': { status: 'confirmed', depends_on: [], expected_files: ['src/shared.ts'] },
+      'task-003': { status: 'confirmed', depends_on: [], expected_files: ['src/shared.ts'] }
+    });
+    const overlaps = getTasksFileOverlap(TEST_DIR, ['task-001', 'task-002', 'task-003']);
+    assert.equal(overlaps.length, 1);
+    assert.deepEqual(overlaps[0].tasks, ['task-001', 'task-002', 'task-003']);
   });
 });

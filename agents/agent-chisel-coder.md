@@ -15,7 +15,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 
 | 来源 | 读取 |
 |------|------|
-| TASK | `idea_dir`、`task_id`、`task_file` |
+| TASK | `idea_dir`、`task_id`、`task_file`、`parallel`（可选） |
 | task 文件 | 目标、修改范围、验证方式 |
 | requirement | 目标和约束（快速过一遍） |
 | to-be/implementation-plan.md | 本 task 对应的方案段落 |
@@ -35,7 +35,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 3. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
 4. **验证** — 运行 task 文件中指定的验证命令（如果有的话）
 5. **写 report** — 在 `{idea_dir}/task-reports/{task_id}-report.md` 写变更报告
-6. **标状态** — 成功时 `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {idea_dir} --finish-task {task_id} coded`；失败时用 `failed`
+6. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新（由编排器负责合并后统一更新）；否则：成功时 `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {idea_dir} --finish-task {task_id} coded`，失败时用 `failed`
 
 ## Report 内容
 

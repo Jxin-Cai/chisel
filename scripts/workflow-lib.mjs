@@ -266,6 +266,19 @@ export function allTasksApproved(ideaDir) {
   return tasks.length > 0 && tasks.every(task => task.status === 'approved');
 }
 
+export function getTasksFileOverlap(ideaDir, taskIds) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  const fileMap = {};
+  for (const tid of taskIds) {
+    for (const f of (state.tasks[tid]?.expected_files || [])) {
+      (fileMap[f] ??= []).push(tid);
+    }
+  }
+  return Object.entries(fileMap)
+    .filter(([, tasks]) => tasks.length > 1)
+    .map(([file, tasks]) => ({ file, tasks }));
+}
+
 export function updateTaskStatus(ideaDir, taskId, nextStatus) {
   if (!TASK_STATES.includes(nextStatus)) throw new Error(`invalid task status: ${nextStatus}`);
   const file = taskStateFile(ideaDir);

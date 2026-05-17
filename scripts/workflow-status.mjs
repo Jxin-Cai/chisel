@@ -6,6 +6,7 @@ import {
   getCodedTasksNeedingReview,
   getNextTasks,
   getReworkTasks,
+  getTasksFileOverlap,
   initTaskState,
   initWorkflowState,
   markCr,
@@ -103,6 +104,13 @@ export async function main(argv) {
           all_approved: exists ? allTasksApproved(ideaDir) : false,
           tasks: state.tasks
         });
+        break;
+      }
+      case '--check-overlap': {
+        const taskIds = argv.slice(2).join(',').split(',').filter(Boolean);
+        if (taskIds.length < 2) fail('--check-overlap 需要至少两个 task-id（逗号分隔或空格分隔）');
+        const overlaps = getTasksFileOverlap(ideaDir, taskIds);
+        print({ overlaps, has_overlap: overlaps.length > 0 });
         break;
       }
       default:
