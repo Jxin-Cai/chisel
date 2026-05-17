@@ -53,8 +53,10 @@ function getWikiForbiddenZones(projectRoot) {
 
 function getChangedFiles() {
   try {
-    const output = execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' });
-    return output.split('\n').filter(Boolean);
+    const staged = execFileSync('git', ['diff', '--cached', '--name-only'], { encoding: 'utf8' });
+    const unstaged = execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' });
+    const all = [...new Set([...staged.split('\n'), ...unstaged.split('\n')])].filter(Boolean);
+    return all.filter(f => !f.startsWith('.chisel/'));
   } catch {
     return [];
   }

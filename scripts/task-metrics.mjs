@@ -33,9 +33,10 @@ function main(argv) {
   const scopedFiles = expectedFiles.length > 0 ? expectedFiles : task?.expected_files || [];
   let rows = [];
   try {
-    const args = ['diff', '--numstat'];
+    const args = ['diff', '--numstat', 'HEAD'];
     if (scopedFiles.length > 0) args.push('--', ...scopedFiles);
-    rows = parseNumstat(execFileSync('git', args, { encoding: 'utf8' }));
+    rows = parseNumstat(execFileSync('git', args, { encoding: 'utf8' }))
+      .filter(r => !r.file.startsWith('.chisel/'));
   } catch {
     rows = [];
   }
