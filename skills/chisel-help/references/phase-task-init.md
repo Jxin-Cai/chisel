@@ -4,12 +4,20 @@
 
 ## 流程
 
-1. Read `{IDEA_DIR}/to-be/implementation-plan.md` 中的 task 拆分建议
-2. 在 `{IDEA_DIR}/tasks/` 下创建 task 文件（参考 `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/task-template.md`）
-3. 调用 `workflow-status.mjs --init-tasks`，**推荐使用 JSON 格式**（避免描述或路径中的冒号导致解析错误）：
+1. 确认 `{IDEA_DIR}/to-be/tasks.json` 存在。该文件由 planner 产出，是 task 初始化的唯一结构化输入。
+2. 先做只读校验：
    ```
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --init-tasks <idea-name> \
-     '{"taskId":"task-001","depends_on":[],"description":"描述","file":"tasks/task-001.md","expected_files":["src/a.ts"]}' \
-     '{"taskId":"task-002","depends_on":["task-001"],"description":"描述","file":"tasks/task-002.md","expected_files":["src/b.ts"]}'
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/task-init.mjs {IDEA_DIR} --idea <idea-name> --from to-be/tasks.json --check
    ```
-   `expected_files` 可为空数组但不应省略已知修改范围——并行编码依赖此字段做文件冲突预检。
+3. 校验通过后生成 task 文件和状态机：
+   ```
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/task-init.mjs {IDEA_DIR} --idea <idea-name> --from to-be/tasks.json
+   ```
+4. 运行完整性 gate：
+   ```
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} task-integrity
+   ```
+
+<HARD-GATE>
+不要手工搬运 task 到 workflow-status.mjs。缺字段时回到 plan 阶段修正。已存在 task 文件时默认拒绝覆盖，需用户明确要求 `--force`。
+</HARD-GATE>

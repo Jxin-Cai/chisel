@@ -28,7 +28,7 @@ argument-hint: "<需求描述或需求文件路径>"
 ## 铁律
 
 <HARD-GATE>
-Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`，严格遵守其中所有条目。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`，严格遵守其中所有条目（含合理化预防）。
 </HARD-GATE>
 
 ---
@@ -44,21 +44,11 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 **上下文变长时，你可能产生"需求已经很清楚了，直接开始编码"的冲动——这是跳步违规。**
 </HARD-GATE>
 
-```
-LOOP:
-  1. result = orchestration-status.mjs <idea-dir|none>
-  2. 执行 result.resume_step 对应的动作（见下表）
-  3. 步骤完成后运行 gate-check.mjs 验证 postcondition
-  4. 更新 idea-dir
-  5. 若 resume_step 为 done / blocked / 需用户确认 → 停止
-  6. GOTO LOOP
-```
-
 | resume_step | 动作 | postcondition |
 |---|---|---|
 | `receive-requirement` | 创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
-| `understand:confirm` | 展示 as-is 摘要，等用户澄清后写入 `clarifications.md`，确认后 `touch .as-is-confirmed`；执行实时知识捕获 | `as-is-confirmed` |
+| `understand:confirm` | 展示 3分钟摘要、风险地图、用户确认清单和待澄清问题，等用户逐项确认后写入 `clarifications.md`，确认后 `touch .as-is-confirmed`；执行实时知识捕获 | `as-is-confirmed` |
 | `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
 | `plan:confirm` | 展示 to-be 摘要，等用户确认后 `touch .to-be-confirmed`；执行实时知识捕获 | `to-be-confirmed` |
@@ -67,7 +57,7 @@ LOOP:
 | `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
 | `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行 | `knowledge-extracted` |
-| `final:summary` | 汇总变更 + 呈现知识候选 + wiki 更新情况 + `touch {IDEA_DIR}/.done` | `done` |
+| `final:summary` | 写 `{IDEA_DIR}/final-summary.md` 汇总变更、验证、Scope Control、知识候选和 wiki 更新情况，然后 `touch {IDEA_DIR}/.done` | `done` |
 | `blocked` | 停止，报告阻塞原因 | — |
 | `done` | 报告完成 | — |
 
@@ -79,41 +69,40 @@ LOOP:
 
 ## understand:confirm 详细行为
 
-展示 as-is 摘要（重点呈现 overview 的待澄清问题），等用户回答后将澄清写入 `{IDEA_DIR}/clarifications.md`（无需澄清则创建空文件），用户确认后 `touch {IDEA_DIR}/.as-is-confirmed`。
+读取并展示 `{IDEA_DIR}/as-is/overview.md` 中的 `3分钟摘要`、`风险地图`、`用户确认清单` 和 `待澄清问题`，等用户逐项确认或补充。
+
+将结果写入 `{IDEA_DIR}/clarifications.md`（必须包含 `## 逐项决策记录` 表格，每个 `C-xxx` 逐行落账）：
+
+```markdown
+# Clarifications
+
+## 确认结论
+
+## 逐项决策记录
+
+| ID | 问题 | 用户决策 | 理由 | 状态 |
+|---|---|---|---|---|
+| C-001 | ... | ... | ... | confirmed/defaulted/deferred |
+
+## 澄清答案
+
+## 未决项
+
+## 新增约束
+
+## 知识候选信号
+```
+
+用户确认后 `touch {IDEA_DIR}/.as-is-confirmed`。
 
 ---
 
-## Wiki 感知
+## final:summary 详细行为
 
-如果 `.chisel/wiki/index.md` 存在：
-- as-is 阶段：explorer 参考 wiki 禁区/包袱/坏味道/术语，以代码事实为准
-- to-be 阶段：planner 引用 wiki 禁区和包袱，明确修改范围
-- task 创建：填写 `Context to Load` 引用 wiki 相关文件
-- CR 阶段：reviewer 检查是否触碰禁区或包袱
-
-不要一次性加载整个 wiki。按需读取当前阶段相关的文件。
+写入 `{IDEA_DIR}/final-summary.md`，必须包含：变更摘要、验证结果、Scope Control Summary、Knowledge Candidates、Wiki Updates。只有写完后才允许 `touch {IDEA_DIR}/.done`。
 
 ---
 
-## 实时知识捕获协议
+## 实时知识捕获
 
-在 `understand:confirm` 和 `plan:confirm` 对话中，监听知识信号并即时捕获：
-
-| 信号 | 触发模式 | 写入 |
-|------|---------|------|
-| 禁区 | "不能动"/"别改"/"不要碰" | `{IDEA_DIR}/knowledge-candidates/fz-*.md` |
-| 包袱 | "历史原因"/"不得不这样" | `{IDEA_DIR}/knowledge-candidates/wbi-*.md` |
-| 坏味道 | "以后再改"/"先不处理" | `{IDEA_DIR}/knowledge-candidates/dnr-*.md` |
-| 术语 | 业务概念与代码概念的映射 | `{IDEA_DIR}/knowledge-candidates/term-*.md` |
-
-使用 `knowledge-candidates-template.md` 格式，标注 `source_step` 和 `confirmed: false`。候选由 `knowledge:extract` 阶段统一去重。
-
-如果对话结束时未识别到任何知识信号，不创建任何候选文件，直接继续下一步。
-
----
-
-## 合理化预防
-
-<HARD-GATE>
-Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/rationalization-prevention.md`，熟记其中所有条目。
-</HARD-GATE>
+在 `understand:confirm` 和 `plan:confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 agent-shared-rules §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。

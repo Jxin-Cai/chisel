@@ -2,26 +2,34 @@
 
 当 `resume_step` = `knowledge:extract` 时加载本文件。
 
+## 目标
+
+整理本轮发现的长期知识候选，经用户逐条决策后合入 wiki 或标记终态。阶段完成 = 所有候选进入终态且通过 `knowledge-extracted` gate。
+
 ## 流程
 
-1. 扫描以下来源中与禁区、包袱、坏味道、术语相关的发现：
-   - `{IDEA_DIR}/as-is/knowledge-candidates.md`
-   - `{IDEA_DIR}/task-reports/`
-   - `{IDEA_DIR}/cr/`
-   - `{IDEA_DIR}/knowledge-candidates/` 下的独立候选文件（`fz-*.md`、`wbi-*.md`、`dnr-*.md`、`term-*.md`）
-2. 去重：不同来源的候选按 name/scope 去重
-3. 按需 Read 相关模板（不要一次全加载）：
-   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/knowledge-candidates-template.md`
-   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/forbidden-zones-template.md`
-   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/weird-but-intentional-template.md`
-   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/do-not-refactor-yet-template.md`
-   - `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/glossary-template.md`
-4. 在 `{IDEA_DIR}/knowledge-candidates/` 下补充或更新候选文件
-5. 呈现合并后的候选摘要给用户，逐条确认
-6. 用户确认的候选，创建 JSON 文件（含 `category` 和 `content`），调用：
+1. 扫描候选来源：`{IDEA_DIR}/as-is/knowledge-candidates.md`、`task-reports/`、`cr/`、`knowledge-candidates/*.json`
+2. 去重：同 `category + content` 的 scope/name 合并
+3. 按需 Read 相关模板（knowledge-candidates-template / wiki category 模板）
+4. 在 `{IDEA_DIR}/knowledge-candidates/` 下补充或更新候选 JSON（必须满足 agent-shared-rules §2 要求）
+5. 运行 gate：`node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} knowledge-candidates-exists`
+6. 呈现候选摘要给用户，逐条选择 confirmed / rejected / deferred，用脚本写回：
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --candidate-status {IDEA_DIR} <candidate-file> <confirmed|rejected|deferred> --reason "<原因>"
    ```
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --merge . <candidate.json>
+7. 如 `.chisel/wiki/` 不存在且有 confirmed 候选：`--init .`
+8. 对 confirmed 候选检测冲突后合入：
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --detect-conflicts . <candidate-file>
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --merge . <candidate-file>
    ```
-7. 合入完成后调用 `node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-rule-inject.mjs .` 确保 rule 激活
-8. 如果 `.chisel/wiki/` 不存在且候选内容足够，先调用 `node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --init .` 初始化
-9. 完成后 `touch {IDEA_DIR}/.knowledge-extracted`
+   冲突时需用户确认 `decision.override_conflict_reason`。
+9. 合入完成后：`node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-rule-inject.mjs .`
+10. 所有候选终态后：`touch {IDEA_DIR}/.knowledge-extracted`
+11. 运行 gate：`node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} knowledge-extracted`
+
+## 完成条件
+
+- 每个候选处于终态：`merged`、`rejected` 或 `deferred`
+- `merged` 有 `merge.wiki_file` + `merge.entry_id`；`rejected/deferred` 有 `decision.reason`
+- 不能留下 `proposed` 或 `confirmed` 候选

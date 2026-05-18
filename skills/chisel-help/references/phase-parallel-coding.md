@@ -9,16 +9,16 @@
 
 ## 流程
 
-### 1. 文件冲突预检
+### 1. 文件与影响面冲突预检
 
 ```
 node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --check-overlap task-001,task-002,...
 ```
 
-- 无重叠 → 所有 task 可并行
-- 有重叠 → 重叠 task 必须串行，其余可并行
+- 无 `file_overlap` 且无 `impact_overlap` → 所有 task 可并行
+- 有 `file_overlap` 或 `impact_overlap` → 重叠 task 必须串行，其余可并行
 
-将 task 分为并行批次：同批次内无文件重叠。
+将 task 分为并行批次：同批次内无文件重叠、无 symbol/invariant/shared_state 影响面重叠。
 
 ### 2. 状态前置更新
 
@@ -26,20 +26,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --check-overla
 
 ### 3. 并行派发
 
-对每个 task 使用 Agent 工具，设置 `isolation: "worktree"`：
-
-```
-Agent({
-  description: "Implement <task-id>: <description>",
-  isolation: "worktree",
-  prompt: <构建 coder 完整指令>
-})
-```
-
-**关键规则：**
-- 所有 Agent 调用在同一条消息中发出（Claude Code 并行执行）
-- TASK 输入增加 `"parallel": true`，告知 coder 不要自行更新状态
-- 每个 Agent 在独立 worktree 中工作，互不干扰
+对每个 task 使用 `Agent({ isolation: "worktree" })`，所有 Agent 调用在同一条消息中发出。TASK 输入增加 `"parallel": true`，告知 coder 不要自行更新状态。
 
 ### 4. 合并回收
 
@@ -60,8 +47,4 @@ Agent({
 
 ## 串行降级
 
-以下情况回退到串行执行：
-
-- 所有 task 的 expected_files 有交叉
-- 只有 1 个 task
-- 返修模式（rework task 始终串行）
+所有 task 有文件/影响面交叉、只有 1 个 task、或返修模式时回退到串行执行。

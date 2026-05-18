@@ -13,8 +13,6 @@ changed_files: []
 
 ## 改了什么
 
-逐文件说明修改点。
-
 | 文件 | 修改点 | 是否在 expected_files 内 |
 |---|---|---|
 | | | |
@@ -31,28 +29,54 @@ changed_files: []
 
 ## 验证
 
-记录执行过的命令、结果、失败原因或未验证原因。
-
 ## 风格对齐
 
-说明如何靠齐 as-is 中观察到的现有风格。
+## Wiki Entries Loaded
+
+| Entry | File | Why Loaded | Used For |
+|---|---|---|---|
+| | | | |
+
+## Progressive Load Proof
+
+- Query command：
+- Query summary：
+- category/min-score：
+- load_plan：
+- None matched：
 
 ## Scope Control
 
-### Touched Forbidden Zones
+### Scope Check Proof
 
-- [ ] No
-- [ ] Yes，说明授权来源和影响：
+- Command：`node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`
+- Result：pass | fail
+- schema_version：3
+- changed_files_count：
+- violations_count：
+- forbidden_symbol_hits_count：
 
-### Touched Weird But Intentional Areas
+#### Scope Check JSON Summary
 
-- [ ] No
-- [ ] Yes，说明是否保持原行为：
+粘贴 scope-check.mjs 的完整 JSON 输出。
 
-### Refactored Smelly Code
+#### Hit Proofs Summary
 
-- [ ] No
-- [ ] Yes，说明为什么本 task 已授权：
+| File | Expected proof | Forbidden proof | Symbol proof | Status |
+|---|---|---|---|---|
+| | | | | |
+
+#### Invariant Proofs
+
+| Invariant | Proof | Result |
+|---|---|---|
+| | | pass / fail |
+
+## Rework Resolution Matrix
+
+| CR ID | 修改文件 | 处理方式 | 验证结果 |
+|---|---|---|---|
+| | | | |
 
 ## Knowledge Candidates
 

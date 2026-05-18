@@ -52,3 +52,14 @@ gate 不通过时不能继续。
 2. 脚本输出（orchestration-status / gate-check）
 3. 当前 skill 指令
 4. agent 默认行为
+
+## 8. 合理化预防
+
+长上下文下你可能产生以下"合理"冲动——全部是跳步违规：
+
+- 跳 as-is / 用户确认 / AI 输入版 / 独立 CR / report / 状态机步骤
+- 先 code 再补 task（task 文件是 coder 的输入契约）
+- gate pass 后跨步插入额外工作
+- 文件不写只靠上下文（compaction 会截断）
+- 违规并行（只有 `--next-tasks` 返回的无依赖 task 才能并行）
+- 自动合入 wiki（必须用户逐条确认）
