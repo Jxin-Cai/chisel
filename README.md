@@ -96,6 +96,16 @@ claude plugin details chisel@chisel
 
 `chisel` 不允许跳过 as-is 和 to-be 确认；每一阶段都由 `scripts/orchestration-status.mjs` 判定恢复点，并由 `scripts/gate-check.mjs` 校验 postcondition。
 
+### 局部回退
+
+如果某个阶段产物需要重做，不要手工删除状态文件或 marker。先预览回退影响：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs .chisel/<idea-name> --rollback-step plan:design --dry-run
+```
+
+确认后去掉 `--dry-run` 执行。支持回退到 `understand:confirm`、`understand:generate-ai-input`、`plan:design`、`plan:confirm`、`tasks:init`、`implement:code`、`review:cr`、`knowledge:extract`、`final:summary`。rollback 只清理白名单内运行态产物，不删除业务源码、长期 wiki 或 `knowledge-candidates/` 内容，并会写入 audit log。
+
 ## 主要产物
 
 ### 人类理解版 as-is

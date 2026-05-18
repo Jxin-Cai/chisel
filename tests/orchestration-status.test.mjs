@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeTaskState, taskStateFile } from '../scripts/workflow-lib.mjs';
+import { rollbackWorkflow, writeTaskState, taskStateFile } from '../scripts/workflow-lib.mjs';
 
 const TEST_DIR = join(import.meta.dirname, '.tmp-test-orchestration-status');
 const SCRIPT = join(import.meta.dirname, '../scripts/orchestration-status.mjs');
@@ -308,5 +308,31 @@ describe('orchestration-status knowledge extraction', () => {
 
     assert.match(output, /resume_step: done/);
     assert.match(output, /in_worktree: (true|false)/);
+  });
+
+  it('returns to plan design after rollback removes to-be artifacts', () => {
+    writeCompletePreKnowledgeFlow();
+    mkdirSync(join(TEST_DIR, 'knowledge-candidates'), { recursive: true });
+    writeFile('.knowledge-extracted', '');
+    writeFile('.done', '');
+    writeFinalSummary();
+    rollbackWorkflow(TEST_DIR, 'plan:design');
+
+    const output = runStatus();
+
+    assert.match(output, /resume_step: plan:design/);
+  });
+
+  it('returns to final summary after rollback removes done artifacts', () => {
+    writeCompletePreKnowledgeFlow();
+    mkdirSync(join(TEST_DIR, 'knowledge-candidates'), { recursive: true });
+    writeFile('.knowledge-extracted', '');
+    writeFile('.done', '');
+    writeFinalSummary();
+    rollbackWorkflow(TEST_DIR, 'final:summary');
+
+    const output = runStatus();
+
+    assert.match(output, /resume_step: final:summary/);
   });
 });

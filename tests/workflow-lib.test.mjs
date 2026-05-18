@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   readTaskState,
@@ -17,6 +17,7 @@ import {
   taskStateFile,
   getTasksFileOverlap,
   getTasksImpactOverlap,
+  rollbackWorkflow,
   MAX_REWORK_COUNT
 } from '../scripts/workflow-lib.mjs';
 
@@ -226,6 +227,143 @@ describe('markCr', () => {
     const task = markCr(TEST_DIR, 'task-001', 'needs_rework');
     assert.equal(task.status, 'blocked');
     assert.equal(task.rework_count, MAX_REWORK_COUNT);
+  });
+});
+
+describe('workflow rollback', () => {
+  function write(rel, content = '') {
+    const file = join(TEST_DIR, rel);
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, content);
+  }
+
+  function setupWorkflowState() {
+    write('workflow-state.yaml', [
+      'idea: test',
+      'started_at: 2026-05-19T00:00:00.000Z',
+      'last_updated_at: 2026-05-19T00:00:00.000Z',
+      'current_step: done',
+      'phase:',
+      '  requirement: done',
+      '  understand: done',
+      '  plan: done',
+      '  tasks: done',
+      '  implement: done',
+      '  review: done',
+      '  knowledge: done',
+      '  final: done',
+      ''
+    ].join('\n'));
+  }
+
+  function setupTaskState(status = 'approved') {
+    writeTaskState(taskStateFile(TEST_DIR), {
+      idea: 'test',
+      tasks: {
+        'task-001': { status, depends_on: [], expected_files: ['src/a.ts'], rework_count: 1, changed_files: ['src/a.ts'], loc_added: 2, loc_deleted: 1 }
+      }
+    });
+  }
+
+  function writeLateArtifacts() {
+    write('requirement.md', 'req');
+    write('as-is/overview.md', 'as-is');
+    write('as-is/ai-input/facts.md', 'facts');
+    write('clarifications.json', '{}');
+    write('clarifications.md', 'clarifications');
+    write('confirmations/as-is.json', '{}');
+    write('to-be/implementation-plan.md', 'plan');
+    write('to-be/tasks.json', '{}');
+    write('to-be/traceability-matrix.json', '{}');
+    write('confirmations/to-be.json', '{}');
+    write('.to-be-confirmed', '');
+    write('tasks/task-001.md', 'task');
+    write('task-reports/task-001-report.md', 'report');
+    write('cr/task-001-cr.md', 'cr');
+    write('knowledge-candidates/fz-001.json', '{}');
+    write('.knowledge-extracted', '');
+    write('final-summary.md', 'summary');
+    write('.done', '');
+  }
+
+  it('dry-run previews rollback without changing files or audit log', () => {
+    setupWorkflowState();
+    setupTaskState('approved');
+    writeLateArtifacts();
+    const result = rollbackWorkflow(TEST_DIR, 'plan:design', { dryRun: true });
+    assert.equal(result.rolled_back, false);
+    assert.equal(result.dry_run, true);
+    assert.ok(result.removed.includes('to-be'));
+    assert.equal(existsSync(join(TEST_DIR, 'to-be/implementation-plan.md')), true);
+    assert.equal(existsSync(join(TEST_DIR, 'audit-log.jsonl')), false);
+    const stateText = readFileSync(join(TEST_DIR, 'workflow-state.yaml'), 'utf8');
+    assert.match(stateText, /current_step: done/);
+  });
+
+  it('rolls back to plan:design by removing to-be and later artifacts', () => {
+    setupWorkflowState();
+    setupTaskState('approved');
+    writeLateArtifacts();
+    const result = rollbackWorkflow(TEST_DIR, 'plan:design');
+    assert.equal(result.rolled_back, true);
+    assert.equal(existsSync(join(TEST_DIR, 'to-be')), false);
+    assert.equal(existsSync(join(TEST_DIR, 'task-workflow-state.yaml')), false);
+    assert.equal(existsSync(join(TEST_DIR, 'task-reports')), false);
+    assert.equal(existsSync(join(TEST_DIR, 'cr')), false);
+    assert.equal(existsSync(join(TEST_DIR, 'as-is/ai-input/facts.md')), true);
+    assert.match(readFileSync(join(TEST_DIR, 'workflow-state.yaml'), 'utf8'), /current_step: plan:design/);
+  });
+
+  it('rolls back to implement:code and resets later task states to confirmed', () => {
+    setupWorkflowState();
+    setupTaskState('approved');
+    writeLateArtifacts();
+    const result = rollbackWorkflow(TEST_DIR, 'implement:code');
+    assert.deepEqual(result.task_resets, [{ task_id: 'task-001', from: 'approved', to: 'confirmed' }]);
+    assert.equal(existsSync(join(TEST_DIR, 'task-reports')), false);
+    assert.equal(existsSync(join(TEST_DIR, 'cr')), false);
+    const state = readTaskState(taskStateFile(TEST_DIR));
+    assert.equal(state.tasks['task-001'].status, 'confirmed');
+    assert.deepEqual(state.tasks['task-001'].changed_files, []);
+    assert.equal(state.tasks['task-001'].loc_added, 0);
+  });
+
+  it('rolls back to review:cr and resets review results to coded', () => {
+    setupWorkflowState();
+    setupTaskState('needs_rework');
+    writeLateArtifacts();
+    const result = rollbackWorkflow(TEST_DIR, 'review:cr');
+    assert.deepEqual(result.task_resets, [{ task_id: 'task-001', from: 'needs_rework', to: 'coded' }]);
+    assert.equal(existsSync(join(TEST_DIR, 'cr')), false);
+    const state = readTaskState(taskStateFile(TEST_DIR));
+    assert.equal(state.tasks['task-001'].status, 'coded');
+  });
+
+  it('rolls back to knowledge:extract without deleting knowledge candidates', () => {
+    setupWorkflowState();
+    setupTaskState('approved');
+    writeLateArtifacts();
+    rollbackWorkflow(TEST_DIR, 'knowledge:extract');
+    assert.equal(existsSync(join(TEST_DIR, 'knowledge-candidates/fz-001.json')), true);
+    assert.equal(existsSync(join(TEST_DIR, '.knowledge-extracted')), false);
+    assert.equal(existsSync(join(TEST_DIR, 'final-summary.md')), false);
+    assert.equal(existsSync(join(TEST_DIR, '.done')), false);
+  });
+
+  it('rejects unsupported rollback steps', () => {
+    assert.throws(() => rollbackWorkflow(TEST_DIR, 'receive-requirement'), /unsupported rollback step/);
+  });
+
+  it('writes rollback audit log for actual rollback', () => {
+    setupWorkflowState();
+    setupTaskState('approved');
+    writeLateArtifacts();
+    rollbackWorkflow(TEST_DIR, 'final:summary');
+    const lines = readFileSync(join(TEST_DIR, 'audit-log.jsonl'), 'utf8').trim().split('\n');
+    const entry = JSON.parse(lines.at(-1));
+    assert.equal(entry.type, 'rollback');
+    assert.equal(entry.to_step, 'final:summary');
+    assert.deepEqual(entry.removed, ['final-summary.md', '.done']);
   });
 });
 

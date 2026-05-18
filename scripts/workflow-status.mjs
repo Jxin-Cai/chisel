@@ -12,6 +12,7 @@ import {
   initWorkflowState,
   markCr,
   readTaskState,
+  rollbackWorkflow,
   taskStateFile,
   updateTaskStatus
 } from './workflow-lib.mjs';
@@ -88,6 +89,13 @@ export async function main(argv) {
         if (!['approved', 'needs_rework', 'blocked'].includes(result)) fail('--mark-cr 仅支持 approved|needs_rework|blocked');
         const task = markCr(ideaDir, taskId, result);
         print({ updated: true, task_id: taskId, status: task.status, rework_count: task.rework_count || 0 });
+        break;
+      }
+      case '--rollback-step': {
+        const step = argv[2];
+        const dryRun = argv.includes('--dry-run');
+        if (!step) fail('--rollback-step 需要 step');
+        print(rollbackWorkflow(ideaDir, step, { dryRun }));
         break;
       }
       case '--summary':

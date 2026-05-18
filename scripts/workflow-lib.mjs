@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 import { appendAuditLog } from './audit-log.mjs';
@@ -342,6 +342,151 @@ export function markCr(ideaDir, taskId, result) {
   writeTaskState(file, state);
   appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from: current, to: task.status, detail: { cr_result: result, rework_count: task.rework_count || 0 } });
   return task;
+}
+
+const ROLLBACK_STEPS = {
+  'understand:confirm': {
+    remove: [
+      'clarifications.json',
+      'clarifications.md',
+      'confirmations/as-is.json',
+      '.as-is-confirmed',
+      'as-is/ai-input',
+      'to-be',
+      'confirmations/to-be.json',
+      '.to-be-confirmed',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'understand:generate-ai-input': {
+    remove: [
+      'as-is/ai-input',
+      'to-be',
+      'confirmations/to-be.json',
+      '.to-be-confirmed',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'plan:design': {
+    remove: [
+      'to-be',
+      'confirmations/to-be.json',
+      '.to-be-confirmed',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'plan:confirm': {
+    remove: [
+      'confirmations/to-be.json',
+      '.to-be-confirmed',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'tasks:init': {
+    remove: [
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'implement:code': {
+    remove: ['task-reports', 'cr', '.knowledge-extracted', 'final-summary.md', '.done'],
+    reset: {
+      from: ['coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'],
+      to: 'confirmed'
+    }
+  },
+  'review:cr': {
+    remove: ['cr', '.knowledge-extracted', 'final-summary.md', '.done'],
+    reset: {
+      from: ['reviewing', 'approved', 'needs_rework', 'repairing', 'blocked'],
+      to: 'coded'
+    }
+  },
+  'knowledge:extract': {
+    remove: ['.knowledge-extracted', 'final-summary.md', '.done']
+  },
+  'final:summary': {
+    remove: ['final-summary.md', '.done']
+  }
+};
+
+export function rollbackPlan(ideaDir, stepId) {
+  const spec = ROLLBACK_STEPS[stepId];
+  if (!spec) throw new Error(`unsupported rollback step: ${stepId}`);
+  const removed = [];
+  const missing = [];
+  for (const rel of spec.remove || []) {
+    if (existsSync(join(ideaDir, rel))) removed.push(rel);
+    else missing.push(rel);
+  }
+  const taskResets = plannedTaskResets(ideaDir, spec.reset);
+  return { to_step: stepId, removed, missing, task_resets: taskResets };
+}
+
+function plannedTaskResets(ideaDir, reset) {
+  if (!reset || !existsSync(taskStateFile(ideaDir))) return [];
+  const state = readTaskState(taskStateFile(ideaDir));
+  return Object.entries(state.tasks || {}).flatMap(([taskId, task]) => {
+    const current = task.status || 'pending';
+    if (!reset.from.includes(current)) return [];
+    return [{ task_id: taskId, from: current, to: reset.to }];
+  });
+}
+
+function applyTaskResets(ideaDir, taskResets) {
+  if (taskResets.length === 0 || !existsSync(taskStateFile(ideaDir))) return;
+  const state = readTaskState(taskStateFile(ideaDir));
+  for (const reset of taskResets) {
+    if (!state.tasks[reset.task_id]) continue;
+    state.tasks[reset.task_id].status = reset.to;
+    if (reset.to === 'confirmed') {
+      state.tasks[reset.task_id].changed_files = [];
+      state.tasks[reset.task_id].loc_added = 0;
+      state.tasks[reset.task_id].loc_deleted = 0;
+    }
+  }
+  writeTaskState(taskStateFile(ideaDir), state);
+}
+
+export function rollbackWorkflow(ideaDir, stepId, { dryRun = false } = {}) {
+  const plan = rollbackPlan(ideaDir, stepId);
+  if (dryRun) return { rolled_back: false, dry_run: true, ...plan };
+  for (const rel of plan.removed) {
+    rmSync(join(ideaDir, rel), { recursive: true, force: true });
+  }
+  applyTaskResets(ideaDir, plan.task_resets);
+  updateWorkflowPhase(ideaDir, stepId);
+  appendAuditLog(ideaDir, { type: 'rollback', to_step: stepId, removed: plan.removed, missing: plan.missing, task_resets: plan.task_resets });
+  return { rolled_back: true, dry_run: false, ...plan };
 }
 
 export function resolveProjectName(projectRoot) {

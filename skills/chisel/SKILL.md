@@ -66,6 +66,16 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 当同时存在待 CR、待返修和待编码任务时，优先清空 review / rework backlog，再进入新 coding。
 
+### 失败恢复
+
+不要手工删除 `.as-is-confirmed`、`.to-be-confirmed`、`task-workflow-state.yaml`、report 或 CR 文件来回退流程。需要回到指定阶段时先预览：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-step <step> --dry-run
+```
+
+确认清理范围后再执行不带 `--dry-run` 的命令。rollback 只清理白名单内的 chisel 运行态产物，并写入 audit log。
+
 ---
 
 ## understand:confirm 详细行为
