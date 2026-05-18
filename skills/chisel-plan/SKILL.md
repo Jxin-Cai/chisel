@@ -21,5 +21,5 @@ argument-hint: "<idea-name>"
 <HARD-GATE>
 planner 必须产出 to-be/implementation-plan.md。
 方案中必须包含 task 拆分建议。
-不要创建 `.to-be-confirmed`。
+不要创建 `.to-be-confirmed`，也不要创建 `confirmations/to-be.json`；to-be 确认凭据只能由主编排器在用户明确确认后写入。
 </HARD-GATE>

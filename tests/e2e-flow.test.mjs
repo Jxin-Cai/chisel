@@ -147,6 +147,14 @@ flowchart TD
     { id: 'F-001', claim: '用户创建进入 UserService', status: 'confirmed', evidence: [{ file: 'src/user.ts', line_start: 10, line_end: 20, kind: 'code' }] },
     { id: 'F-002', claim: '旧接口响应字段需要保持', status: 'confirmed', evidence: [{ file: 'src/user.ts', line_start: 28, line_end: 35, kind: 'code' }] }
   ] }, null, 2));
+  writeFile('as-is/coverage-matrix.json', JSON.stringify({
+    schema_version: 1,
+    entrypoints: [{ id: 'E-001', type: 'http', name: '创建用户入口', location: { file: 'src/user.ts', line_start: 10 }, covered_by_facts: ['F-001'] }],
+    links: [{ id: 'L-001', from: '用户入口', to: 'UserService', kind: 'sync-call', evidence: [{ file: 'src/user.ts', line_start: 10 }], covered_by_facts: ['F-001'] }],
+    data: [{ id: 'D-001', entity: 'user', operation: 'write', evidence: [{ file: 'src/user.ts', line_start: 18 }] }],
+    side_effects: [{ id: 'S-001', kind: 'db_write', description: '创建用户', evidence: [{ file: 'src/user.ts', line_start: 18 }] }],
+    not_applicable: {}
+  }, null, 2));
   writeFile('as-is/knowledge-candidates.md', '# Knowledge Candidates\n\n暂无新增候选。\n');
 }
 
@@ -169,7 +177,7 @@ function writeAiInputArtifacts() {
   writeFile('as-is/ai-input/call-graph.md', '# Call Graph\n\nClient -> Entry -> UserService\n');
   writeFile('as-is/ai-input/data-schema.md', '# Data Schema\n\n本需求不涉及数据结构变化。\n');
   writeFile('as-is/ai-input/api-surface.md', '# API Surface\n\n创建用户接口保持响应字段不变。\n');
-  writeFile('as-is/ai-input/constraints.md', `${sourceCoverage('as-is/overview.md + clarifications.md', 'C-001')}## 禁区
+  writeFile('as-is/ai-input/constraints.md', `${sourceCoverage('as-is/overview.md + clarifications.json + confirmations/as-is.json', 'C-001')}## 禁区
 
 - 不修改旧接口响应字段。
 
@@ -185,7 +193,7 @@ function writeAiInputArtifacts() {
 
 - 澄清：旧接口响应字段必须保持。
 `);
-  writeFile('as-is/ai-input/change-surface.md', `${sourceCoverage('as-is/core-walkthrough.md', 'F-001')}## Safe-to-Change Areas
+  writeFile('as-is/ai-input/change-surface.md', `${sourceCoverage('as-is/core-walkthrough.md + as-is/coverage-matrix.json', 'F-001, E-001, L-001, D-001, S-001')}## Safe-to-Change Areas
 
 | 区域 | 文件范围 | 修改类型 | 注意事项 |
 |---|---|---|---|
@@ -435,6 +443,26 @@ describe('chisel e2e artifact flow', () => {
     writeAsIsArtifacts();
     assertGatePass('as-is-complete');
 
+    writeFile('clarifications.json', JSON.stringify({
+      schema_version: 1,
+      source_step: 'understand:confirm',
+      confirmed_at: '2026-05-18T00:00:00.000Z',
+      summary: '用户确认 AS_IS 理解正确。',
+      decisions: [{ id: 'C-001', question: '旧接口响应字段是否必须保持', decision: '必须保持', rationale: '旧客户端依赖', status: 'confirmed', source: 'as-is/overview.md#用户确认清单' }],
+      answers: [{ question: '旧接口响应字段是否必须保持？', answer: '必须保持' }],
+      unresolved: [],
+      constraints_added: [{ description: '旧接口响应字段必须保持', evidence: '用户确认 C-001' }],
+      knowledge_signals: []
+    }, null, 2));
+    writeFile('confirmations/as-is.json', JSON.stringify({
+      schema_version: 1,
+      phase: 'as-is',
+      status: 'confirmed',
+      confirmed_at: '2026-05-18T00:00:00.000Z',
+      confirmed_by: 'user',
+      source_files: ['as-is/overview.md', 'as-is/core-walkthrough.md', 'as-is/evidence-index.md', 'as-is/evidence-ledger.json', 'as-is/coverage-matrix.json', 'clarifications.json'],
+      checklist: [{ id: 'C-001', status: 'confirmed' }]
+    }, null, 2));
     writeFile('clarifications.md', `# Clarifications
 
 ## 确认结论
@@ -463,7 +491,6 @@ describe('chisel e2e artifact flow', () => {
 
 无。
 `);
-    writeFile('.as-is-confirmed', '');
     assertGatePass('as-is-confirmed');
 
     writeAiInputArtifacts();
@@ -471,7 +498,16 @@ describe('chisel e2e artifact flow', () => {
 
     writeToBeArtifacts();
     assertGatePass('to-be-exists');
-    writeFile('.to-be-confirmed', '');
+    writeFile('confirmations/to-be.json', JSON.stringify({
+      schema_version: 1,
+      phase: 'to-be',
+      status: 'confirmed',
+      confirmed_at: '2026-05-18T00:00:00.000Z',
+      confirmed_by: 'user',
+      source_files: ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json'],
+      task_acknowledgement: { task_ids: ['task-001'], dependencies_reviewed: true, verification_reviewed: true },
+      risk_acknowledgement: { reviewed: true, notes: '低风险' }
+    }, null, 2));
     assertGatePass('to-be-confirmed');
 
     const initResult = initFromTasksJson({ ideaDir: TEST_DIR, ideaName: 'user-validation', from: 'to-be/tasks.json', check: false, force: false });

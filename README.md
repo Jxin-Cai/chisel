@@ -83,10 +83,10 @@ claude plugin details chisel@chisel
 
 1. **接收需求**：保存 `requirement.md`。
 2. **理解 as-is**：只读扫描需求相关代码，产出面向人类理解的 as-is 文档。
-3. **用户确认 as-is**：展示 3 分钟摘要、风险地图、用户确认清单和待澄清问题，写入 `clarifications.md`。
+3. **用户确认 as-is**：展示 3 分钟摘要、风险地图、用户确认清单和待澄清问题，写入 `clarifications.json`、`clarifications.md` 和 `confirmations/as-is.json`。
 4. **生成 AI 输入版 as-is**：把人类版文档提炼为结构化 `as-is/ai-input/`。
-5. **设计 to-be 方案**：生成 `to-be/implementation-plan.md` 和机器可读 `to-be/tasks.json`。
-6. **用户确认 to-be**：确认目标行为、非目标行为、允许/禁止修改范围。
+5. **设计 to-be 方案**：生成 `to-be/implementation-plan.md`、机器可读 `to-be/tasks.json` 和 `to-be/traceability-matrix.json`。
+6. **用户确认 to-be**：确认目标行为、非目标行为、允许/禁止修改范围，写入 `confirmations/to-be.json`。
 7. **初始化 task**：从 `tasks.json` 生成 task 文件和 `task-workflow-state.yaml`。
 8. **实现 task**：coder agent 按 confirmed task 编码，只改 expected files 范围内内容。
 9. **架构师 CR**：reviewer agent 只读审查，复跑验证或说明不可执行原因。
@@ -105,6 +105,8 @@ claude plugin details chisel@chisel
   overview.md
   core-walkthrough.md
   evidence-index.md
+  evidence-ledger.json
+  coverage-matrix.json
   knowledge-candidates.md
   details/...
 ```
@@ -116,6 +118,7 @@ claude plugin details chisel@chisel
 - `风险地图`：只列与本次需求相关的理解和修改风险。
 - `常见误解点`：防止用户或 AI 误读遗留行为。
 - `用户确认清单`：让 confirm 阶段可逐项确认。
+- `coverage-matrix.json`：结构化记录入口、链路、数据和副作用覆盖；不涉及的维度必须说明原因。
 
 ### AI 输入版 as-is
 
@@ -137,12 +140,17 @@ claude plugin details chisel@chisel
 .chisel/<idea-name>/to-be/
   implementation-plan.md
   tasks.json
+  traceability-matrix.json
+.chisel/<idea-name>/confirmations/
+  as-is.json
+  to-be.json
+.chisel/<idea-name>/clarifications.json
 .chisel/<idea-name>/tasks/
   task-001.md
 .chisel/<idea-name>/task-workflow-state.yaml
 ```
 
-`tasks.json` 是机器可读 task 来源，`task-init.mjs` 会用它生成 task 文件和状态机，减少手工搬运导致的 scope、验收标准、验证命令丢失。
+`clarifications.json` 和 `confirmations/*.json` 是确认阶段的结构化凭据；旧 `.as-is-confirmed` / `.to-be-confirmed` marker 仅用于历史运行目录兼容。`tasks.json` 是机器可读 task 来源，`task-init.mjs` 会用它生成 task 文件和状态机，减少手工搬运导致的 scope、验收标准、验证命令丢失。
 
 ### Report 与 CR
 

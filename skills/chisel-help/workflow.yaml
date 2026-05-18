@@ -5,11 +5,13 @@ description: 遗留系统新增功能工作流
 phases:
   - id: understand
     order: 1
-    description: 理解 as-is：需求驱动裁剪，主干（overview、core-walkthrough、evidence-index、knowledge-candidates）必产出，枝干按需
+    description: 理解 as-is：需求驱动裁剪，主干（overview、core-walkthrough、evidence-index、evidence-ledger、coverage-matrix、knowledge-candidates）必产出，枝干按需
     outputs:
       - as-is/overview.md
       - as-is/core-walkthrough.md
       - as-is/evidence-index.md
+      - as-is/evidence-ledger.json
+      - as-is/coverage-matrix.json
       - as-is/knowledge-candidates.md
 
   - id: plan
@@ -18,6 +20,9 @@ phases:
     requires: [understand]
     outputs:
       - to-be/implementation-plan.md
+      - to-be/tasks.json
+      - to-be/traceability-matrix.json
+    optional_outputs:
       - to-be/impact-analysis.md
       - to-be/data-change-plan.md
       - to-be/api-change-plan.md

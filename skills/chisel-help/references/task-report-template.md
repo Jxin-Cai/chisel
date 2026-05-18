@@ -72,6 +72,8 @@ changed_files: []
 |---|---|---|
 | | | pass / fail |
 
+必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须填写实际验证证据，不得为空或占位；`Result` 只能是 `pass` 或 `fail`。
+
 ## Rework Resolution Matrix
 
 | CR ID | 修改文件 | 处理方式 | 验证结果 |

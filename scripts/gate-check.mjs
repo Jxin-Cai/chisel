@@ -2,7 +2,9 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { MAX_REWORK_COUNT, allTasksApproved, readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
+import { validateTasksDocument } from './task-init.mjs';
 import { appendAuditLog } from './audit-log.mjs';
+import { getTaskScope } from './scope-check.mjs';
 
 function hasSection(text, heading) {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -14,6 +16,7 @@ const AS_IS_MAIN_FILES = [
   'as-is/core-walkthrough.md',
   'as-is/evidence-index.md',
   'as-is/evidence-ledger.json',
+  'as-is/coverage-matrix.json',
   'as-is/knowledge-candidates.md'
 ];
 
@@ -110,19 +113,55 @@ function confirmationItemIds(ideaDir) {
   return [...new Set([...checklist.matchAll(/\bC-\d{3}\b/g)].map(match => match[0]))];
 }
 
+const DECISION_STATUSES = new Set(['confirmed', 'defaulted', 'deferred']);
+
 function validateClarificationDecisions(ideaDir) {
   const ids = confirmationItemIds(ideaDir);
   if (ids.length === 0) return '';
   const text = readText(join(ideaDir, 'clarifications.md'));
   const body = sectionText(text, '逐项决策记录');
   if (!body) return 'clarifications.md missing ## 逐项决策记录';
-  const validStatuses = new Set(['confirmed', 'defaulted', 'deferred']);
   for (const id of ids) {
     const row = body.split('\n').find(line => line.includes(id));
     if (!row) return `clarifications.md missing decision for ${id}`;
     const cells = row.split('|').map(cell => cell.trim()).filter(Boolean);
     const status = cells.at(-1);
-    if (!validStatuses.has(status)) return `${id} decision status must be confirmed/defaulted/deferred`;
+    if (!DECISION_STATUSES.has(status)) return `${id} decision status must be confirmed/defaulted/deferred`;
+  }
+  return '';
+}
+
+function decisionIds(decisions = []) {
+  return new Set(decisions.map(decision => decision?.id).filter(Boolean));
+}
+
+function validateClarificationsJson(ideaDir) {
+  const file = join(ideaDir, 'clarifications.json');
+  if (!existsSync(file)) return 'clarifications.json missing';
+  const parsed = readJsonFile(file);
+  if (parsed.error) return `clarifications.json invalid JSON: ${parsed.error}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1) return 'clarifications.json schema_version must be 1';
+  if (doc.source_step !== 'understand:confirm') return 'clarifications.json source_step must be understand:confirm';
+  if (!doc.confirmed_at || typeof doc.confirmed_at !== 'string') return 'clarifications.json missing confirmed_at';
+  if (!doc.summary || typeof doc.summary !== 'string') return 'clarifications.json missing summary';
+  if (!Array.isArray(doc.decisions)) return 'clarifications.json decisions must be an array';
+  for (const [index, decision] of doc.decisions.entries()) {
+    const label = decision?.id || `decisions[${index}]`;
+    if (!/^C-\d{3}$/.test(decision?.id || '')) return `${label} missing valid C-xxx id`;
+    if (!decision.question || typeof decision.question !== 'string') return `${label} missing question`;
+    if (!decision.decision || typeof decision.decision !== 'string') return `${label} missing decision`;
+    if (!decision.rationale || typeof decision.rationale !== 'string') return `${label} missing rationale`;
+    if (!DECISION_STATUSES.has(decision.status)) return `${label} status must be confirmed/defaulted/deferred`;
+    if (!decision.source || typeof decision.source !== 'string') return `${label} missing source`;
+  }
+  const requiredIds = confirmationItemIds(ideaDir);
+  const actualIds = decisionIds(doc.decisions);
+  for (const id of requiredIds) {
+    if (!actualIds.has(id)) return `clarifications.json missing decision for ${id}`;
+  }
+  for (const field of ['answers', 'unresolved', 'constraints_added', 'knowledge_signals']) {
+    if (doc[field] !== undefined && !Array.isArray(doc[field])) return `clarifications.json ${field} must be an array`;
   }
   return '';
 }
@@ -171,9 +210,21 @@ function validateAiInput(ideaDir) {
   const missingConstraintSections = requiredConstraintSections.filter(section => !constraints.includes(section));
   if (missingConstraintSections.length > 0) return `constraints.md missing sections: ${missingConstraintSections.join(', ')}`;
   if (hasTemplatePlaceholder(constraints)) return 'constraints.md still contains template placeholders';
-  const clarifications = readText(join(ideaDir, 'clarifications.md')).trim();
-  if (clarifications && !constraints.includes('澄清') && !constraints.includes('无新增约束')) {
-    return 'constraints.md must summarize clarifications.md or explicitly state 无新增约束';
+  if (has(ideaDir, 'clarifications.json')) {
+    const parsedClarifications = readJsonFile(join(ideaDir, 'clarifications.json'));
+    if (parsedClarifications.error) return `clarifications.json invalid JSON: ${parsedClarifications.error}`;
+    const decisions = parsedClarifications.value?.decisions || [];
+    const constraintsAdded = parsedClarifications.value?.constraints_added || [];
+    const decisionRefs = decisions.map(decision => decision?.id).filter(Boolean);
+    const hasClarificationSummary = constraints.includes('澄清') || constraints.includes('无新增约束') || decisionRefs.some(id => constraints.includes(id));
+    if ((decisions.length > 0 || constraintsAdded.length > 0) && !hasClarificationSummary) {
+      return 'constraints.md must summarize clarifications.json decisions or explicitly state 无新增约束';
+    }
+  } else {
+    const clarifications = readText(join(ideaDir, 'clarifications.md')).trim();
+    if (clarifications && !constraints.includes('澄清') && !constraints.includes('无新增约束')) {
+      return 'constraints.md must summarize clarifications.md or explicitly state 无新增约束';
+    }
   }
 
   const changeSurface = readText(join(ideaDir, 'as-is/ai-input/change-surface.md'));
@@ -240,7 +291,75 @@ function validateWikiLoadProof(text) {
   return '';
 }
 
-function validateScopeProof(text, mode) {
+function sectionTextAnyDepth(text, heading) {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = text.match(new RegExp(`^#{2,6}\\s+${escaped}[^\\n]*\\n([\\s\\S]*?)(?=^#{2,6}\\s+|(?![\\s\\S]))`, 'm'));
+  return match ? match[1].trim() : '';
+}
+
+function parseMarkdownTableRows(section) {
+  const rows = String(section || '').split('\n')
+    .map(line => line.trim())
+    .filter(line => /^\|.*\|$/.test(line))
+    .map(line => line.split('|').map(cell => cell.trim()).slice(1, -1));
+  const header = rows.find(cells => cells.some(cell => cell === 'Invariant'));
+  if (!header) return { rows: [], columns: new Map() };
+  const columns = new Map(header.map((cell, index) => [cell, index]));
+  const dataRows = rows.filter(cells => cells !== header && !cells.every(cell => /^-+$/.test(cell)));
+  return {
+    columns,
+    rows: dataRows.map(cells => ({
+      invariant: cells[columns.get('Invariant')] || '',
+      proof: cells[columns.get('Proof')] || '',
+      result: cells[columns.get('Result')] || ''
+    }))
+  };
+}
+
+function normalizeInvariant(value) {
+  return String(value || '')
+    .replace(/^[-*]\s*(?:\[[ xX]\]\s*)?/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isBlankProof(value) {
+  const proof = String(value || '').trim();
+  return !proof || PLACEHOLDER_RE.test(proof) || /^(?:-|—|无|N\/?A|TODO|TBD|待补)$/i.test(proof);
+}
+
+function validateInvariantProofs(text, behaviorInvariants = [], { requireAllPass = false } = {}) {
+  const expected = behaviorInvariants.map(normalizeInvariant).filter(Boolean);
+  if (expected.length === 0) return '';
+
+  const section = sectionTextAnyDepth(text, 'Invariant Proofs');
+  if (!section) return 'missing scope proof section: Invariant Proofs';
+  const table = parseMarkdownTableRows(section);
+  for (const column of ['Invariant', 'Proof', 'Result']) {
+    if (!table.columns.has(column)) return 'Invariant Proofs table must include columns: Invariant, Proof, Result';
+  }
+
+  const rowsByInvariant = new Map();
+  for (const row of table.rows) {
+    const invariant = normalizeInvariant(row.invariant);
+    if (!invariant) continue;
+    rowsByInvariant.set(invariant, row);
+    if (isBlankProof(row.proof)) return `invariant proof must be non-empty for: ${invariant}`;
+    if (!/^(pass|fail)$/i.test(String(row.result || '').trim())) return `invariant result must be pass/fail for: ${invariant}`;
+  }
+
+  for (const invariant of expected) {
+    const row = rowsByInvariant.get(invariant);
+    if (!row) return `missing invariant proof: ${invariant}`;
+    if (requireAllPass && String(row.result || '').trim().toLowerCase() !== 'pass') {
+      return 'approved CR must have all invariant results: pass';
+    }
+  }
+
+  return '';
+}
+
+function validateScopeProof(text, mode, { behaviorInvariants = [], requireAllInvariantPass = false } = {}) {
   const hitProofHeading = mode === 'cr' ? 'Hit Proofs Reviewed' : 'Hit Proofs Summary';
   if (!text.includes('scope-check.mjs')) return 'missing scope proof command: scope-check.mjs';
   if (!/Result[：:]\s*(pass|fail)\b/i.test(text)) return 'missing scope proof Result: pass/fail';
@@ -248,30 +367,33 @@ function validateScopeProof(text, mode) {
   if (!/violations_count[：:]\s*\d+\b/.test(text)) return 'missing numeric scope proof violations_count';
   if (/schema_version[：:]\s*3\b/.test(text) && !text.includes('Invariant Proofs')) return 'schema_version 3 scope proof must include Invariant Proofs';
   if (!text.includes(hitProofHeading)) return `missing scope proof section: ${hitProofHeading}`;
-  if (mode === 'cr' && /result:\s*approved\b/i.test(text) && !/Result[：:]\s*pass\b/i.test(text)) {
+  const invariantReason = validateInvariantProofs(text, behaviorInvariants, { requireAllPass: requireAllInvariantPass });
+  if (invariantReason) return invariantReason;
+  if (mode === 'cr' && requireAllInvariantPass && !/Result[：:]\s*pass\b/i.test(text)) {
     return 'approved CR must have scope check Result: pass';
   }
   return '';
 }
 
-function validateTaskReport(reportPath) {
+function validateTaskReport(reportPath, behaviorInvariants = []) {
   const text = readText(reportPath);
   if (!hasRequiredLines(reportPath, ['## 做了什么', '## 改了什么', '## 验证'])) return 'missing required report sections';
   const wikiProofReason = validateWikiLoadProof(text);
   if (wikiProofReason) return wikiProofReason;
-  return validateScopeProof(text, 'report');
+  return validateScopeProof(text, 'report', { behaviorInvariants });
 }
 
-function validateCrFile(crPath, status) {
+function validateCrFile(crPath, status, behaviorInvariants = []) {
   const text = readText(crPath);
   const required = ['## 结论', '## 功能完整度', '## Scope Control', '## Verification', '## Rework Items'];
   const missing = required.filter(section => !hasSection(text, section));
   if (missing.length > 0) return `missing sections: ${missing.join(', ')}`;
   const wikiProofReason = validateWikiLoadProof(text);
   if (wikiProofReason) return wikiProofReason;
-  const scopeProofReason = validateScopeProof(text, 'cr');
+  const crResult = readFrontmatter(text).result || status;
+  const scopeProofReason = validateScopeProof(text, 'cr', { behaviorInvariants, requireAllInvariantPass: crResult === 'approved' });
   if (scopeProofReason) return scopeProofReason;
-  if (status === 'needs_rework' && !/\bCR-\d{3}\b/.test(text)) return 'needs_rework CR must include at least one CR-xxx rework item';
+  if (crResult === 'needs_rework' && !/\bCR-\d{3}\b/.test(text)) return 'needs_rework CR must include at least one CR-xxx rework item';
   return '';
 }
 
@@ -343,7 +465,45 @@ function evidenceLedgerFactIds(ideaDir) {
   return new Set(parsed.value.facts.map(fact => fact.id).filter(Boolean));
 }
 
-function validateTraceabilityMatrix(ideaDir, { requireTaskRefs = false } = {}) {
+function evidenceHasFileLine(evidence) {
+  return Boolean(evidence && typeof evidence.file === 'string' && Number.isInteger(evidence.line_start) && evidence.line_start > 0);
+}
+
+function itemEvidence(item) {
+  if (Array.isArray(item?.evidence)) return item.evidence;
+  return item?.location ? [item.location] : [];
+}
+
+function validateAsIsCoverageMatrix(ideaDir) {
+  const file = join(ideaDir, 'as-is/coverage-matrix.json');
+  if (!existsSync(file)) return 'as-is/coverage-matrix.json missing';
+  const parsed = readJsonFile(file);
+  if (parsed.error) return `as-is/coverage-matrix.json invalid JSON: ${parsed.error}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1) return 'coverage-matrix.json schema_version must be 1';
+  const ledgerIds = evidenceLedgerFactIds(ideaDir);
+  for (const section of ['entrypoints', 'links', 'data', 'side_effects']) {
+    const items = doc?.[section];
+    if (!Array.isArray(items)) return `coverage-matrix.json ${section} must be an array`;
+    const naReason = doc?.not_applicable?.[section];
+    if (items.length === 0 && !String(naReason || '').trim()) return `coverage-matrix.json ${section} must contain items or not_applicable reason`;
+    for (const [index, item] of items.entries()) {
+      const label = `${section}[${index}]`;
+      if (!item?.id || typeof item.id !== 'string') return `${label} missing id`;
+      const hasDescription = ['name', 'description', 'from', 'entity'].some(key => String(item[key] || '').trim());
+      if (!hasDescription) return `${label} missing name/description/from/entity`;
+      const evidence = itemEvidence(item);
+      if (evidence.length === 0) return `${label} missing evidence or location`;
+      const invalidEvidenceIndex = evidence.findIndex(entry => !evidenceHasFileLine(entry));
+      if (invalidEvidenceIndex >= 0) return `${label} evidence[${invalidEvidenceIndex}] missing file or positive line_start`;
+      const unknownFacts = (item.covered_by_facts || []).filter(id => !ledgerIds.has(id));
+      if (unknownFacts.length > 0) return `${label} references unknown facts: ${unknownFacts.join(', ')}`;
+    }
+  }
+  return '';
+}
+
+function validateTraceabilityMatrix(ideaDir, { requireTaskRefs = false, taskIdsOverride = null, traceRefsOverride = null } = {}) {
   const matrixPath = join(ideaDir, 'to-be/traceability-matrix.json');
   if (!existsSync(matrixPath)) return 'to-be/traceability-matrix.json missing';
   const parsed = readJsonFile(matrixPath);
@@ -352,7 +512,7 @@ function validateTraceabilityMatrix(ideaDir, { requireTaskRefs = false } = {}) {
   if (!Array.isArray(items) || items.length === 0) return 'traceability-matrix.json must contain non-empty items array';
   const ids = new Set();
   const state = has(ideaDir, 'task-workflow-state.yaml') ? readTaskState(taskStateFile(ideaDir)) : { tasks: {} };
-  const taskIds = new Set(Object.keys(state.tasks || {}));
+  const taskIds = taskIdsOverride || new Set(Object.keys(state.tasks || {}));
   for (const [index, item] of items.entries()) {
     const label = item?.id || `items[${index}]`;
     if (!item?.id || typeof item.id !== 'string') return `${label} missing id`;
@@ -366,7 +526,13 @@ function validateTraceabilityMatrix(ideaDir, { requireTaskRefs = false } = {}) {
       if (missingTasks.length > 0) return `${label} references unknown tasks: ${missingTasks.join(', ')}`;
     }
   }
-  if (requireTaskRefs) {
+  if (traceRefsOverride) {
+    for (const [taskId, refs] of traceRefsOverride.entries()) {
+      if (!Array.isArray(refs) || refs.length === 0) return `${taskId} missing trace_refs`;
+      const missingRefs = refs.filter(ref => !ids.has(ref));
+      if (missingRefs.length > 0) return `${taskId} references unknown trace_refs: ${missingRefs.join(', ')}`;
+    }
+  } else if (requireTaskRefs) {
     for (const [taskId, task] of Object.entries(state.tasks || {})) {
       const taskPath = join(ideaDir, task.file || `tasks/${taskId}.md`);
       const fm = existsSync(taskPath) ? readFrontmatter(readText(taskPath)) : {};
@@ -376,6 +542,80 @@ function validateTraceabilityMatrix(ideaDir, { requireTaskRefs = false } = {}) {
       if (missingRefs.length > 0) return `${taskId} references unknown trace_refs: ${missingRefs.join(', ')}`;
     }
   }
+  return '';
+}
+
+function validateTasksJsonAgainstTraceability(ideaDir) {
+  const tasksPath = join(ideaDir, 'to-be/tasks.json');
+  if (!existsSync(tasksPath)) return 'to-be/tasks.json missing';
+  const parsed = readJsonFile(tasksPath);
+  if (parsed.error) return `to-be/tasks.json invalid JSON: ${parsed.error}`;
+  let tasks;
+  try {
+    tasks = validateTasksDocument(parsed.value);
+  } catch (error) {
+    return `to-be/tasks.json ${error.message}`;
+  }
+  const taskIds = new Set(tasks.map(task => task.task_id));
+  const traceRefs = new Map(tasks.map(task => [task.task_id, task.trace_refs]));
+  return validateTraceabilityMatrix(ideaDir, { requireTaskRefs: true, taskIdsOverride: taskIds, traceRefsOverride: traceRefs });
+}
+
+function validateAsIsConfirmation(ideaDir) {
+  const file = join(ideaDir, 'confirmations/as-is.json');
+  if (!existsSync(file)) return 'confirmations/as-is.json missing';
+  const parsed = readJsonFile(file);
+  if (parsed.error) return `confirmations/as-is.json invalid JSON: ${parsed.error}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1) return 'confirmations/as-is.json schema_version must be 1';
+  if (doc.phase !== 'as-is') return 'confirmations/as-is.json phase must be as-is';
+  if (doc.status !== 'confirmed') return 'confirmations/as-is.json status must be confirmed';
+  if (!doc.confirmed_at || typeof doc.confirmed_at !== 'string') return 'confirmations/as-is.json missing confirmed_at';
+  if (!doc.confirmed_by || typeof doc.confirmed_by !== 'string') return 'confirmations/as-is.json missing confirmed_by';
+  if (!Array.isArray(doc.source_files)) return 'confirmations/as-is.json source_files must be an array';
+  for (const source of ['as-is/overview.md', 'as-is/core-walkthrough.md', 'as-is/evidence-index.md', 'as-is/evidence-ledger.json', 'as-is/coverage-matrix.json', 'clarifications.json']) {
+    if (!doc.source_files.includes(source)) return `confirmations/as-is.json source_files missing ${source}`;
+  }
+  if (!Array.isArray(doc.checklist)) return 'confirmations/as-is.json checklist must be an array';
+  const checklistById = new Map(doc.checklist.map(item => [item?.id, item]));
+  for (const id of confirmationItemIds(ideaDir)) {
+    const item = checklistById.get(id);
+    if (!item) return `confirmations/as-is.json checklist missing ${id}`;
+    if (!DECISION_STATUSES.has(item.status)) return `${id} confirmation status must be confirmed/defaulted/deferred`;
+  }
+  return validateClarificationsJson(ideaDir);
+}
+
+function validateToBeConfirmation(ideaDir) {
+  const file = join(ideaDir, 'confirmations/to-be.json');
+  if (!existsSync(file)) return 'confirmations/to-be.json missing';
+  const parsed = readJsonFile(file);
+  if (parsed.error) return `confirmations/to-be.json invalid JSON: ${parsed.error}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1) return 'confirmations/to-be.json schema_version must be 1';
+  if (doc.phase !== 'to-be') return 'confirmations/to-be.json phase must be to-be';
+  if (doc.status !== 'confirmed') return 'confirmations/to-be.json status must be confirmed';
+  if (!doc.confirmed_at || typeof doc.confirmed_at !== 'string') return 'confirmations/to-be.json missing confirmed_at';
+  if (!doc.confirmed_by || typeof doc.confirmed_by !== 'string') return 'confirmations/to-be.json missing confirmed_by';
+  if (!Array.isArray(doc.source_files)) return 'confirmations/to-be.json source_files must be an array';
+  for (const source of ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json']) {
+    if (!doc.source_files.includes(source)) return `confirmations/to-be.json source_files missing ${source}`;
+  }
+  const parsedTasks = readJsonFile(join(ideaDir, 'to-be/tasks.json'));
+  if (parsedTasks.error) return `to-be/tasks.json invalid JSON: ${parsedTasks.error}`;
+  let tasks;
+  try {
+    tasks = validateTasksDocument(parsedTasks.value);
+  } catch (error) {
+    return `to-be/tasks.json ${error.message}`;
+  }
+  const acknowledged = new Set(doc.task_acknowledgement?.task_ids || []);
+  for (const task of tasks) {
+    if (!acknowledged.has(task.task_id)) return `confirmations/to-be.json task_acknowledgement missing ${task.task_id}`;
+  }
+  if (doc.task_acknowledgement?.dependencies_reviewed !== true) return 'confirmations/to-be.json dependencies_reviewed must be true';
+  if (doc.task_acknowledgement?.verification_reviewed !== true) return 'confirmations/to-be.json verification_reviewed must be true';
+  if (doc.risk_acknowledgement?.reviewed !== true) return 'confirmations/to-be.json risk_acknowledgement.reviewed must be true';
   return '';
 }
 
@@ -484,13 +724,19 @@ export function checkGate(ideaDir, gateId) {
       if (noMermaid.length > 0) return result(gateId, false, `main files missing Mermaid diagrams: ${noMermaid.join(', ')}`);
       const evidenceLines = fileLineCount(join(ideaDir, 'as-is/evidence-index.md'));
       if (evidenceLines < MIN_EVIDENCE_LINES) return result(gateId, false, `evidence-index.md has only ${evidenceLines} non-empty lines (min ${MIN_EVIDENCE_LINES})`);
+      const coverageReason = validateAsIsCoverageMatrix(ideaDir);
+      if (coverageReason) return result(gateId, false, coverageReason);
       return result(gateId, true);
     }
     case 'as-is-confirmed': {
-      if (!has(ideaDir, '.as-is-confirmed')) return result(gateId, false, '.as-is-confirmed missing');
-      if (!has(ideaDir, 'clarifications.md')) return result(gateId, false, 'clarifications.md missing — confirm must produce clarifications (empty file if none)');
+      if (has(ideaDir, 'confirmations/as-is.json') || has(ideaDir, 'clarifications.json')) {
+        const reason = validateAsIsConfirmation(ideaDir);
+        return reason ? result(gateId, false, reason) : result(gateId, true);
+      }
+      if (!has(ideaDir, '.as-is-confirmed')) return result(gateId, false, 'confirmations/as-is.json missing');
+      if (!has(ideaDir, 'clarifications.md')) return result(gateId, false, 'clarifications.md missing — legacy confirm must produce clarifications');
       const decisionReason = validateClarificationDecisions(ideaDir);
-      return decisionReason ? result(gateId, false, decisionReason) : result(gateId, true);
+      return decisionReason ? result(gateId, false, decisionReason) : result(gateId, true, '', { legacy: true });
     }
     case 'to-be-exists': {
       const planFile = join(ideaDir, 'to-be/implementation-plan.md');
@@ -507,14 +753,18 @@ export function checkGate(ideaDir, gateId) {
         if (!taskSection.includes('Verification') && !taskSection.includes('验证'))
           return result(gateId, false, 'Task 拆分建议 section missing Verification in task entries');
       }
-      const traceReason = validateTraceabilityMatrix(ideaDir);
-      if (traceReason) return result(gateId, false, traceReason);
+      const tasksReason = validateTasksJsonAgainstTraceability(ideaDir);
+      if (tasksReason) return result(gateId, false, tasksReason);
       return result(gateId, true);
     }
     case 'to-be-confirmed': {
-      if (!has(ideaDir, '.to-be-confirmed')) return result(gateId, false, '.to-be-confirmed missing');
+      if (has(ideaDir, 'confirmations/to-be.json')) {
+        const reason = validateToBeConfirmation(ideaDir);
+        return reason ? result(gateId, false, reason) : result(gateId, true);
+      }
+      if (!has(ideaDir, '.to-be-confirmed')) return result(gateId, false, 'confirmations/to-be.json missing');
       if (!has(ideaDir, 'to-be/implementation-plan.md')) return result(gateId, false, '.to-be-confirmed exists but implementation-plan.md is missing');
-      return result(gateId, true);
+      return result(gateId, true, '', { legacy: true });
     }
     case 'tasks-exist':
       return result(gateId, has(ideaDir, 'tasks'), 'tasks directory missing');
@@ -530,7 +780,8 @@ export function checkGate(ideaDir, gateId) {
         if (!['coded', 'reviewing', 'approved', 'needs_rework', 'blocked'].includes(task.status)) return '';
         const reportPath = join(ideaDir, task.report_file);
         if (!has(ideaDir, task.report_file)) return taskId;
-        const reason = validateTaskReport(reportPath);
+        const { behaviorInvariants } = getTaskScope(ideaDir, taskId);
+        const reason = validateTaskReport(reportPath, behaviorInvariants);
         return reason ? `${taskId} (${reason})` : '';
       }).filter(Boolean);
       return invalid.length === 0 ? result(gateId, true) : result(gateId, false, `invalid task reports: ${invalid.join(', ')}`);
@@ -541,7 +792,8 @@ export function checkGate(ideaDir, gateId) {
         if (!['approved', 'needs_rework', 'blocked'].includes(task.status)) return '';
         const crPath = join(ideaDir, task.cr_file);
         if (!has(ideaDir, task.cr_file)) return taskId;
-        const reason = validateCrFile(crPath, task.status);
+        const { behaviorInvariants } = getTaskScope(ideaDir, taskId);
+        const reason = validateCrFile(crPath, task.status, behaviorInvariants);
         return reason ? `${taskId} (${reason})` : '';
       }).filter(Boolean);
       return invalid.length === 0 ? result(gateId, true) : result(gateId, false, `invalid cr files: ${invalid.join(', ')}`);
@@ -574,8 +826,8 @@ export function checkGate(ideaDir, gateId) {
   }
 }
 
-function result(gate, pass, reason = '') {
-  return pass ? { pass: true, gate } : { pass: false, gate, reason };
+function result(gate, pass, reason = '', extra = {}) {
+  return pass ? { pass: true, gate, ...extra } : { pass: false, gate, reason, ...extra };
 }
 
 export async function main(argv) {

@@ -11,24 +11,9 @@ function parseCrResult(crFilePath) {
   const content = readFileSync(crFilePath, 'utf8');
   const fm = readFrontmatter(content);
 
-  if (fm.result && VALID_RESULTS.includes(fm.result)) {
-    return { result: fm.result, source: 'frontmatter' };
-  }
-
-  const conclusionMatch = content.match(/^##\s*结论\s*\n+\s*(approved|needs_rework|blocked)/m);
-  if (conclusionMatch) {
-    return { result: conclusionMatch[1], source: 'conclusion_section' };
-  }
-
-  const bodyMatch = content.match(/\b(approved|needs_rework|blocked)\b/i);
-  if (bodyMatch) {
-    const found = bodyMatch[0].toLowerCase();
-    if (VALID_RESULTS.includes(found)) {
-      return { result: found, source: 'body_scan', confidence: 'low' };
-    }
-  }
-
-  return { error: 'could not parse CR result from file' };
+  if (!fm.result) return { error: 'CR frontmatter missing result' };
+  if (!VALID_RESULTS.includes(fm.result)) return { error: 'CR frontmatter result must be approved, needs_rework, or blocked' };
+  return { result: fm.result, source: 'frontmatter' };
 }
 
 function main() {

@@ -14,6 +14,7 @@
 | `as-is/core-walkthrough.md` | 需求涉及的核心调用链 + 关键分支走查，一个文件讲透主路径 |
 | `as-is/evidence-index.md` | 所有结论的证据路径索引 |
 | `as-is/evidence-ledger.json` | `F-xxx` 事实证据账本，供 gate 和 ai-input 反查 |
+| `as-is/coverage-matrix.json` | 入口、链路、数据、副作用的结构化覆盖矩阵，供 gate 判断 as-is 是否覆盖关键影响面 |
 | `as-is/knowledge-candidates.md` | 本次发现的禁区/包袱/坏味道/术语候选 |
 
 ### 枝干文件（按需产出，主干引用时才创建）
@@ -120,6 +121,58 @@
   ]
 }
 ```
+
+---
+
+## coverage-matrix.json
+
+```json
+{
+  "schema_version": 1,
+  "entrypoints": [
+    {
+      "id": "E-001",
+      "type": "http|rpc|message|job|cli|ui|other",
+      "name": "POST /orders",
+      "location": { "file": "src/controller/order.ts", "line_start": 42, "line_end": 60 },
+      "covered_by_facts": ["F-001"]
+    }
+  ],
+  "links": [
+    {
+      "id": "L-001",
+      "from": "OrderController.create",
+      "to": "OrderService.create",
+      "kind": "sync-call",
+      "evidence": [{ "file": "src/controller/order.ts", "line_start": 52 }],
+      "covered_by_facts": ["F-002"]
+    }
+  ],
+  "data": [
+    {
+      "id": "D-001",
+      "entity": "orders",
+      "operation": "write",
+      "fields": ["id", "status"],
+      "evidence": [{ "file": "src/repository/order.ts", "line_start": 88 }]
+    }
+  ],
+  "side_effects": [
+    {
+      "id": "S-001",
+      "kind": "db_write|external_call|event|cache|file|auth|none",
+      "description": "写入 orders 表",
+      "evidence": [{ "file": "src/repository/order.ts", "line_start": 88 }]
+    }
+  ],
+  "not_applicable": {
+    "data": "",
+    "side_effects": ""
+  }
+}
+```
+
+要求：`entrypoints`、`links`、`data`、`side_effects` 四个维度必须存在；每个维度要么有覆盖项，要么在 `not_applicable` 写明不涉及原因。每个覆盖项必须有 `file + line_start` 证据；`covered_by_facts` 只能引用 evidence-ledger 中已有的 `F-xxx`。
 
 ---
 

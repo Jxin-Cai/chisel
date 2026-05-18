@@ -49,10 +49,10 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 |---|---|---|
 | `receive-requirement` | Read `${REF}/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
-| `understand:confirm` | Read `${REF}/clarifications-template.md`；展示 3分钟摘要、风险地图、用户确认清单和待澄清问题，等用户逐项确认后按模板写入 `clarifications.md`，确认后 `touch .as-is-confirmed`；执行实时知识捕获 | `as-is-confirmed` |
+| `understand:confirm` | Read `${REF}/clarifications-template.md`；展示 3分钟摘要、风险地图、用户确认清单和待澄清问题，等用户逐项确认后写入 `clarifications.json`、`clarifications.md`、`confirmations/as-is.json`；执行实时知识捕获 | `as-is-confirmed` |
 | `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
-| `plan:confirm` | 展示 to-be 摘要，等用户确认后 `touch .to-be-confirmed`；执行实时知识捕获 | `to-be-confirmed` |
+| `plan:confirm` | 展示 to-be 摘要，等用户确认后写入 `confirmations/to-be.json`；执行实时知识捕获 | `to-be-confirmed` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
@@ -72,29 +72,21 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 读取并展示 `{IDEA_DIR}/as-is/overview.md` 中的 `3分钟摘要`、`风险地图`、`用户确认清单` 和 `待澄清问题`，等用户逐项确认或补充。
 
-将结果写入 `{IDEA_DIR}/clarifications.md`（必须包含 `## 逐项决策记录` 表格，每个 `C-xxx` 逐行落账）：
+将结果写入 `{IDEA_DIR}/clarifications.json`（权威机器可读记录）和 `{IDEA_DIR}/clarifications.md`（人类可读镜像）。`clarifications.json` 必须包含每个 `C-xxx` 的 `id/question/decision/rationale/status/source`，状态只能是 `confirmed/defaulted/deferred`。
 
-```markdown
-# Clarifications
+同时写入 `{IDEA_DIR}/confirmations/as-is.json`，至少包含：`schema_version: 1`、`phase: "as-is"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`checklist`。
 
-## 确认结论
+新流程不得只创建 `.as-is-confirmed` marker；该 marker 仅用于历史运行目录兼容。
 
-## 逐项决策记录
+---
 
-| ID | 问题 | 用户决策 | 理由 | 状态 |
-|---|---|---|---|---|
-| C-001 | ... | ... | ... | confirmed/defaulted/deferred |
+## plan:confirm 详细行为
 
-## 澄清答案
+展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的目标行为、非目标行为、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
 
-## 未决项
+确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，至少包含：`schema_version: 1`、`phase: "to-be"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`task_acknowledgement`、`risk_acknowledgement`。
 
-## 新增约束
-
-## 知识候选信号
-```
-
-用户确认后 `touch {IDEA_DIR}/.as-is-confirmed`。
+新流程不得只创建 `.to-be-confirmed` marker；该 marker 仅用于历史运行目录兼容。
 
 ---
 

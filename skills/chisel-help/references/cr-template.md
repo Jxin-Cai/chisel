@@ -11,6 +11,8 @@ rework_count: 0
 
 approved | needs_rework | blocked
 
+结论章节仅供人类阅读；状态机只读取 frontmatter 的 `result` 字段。
+
 ## 功能完整度
 
 ## Scope Control
@@ -40,6 +42,8 @@ approved | needs_rework | blocked
 | Invariant | Proof | Result |
 |---|---|---|
 | | | pass / fail |
+
+必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须填写实际验证证据，不得为空或占位；`Result` 只能是 `pass` 或 `fail`；approved CR 必须全部为 `pass`。
 
 ## 审查详情
 

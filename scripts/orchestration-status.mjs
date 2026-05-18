@@ -63,7 +63,7 @@ function main() {
     return;
   }
   if (!checkGate(IDEA_DIR, 'as-is-confirmed').pass) {
-    emit('understand:confirm', 'as-is has not been confirmed');
+    emit('understand:confirm', 'as-is structured confirmation is missing or invalid');
     return;
   }
   if (!checkGate(IDEA_DIR, 'ai-input-ready').pass) {
@@ -75,7 +75,7 @@ function main() {
     return;
   }
   if (!checkGate(IDEA_DIR, 'to-be-confirmed').pass) {
-    emit('plan:confirm', 'to-be implementation plan has not been confirmed');
+    emit('plan:confirm', 'to-be structured confirmation is missing or invalid');
     return;
   }
   if (!has('task-workflow-state.yaml')) {

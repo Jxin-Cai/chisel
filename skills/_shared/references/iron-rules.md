@@ -12,16 +12,17 @@
 
 | 阶段 | 前置条件 |
 |------|---------|
-| to-be 方案 | as-is 已确认（`.as-is-confirmed` 存在）且 AI 输入版已生成（`as-is/ai-input/` 6 个文件存在）且澄清完成（`clarifications.md` 存在） |
-| AI 输入版生成 | as-is 已确认（`.as-is-confirmed` 存在）且澄清完成（`clarifications.md` 存在） |
-| task 拆分 | to-be 已确认（`.to-be-confirmed` 存在） |
+| to-be 方案 | as-is 已确认（`confirmations/as-is.json` 通过 gate）且 AI 输入版已生成（`as-is/ai-input/` 6 个文件存在）且澄清完成（`clarifications.json` 通过 gate） |
+| AI 输入版生成 | as-is 已确认（`confirmations/as-is.json` 通过 gate）且澄清完成（`clarifications.json` 通过 gate） |
+| task 拆分 | to-be 已确认（`confirmations/to-be.json` 通过 gate） |
 | coding | task 初始化且 `--next-tasks` 返回该 task |
 | CR | task 状态为 `coded` 且 report 文件存在 |
 | 返修 | CR 结论为 `needs_rework` 且返修次数 < 3 |
 
 ## 3. 用户确认不可跳过
 
-`understand:confirm` 和 `plan:confirm` 必须等用户明确确认后才能创建确认标记。  
+`understand:confirm` 和 `plan:confirm` 必须等用户明确确认后才能创建结构化确认文件。  
+旧 `.as-is-confirmed` / `.to-be-confirmed` marker 仅用于历史运行目录兼容，新流程不得只创建 marker。  
 不要因"需求描述很清楚"而绕过确认。
 
 ## 4. 每轮循环必须调用恢复点脚本

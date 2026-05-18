@@ -17,8 +17,8 @@ CR 阶段。不直接改业务代码。
      ```json
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>" }
      ```
-   - CR 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-parse.mjs {IDEA_DIR} <task-id>` 解析结论
-   - 用解析到的结论运行 `--mark-cr <task-id> <result>`（confidence: low 时先展示给用户确认）
+   - CR 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-parse.mjs {IDEA_DIR} <task-id>` 解析 frontmatter 中的 `result`
+   - 用解析到的结论运行 `--mark-cr <task-id> <result>`；解析失败必须返工补齐 CR frontmatter，不得根据正文猜测结论
 3. **多 task** → 并行派发多个 reviewer Agent（reviewer 只读，无需 worktree 隔离）：
    - 对所有 task 串行调用 `--start-review`
    - 在同一条消息中并行启动多个 `agent-chisel-architect-reviewer`

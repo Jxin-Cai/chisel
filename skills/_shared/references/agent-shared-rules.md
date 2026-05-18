@@ -27,6 +27,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "<task goal/
 - Hit Proofs 表（File / Expected proof / Forbidden proof / Symbol proof / Status）
 - Invariant Proofs 表（Invariant / Proof / Result）
 
+Invariant Proofs 必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须填写实际验证证据，不得为空或占位；`Result` 只能是 `pass` 或 `fail`；approved CR 必须全部为 `pass`。
+
 **Wiki Proof** 必须记录：
 
 - Query command、Query summary、category/min-score、load_plan JSON

@@ -79,8 +79,35 @@ graph TD
   writeFile('as-is/core-walkthrough.md', '# Core\n```mermaid\nsequenceDiagram\n  A->>B: call\n```\n');
   writeFile('as-is/evidence-index.md', '| 结论 | 证据 | 类型 |\n|---|---|---|\n| [F-001] A | src/user.ts:42 | 已确认 |\n| B | f:2 | 已确认 |\n| C | f:3 | 已确认 |\n| D | f:4 | 已确认 |\n| E | f:5 | 已确认 |\n');
   writeFile('as-is/evidence-ledger.json', JSON.stringify({ facts: [{ id: 'F-001', claim: '用户创建走 UserService', status: 'confirmed', evidence: [{ file: 'src/user.ts', line_start: 42, line_end: 80, kind: 'code' }] }] }, null, 2));
+  writeFile('as-is/coverage-matrix.json', JSON.stringify({
+    schema_version: 1,
+    entrypoints: [{ id: 'E-001', type: 'http', name: 'POST /users', location: { file: 'src/user.ts', line_start: 10 }, covered_by_facts: ['F-001'] }],
+    links: [{ id: 'L-001', from: 'Controller.create', to: 'UserService.create', kind: 'sync-call', evidence: [{ file: 'src/user.ts', line_start: 42 }], covered_by_facts: ['F-001'] }],
+    data: [{ id: 'D-001', entity: 'user', operation: 'write', evidence: [{ file: 'src/user.ts', line_start: 70 }] }],
+    side_effects: [{ id: 'S-001', kind: 'db_write', description: '写入 user', evidence: [{ file: 'src/user.ts', line_start: 80 }] }],
+    not_applicable: {}
+  }, null, 2));
   writeFile('as-is/knowledge-candidates.md', '# Candidates\n');
-  writeFile('.as-is-confirmed', '');
+  writeFile('clarifications.json', JSON.stringify({
+    schema_version: 1,
+    source_step: 'understand:confirm',
+    confirmed_at: '2026-05-18T00:00:00.000Z',
+    summary: '用户确认 AS_IS。',
+    decisions: [{ id: 'C-001', question: '旧接口响应字段是否必须保持？', decision: '必须保持', rationale: '旧客户端依赖', status: 'confirmed', source: 'as-is/overview.md#用户确认清单' }],
+    answers: [],
+    unresolved: [],
+    constraints_added: [],
+    knowledge_signals: []
+  }, null, 2));
+  writeFile('confirmations/as-is.json', JSON.stringify({
+    schema_version: 1,
+    phase: 'as-is',
+    status: 'confirmed',
+    confirmed_at: '2026-05-18T00:00:00.000Z',
+    confirmed_by: 'user',
+    source_files: ['as-is/overview.md', 'as-is/core-walkthrough.md', 'as-is/evidence-index.md', 'as-is/evidence-ledger.json', 'as-is/coverage-matrix.json', 'clarifications.json'],
+    checklist: [{ id: 'C-001', status: 'confirmed' }]
+  }, null, 2));
   writeFile('clarifications.md', `# Clarifications
 
 ## 逐项决策记录
@@ -101,8 +128,36 @@ graph TD
   writeFile('as-is/ai-input/constraints.md', `${sourceCoverage.replace('as-is/evidence-ledger.json', 'as-is/overview.md + clarifications.md').replace('F-001', 'C-001')}## 禁区\n\n- 无\n\n## 包袱\n\n- 无\n\n## 坏味道\n\n- 无\n\n## 兼容约束\n\n- 无新增约束\n`);
   writeFile('as-is/ai-input/change-surface.md', `${sourceCoverage.replace('as-is/evidence-ledger.json', 'as-is/core-walkthrough.md')}## Safe-to-Change Areas\n\n- src/user.ts:42-80 可增加校验\n`);
   writeFile('to-be/implementation-plan.md', '# Plan\n## 目标行为\n## 非目标行为\n## 允许修改范围\n## 禁止修改范围\n## Task 拆分建议\n');
+  writeFile('to-be/tasks.json', JSON.stringify({ tasks: [{
+    task_id: 'task-001',
+    title: '实现目标',
+    goal: '实现目标',
+    depends_on: [],
+    allowed_files: ['src/user.ts'],
+    forbidden_files: [],
+    expected_files: ['src/user.ts'],
+    acceptance_criteria: ['满足需求'],
+    verification: ['node --test'],
+    trace_refs: ['REQ-001'],
+    allowed_symbols: ['UserService.create'],
+    forbidden_symbols: [],
+    behavior_invariants: ['保持旧行为'],
+    impact_surface: { files: ['src/user.ts'], symbols: ['UserService.create'], invariants: ['保持旧行为'], shared_state: [] },
+    context_to_load: { as_is: ['as-is/ai-input/facts.md'], to_be: ['to-be/implementation-plan.md'], wiki: [], module_map: [], adr: [], tests: [] },
+    risk_level: 'low',
+    rollback: 'revert commit'
+  }] }, null, 2));
   writeFile('to-be/traceability-matrix.json', JSON.stringify({ items: [{ id: 'REQ-001', type: 'goal', source: 'requirement.md', description: '实现目标', covered_by_tasks: ['task-001'], verification: ['node --test'] }] }, null, 2));
-  writeFile('.to-be-confirmed', '');
+  writeFile('confirmations/to-be.json', JSON.stringify({
+    schema_version: 1,
+    phase: 'to-be',
+    status: 'confirmed',
+    confirmed_at: '2026-05-18T00:00:00.000Z',
+    confirmed_by: 'user',
+    source_files: ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json'],
+    task_acknowledgement: { task_ids: ['task-001'], dependencies_reviewed: true, verification_reviewed: true },
+    risk_acknowledgement: { reviewed: true, notes: '低风险' }
+  }, null, 2));
   writeTaskState(taskStateFile(TEST_DIR), {
     idea: 'test',
     tasks: {

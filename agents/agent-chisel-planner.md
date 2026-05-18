@@ -22,7 +22,10 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 | TASK | `idea_dir` |
 | requirement | 需求目标 |
 | `{idea_dir}/as-is/ai-input/` | 先读 `facts.md` + `constraints.md`，再按需读 `call-graph.md`/`data-schema.md`/`api-surface.md`/`change-surface.md` |
-| `{idea_dir}/clarifications.md`（如存在） | 用户在 confirm 阶段的澄清 |
+| `{idea_dir}/clarifications.json` | 用户在 confirm 阶段的结构化澄清、约束和未决项（权威来源） |
+| `{idea_dir}/confirmations/as-is.json` | as-is 确认凭据 |
+| `{idea_dir}/as-is/coverage-matrix.json` | 入口、链路、数据、副作用覆盖矩阵 |
+| `{idea_dir}/clarifications.md`（如存在） | 人类可读镜像，仅作辅助阅读 |
 | `{idea_dir}/as-is/` 人类学习版 | 按需参考 overview/core-walkthrough/details（不要全读） |
 | `.chisel/wiki/{project-name}/index.md`（如存在） | 按 agent-shared-rules §1 加载禁区/包袱/术语 |
 
@@ -34,7 +37,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 
 ## 设计要求
 
-按 to-be-template.md 的章节结构完成方案，确保覆盖：目标/非目标行为、修改范围边界、具体变更、安全保障、验证策略、回滚方案、task 拆分（含 tasks.json + traceability-matrix.json）。
+按 to-be-template.md 的章节结构完成方案，确保覆盖：目标/非目标行为、修改范围边界、具体变更、安全保障、验证策略、回滚方案、task 拆分（含 tasks.json + traceability-matrix.json）。to-be、tasks.json 和 traceability-matrix.json 必须引用相关 C-xxx 澄清决策和 coverage-matrix 中的 E/L/D/S 覆盖项。
 
 ## 产物
 

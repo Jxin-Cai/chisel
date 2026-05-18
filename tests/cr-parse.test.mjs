@@ -33,18 +33,22 @@ describe('parseCrResult', () => {
     assert.equal(r.source, 'frontmatter');
   });
 
-  it('parses result from conclusion section', () => {
+  it('rejects conclusion section without frontmatter result', () => {
     const path = writeCr('---\ntask_id: task-001\n---\n# CR\n## 结论\n\nneeds_rework\n');
     const r = parseCrResult(path);
-    assert.equal(r.result, 'needs_rework');
-    assert.equal(r.source, 'conclusion_section');
+    assert.match(r.error, /frontmatter missing result/);
   });
 
-  it('falls back to body scan with low confidence', () => {
+  it('rejects body scan results without frontmatter result', () => {
     const path = writeCr('# CR\n\nThe result is blocked because of issues.\n');
     const r = parseCrResult(path);
-    assert.equal(r.result, 'blocked');
-    assert.equal(r.confidence, 'low');
+    assert.match(r.error, /frontmatter missing result/);
+  });
+
+  it('rejects invalid frontmatter result', () => {
+    const path = writeCr('---\nresult: maybe\n---\n# CR\n');
+    const r = parseCrResult(path);
+    assert.match(r.error, /must be approved/);
   });
 
   it('returns error when no result found', () => {

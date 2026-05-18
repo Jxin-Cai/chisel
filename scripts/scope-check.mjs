@@ -282,7 +282,7 @@ function main() {
   }
 }
 
-export { check as checkScope, getChangedFiles, getWikiForbiddenZones, matchScopeProofs };
+export { check as checkScope, getChangedFiles, getTaskScope, getWikiForbiddenZones, matchScopeProofs };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main();

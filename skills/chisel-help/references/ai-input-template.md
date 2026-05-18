@@ -100,7 +100,7 @@
 
 | Source | Covered refs | Omissions | Reason |
 |---|---|---|---|
-| as-is/overview.md + clarifications.md | C-001 | 无 | — |
+| as-is/overview.md + clarifications.json + confirmations/as-is.json | C-001 | 无 | — |
 
 ## 禁区（不能修改）
 
@@ -134,7 +134,7 @@
 
 | Source | Covered refs | Omissions | Reason |
 |---|---|---|---|
-| as-is/core-walkthrough.md | F-001 | 无 | — |
+| as-is/core-walkthrough.md + as-is/coverage-matrix.json | F-001, E-001, L-001, D-001, S-001 | 无 | — |
 
 ## Safe-to-Change Areas
 

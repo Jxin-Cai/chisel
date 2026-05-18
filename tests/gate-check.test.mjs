@@ -50,8 +50,107 @@ function writeTraceabilityMatrix(items = [{ id: 'REQ-001', type: 'goal', source:
   writeFile('to-be/traceability-matrix.json', JSON.stringify({ items }, null, 2));
 }
 
+function validTasksJson(overrides = {}) {
+  return {
+    tasks: [{
+      task_id: 'task-001',
+      title: '实现目标',
+      goal: '实现目标',
+      depends_on: [],
+      allowed_files: ['src/a.ts'],
+      forbidden_files: [],
+      expected_files: ['src/a.ts'],
+      acceptance_criteria: ['满足需求'],
+      verification: ['node --test'],
+      trace_refs: ['REQ-001'],
+      allowed_symbols: ['UserService.create'],
+      forbidden_symbols: [],
+      behavior_invariants: ['保持旧行为'],
+      impact_surface: { files: ['src/a.ts'], symbols: ['UserService.create'], invariants: ['保持旧行为'], shared_state: [] },
+      context_to_load: { as_is: ['as-is/ai-input/facts.md'], to_be: ['to-be/implementation-plan.md'], wiki: [], module_map: [], adr: [], tests: [] },
+      risk_level: 'low',
+      rollback: 'revert commit',
+      ...overrides
+    }]
+  };
+}
+
+function writeTasksJson(overrides = {}) {
+  writeFile('to-be/tasks.json', JSON.stringify(validTasksJson(overrides), null, 2));
+}
+
 function sourceCoverage(source = 'as-is/evidence-ledger.json', refs = 'F-001') {
   return `## Source Coverage\n\n| Source | Covered refs | Omissions | Reason |\n|---|---|---|---|\n| ${source} | ${refs} | 无 | — |\n\n`;
+}
+
+function validCoverageMatrix(overrides = {}) {
+  return {
+    schema_version: 1,
+    entrypoints: [{ id: 'E-001', type: 'http', name: 'POST /users', location: { file: 'src/user.ts', line_start: 10 }, covered_by_facts: ['F-001'] }],
+    links: [{ id: 'L-001', from: 'Controller.create', to: 'UserService.create', kind: 'sync-call', evidence: [{ file: 'src/user.ts', line_start: 42 }], covered_by_facts: ['F-001'] }],
+    data: [{ id: 'D-001', entity: 'user', operation: 'write', fields: ['id'], evidence: [{ file: 'src/user.ts', line_start: 70 }] }],
+    side_effects: [{ id: 'S-001', kind: 'db_write', description: '写入 user', evidence: [{ file: 'src/user.ts', line_start: 80 }] }],
+    not_applicable: {},
+    ...overrides
+  };
+}
+
+function writeCoverageMatrix(overrides = {}) {
+  writeFile('as-is/coverage-matrix.json', JSON.stringify(validCoverageMatrix(overrides), null, 2));
+}
+
+function validClarificationsJson(overrides = {}) {
+  return {
+    schema_version: 1,
+    source_step: 'understand:confirm',
+    confirmed_at: '2026-05-18T00:00:00.000Z',
+    summary: '用户确认 AS_IS。',
+    decisions: [{ id: 'C-001', question: '旧接口响应字段是否必须保持？', decision: '必须保持', rationale: '旧客户端依赖', status: 'confirmed', source: 'as-is/overview.md#用户确认清单' }],
+    answers: [],
+    unresolved: [],
+    constraints_added: [],
+    knowledge_signals: [],
+    ...overrides
+  };
+}
+
+function writeClarificationsJson(overrides = {}) {
+  writeFile('clarifications.json', JSON.stringify(validClarificationsJson(overrides), null, 2));
+}
+
+function validAsIsConfirmation(overrides = {}) {
+  return {
+    schema_version: 1,
+    phase: 'as-is',
+    status: 'confirmed',
+    confirmed_at: '2026-05-18T00:00:00.000Z',
+    confirmed_by: 'user',
+    source_files: ['as-is/overview.md', 'as-is/core-walkthrough.md', 'as-is/evidence-index.md', 'as-is/evidence-ledger.json', 'as-is/coverage-matrix.json', 'clarifications.json'],
+    checklist: [{ id: 'C-001', status: 'confirmed' }],
+    ...overrides
+  };
+}
+
+function writeAsIsConfirmation(overrides = {}) {
+  writeFile('confirmations/as-is.json', JSON.stringify(validAsIsConfirmation(overrides), null, 2));
+}
+
+function validToBeConfirmation(overrides = {}) {
+  return {
+    schema_version: 1,
+    phase: 'to-be',
+    status: 'confirmed',
+    confirmed_at: '2026-05-18T00:00:00.000Z',
+    confirmed_by: 'user',
+    source_files: ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json'],
+    task_acknowledgement: { task_ids: ['task-001'], dependencies_reviewed: true, verification_reviewed: true },
+    risk_acknowledgement: { reviewed: true, notes: '低风险' },
+    ...overrides
+  };
+}
+
+function writeToBeConfirmation(overrides = {}) {
+  writeFile('confirmations/to-be.json', JSON.stringify(validToBeConfirmation(overrides), null, 2));
 }
 
 function writeValidAiInput({ facts = '', constraints = '', changeSurface = '', clarifications = '' } = {}) {
@@ -65,7 +164,8 @@ function writeValidAiInput({ facts = '', constraints = '', changeSurface = '', c
   writeFile('as-is/ai-input/change-surface.md', changeSurface || `${sourceCoverage('as-is/core-walkthrough.md', 'F-001')}## Safe-to-Change Areas\n\n- src/user.ts:42-80 可增加校验\n`);
 }
 
-function validTaskFile(expectedFiles = ['src/a.ts']) {
+function validTaskFile(expectedFiles = ['src/a.ts'], invariants = ['保持旧行为']) {
+  const invariantLines = invariants.map(invariant => `- [ ] ${invariant}`).join('\n');
   return `---
 task_id: task-001
 status: confirmed
@@ -119,7 +219,7 @@ impact_surface: {"files":["src/a.ts"],"symbols":["UserService.create"],"invarian
 
 ## Behavior Invariants
 
-- [ ] 保持旧行为
+${invariantLines}
 
 ## Acceptance Criteria
 
@@ -150,7 +250,7 @@ function wikiProof() {
 `;
 }
 
-function scopeProof({ mode = 'report', result = 'pass' } = {}) {
+function scopeProof({ mode = 'report', result = 'pass', invariantRows = '| 保持旧行为 | 已验证旧行为 | pass |' } = {}) {
   const heading = mode === 'cr' ? 'Hit Proofs Reviewed' : 'Hit Proofs Summary';
   const lastColumn = mode === 'cr' ? 'Reviewer assessment' : 'Status';
   const lastValue = mode === 'cr' ? 'OK' : 'within_expected';
@@ -180,11 +280,11 @@ function scopeProof({ mode = 'report', result = 'pass' } = {}) {
 
 | Invariant | Proof | Result |
 |---|---|---|
-| 保持旧行为 | 已验证旧行为 | pass |
+${invariantRows}
 `;
 }
 
-function validReport({ includeWikiProof = true, includeScopeProof = true } = {}) {
+function validReport({ includeWikiProof = true, includeScopeProof = true, invariantRows } = {}) {
   return `# Task Report
 
 ## 做了什么
@@ -205,11 +305,11 @@ ${includeWikiProof ? wikiProof() : ''}
 
 ## Scope Control
 
-${includeScopeProof ? scopeProof() : ''}
+${includeScopeProof ? scopeProof({ invariantRows }) : ''}
 `;
 }
 
-function validCr(result = 'approved', { includeWikiProof = true, includeScopeProof = true, scopeResult = 'pass' } = {}) {
+function validCr(result = 'approved', { includeWikiProof = true, includeScopeProof = true, scopeResult = 'pass', invariantRows } = {}) {
   const rework = result === 'needs_rework' ? '\n- [ ] CR-001：修复 src/a.ts 的边界行为\n' : '\n- [ ] 无\n';
   return `---
 task_id: task-001
@@ -229,7 +329,7 @@ OK
 
 ## Scope Control
 
-${includeScopeProof ? scopeProof({ mode: 'cr', result: scopeResult }) : 'OK'}
+${includeScopeProof ? scopeProof({ mode: 'cr', result: scopeResult, invariantRows }) : 'OK'}
 
 ## Verification
 
@@ -279,6 +379,7 @@ describe('gate: as-is-complete', () => {
       'as-is/core-walkthrough.md': '# Core\n```mermaid\nsequenceDiagram\n  A->>B: call\n```\n',
       'as-is/evidence-index.md': '| 结论 | 证据 | 类型 |\n|---|---|---|\n| [F-001] A | src/user.ts:42 | 已确认 |\n| B | f:2 | 已确认 |\n| C | f:3 | 已确认 |\n| D | f:4 | 已确认 |\n| E | f:5 | 已确认 |\n',
       'as-is/evidence-ledger.json': JSON.stringify({ facts: [{ id: 'F-001', claim: 'UserService 处理创建', status: 'confirmed', evidence: [{ file: 'src/user.ts', line_start: 42, line_end: 80, kind: 'code' }] }] }, null, 2),
+      'as-is/coverage-matrix.json': JSON.stringify(validCoverageMatrix(), null, 2),
       'as-is/knowledge-candidates.md': '# Candidates\n'
     };
     for (const [file, content] of Object.entries({ ...defaults, ...overrides })) {
@@ -360,6 +461,25 @@ describe('gate: as-is-complete', () => {
     assert.match(r.reason, /evidence-index/);
   });
 
+  it('fails when coverage matrix references unknown facts', () => {
+    writeMainFiles({ 'as-is/coverage-matrix.json': JSON.stringify(validCoverageMatrix({ entrypoints: [{ id: 'E-001', type: 'http', name: 'POST /users', location: { file: 'src/user.ts', line_start: 10 }, covered_by_facts: ['F-999'] }] }), null, 2) });
+    const r = checkGate(TEST_DIR, 'as-is-complete');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /unknown facts/);
+  });
+
+  it('fails when coverage matrix section is empty without not_applicable reason', () => {
+    writeMainFiles({ 'as-is/coverage-matrix.json': JSON.stringify(validCoverageMatrix({ data: [] }), null, 2) });
+    const r = checkGate(TEST_DIR, 'as-is-complete');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /data/);
+  });
+
+  it('passes when a coverage matrix section has not_applicable reason', () => {
+    writeMainFiles({ 'as-is/coverage-matrix.json': JSON.stringify(validCoverageMatrix({ data: [], not_applicable: { data: '不涉及数据读写' } }), null, 2) });
+    assert.equal(checkGate(TEST_DIR, 'as-is-complete').pass, true);
+  });
+
   it('passes with complete main files', () => {
     writeMainFiles();
     assert.equal(checkGate(TEST_DIR, 'as-is-complete').pass, true);
@@ -367,8 +487,10 @@ describe('gate: as-is-complete', () => {
 });
 
 describe('gate: as-is-confirmed', () => {
-  it('fails without .as-is-confirmed', () => {
-    assert.equal(checkGate(TEST_DIR, 'as-is-confirmed').pass, false);
+  it('fails without structured confirmation or legacy marker', () => {
+    const r = checkGate(TEST_DIR, 'as-is-confirmed');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /confirmations\/as-is\.json/);
   });
 
   it('fails without clarifications.md', () => {
@@ -387,11 +509,29 @@ describe('gate: as-is-confirmed', () => {
     assert.match(r.reason, /逐项决策记录/);
   });
 
-  it('passes with decision records for confirmation items', () => {
+  it('passes legacy marker with decision records for confirmation items', () => {
     writeFile('as-is/overview.md', '### 用户确认清单\n\n- [ ] C-001 需确认事实：旧接口响应字段是否必须保持\n');
     writeFile('.as-is-confirmed', '');
     writeFile('clarifications.md', '# Clarifications\n\n## 逐项决策记录\n\n| ID | 问题 | 用户决策 | 理由 | 状态 |\n|---|---|---|---|---|\n| C-001 | 旧接口响应字段是否必须保持 | 必须保持 | 旧客户端依赖 | confirmed |\n');
+    const r = checkGate(TEST_DIR, 'as-is-confirmed');
+    assert.equal(r.pass, true);
+    assert.equal(r.legacy, true);
+  });
+
+  it('passes with structured as-is confirmation', () => {
+    writeFile('as-is/overview.md', '### 用户确认清单\n\n- [ ] C-001 需确认事实：旧接口响应字段是否必须保持\n');
+    writeClarificationsJson();
+    writeAsIsConfirmation();
     assert.equal(checkGate(TEST_DIR, 'as-is-confirmed').pass, true);
+  });
+
+  it('fails when structured clarifications miss a confirmation item', () => {
+    writeFile('as-is/overview.md', '### 用户确认清单\n\n- [ ] C-001 需确认事实：旧接口响应字段是否必须保持\n');
+    writeClarificationsJson({ decisions: [] });
+    writeAsIsConfirmation();
+    const r = checkGate(TEST_DIR, 'as-is-confirmed');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /C-001/);
   });
 
   it('passes without decision records when no confirmation is needed', () => {
@@ -403,10 +543,10 @@ describe('gate: as-is-confirmed', () => {
 });
 
 describe('gate: to-be-confirmed', () => {
-  it('fails without marker', () => {
+  it('fails without structured confirmation or legacy marker', () => {
     const r = checkGate(TEST_DIR, 'to-be-confirmed');
     assert.equal(r.pass, false);
-    assert.match(r.reason, /to-be-confirmed missing/);
+    assert.match(r.reason, /confirmations\/to-be\.json/);
   });
 
   it('fails when marker exists but plan is missing', () => {
@@ -416,10 +556,30 @@ describe('gate: to-be-confirmed', () => {
     assert.match(r.reason, /implementation-plan.md is missing/);
   });
 
-  it('passes when marker and plan both exist', () => {
+  it('passes legacy marker when plan exists', () => {
     writeFile('.to-be-confirmed', '');
     writeFile('to-be/implementation-plan.md', '# Plan\n');
+    const r = checkGate(TEST_DIR, 'to-be-confirmed');
+    assert.equal(r.pass, true);
+    assert.equal(r.legacy, true);
+  });
+
+  it('passes with structured to-be confirmation', () => {
+    writeFile('to-be/implementation-plan.md', '# Plan\n');
+    writeTasksJson();
+    writeTraceabilityMatrix();
+    writeToBeConfirmation();
     assert.equal(checkGate(TEST_DIR, 'to-be-confirmed').pass, true);
+  });
+
+  it('fails when structured to-be confirmation misses a task', () => {
+    writeFile('to-be/implementation-plan.md', '# Plan\n');
+    writeTasksJson();
+    writeTraceabilityMatrix();
+    writeToBeConfirmation({ task_acknowledgement: { task_ids: [], dependencies_reviewed: true, verification_reviewed: true } });
+    const r = checkGate(TEST_DIR, 'to-be-confirmed');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /task-001/);
   });
 });
 
@@ -436,6 +596,39 @@ describe('gate: to-be-exists', () => {
     assert.match(r.reason, /missing required sections/);
   });
 
+  it('fails when tasks.json is missing', () => {
+    writeFile('to-be/implementation-plan.md', [
+      '# Plan',
+      '## 目标行为',
+      '## 非目标行为',
+      '## 允许修改范围',
+      '## 禁止修改范围',
+      '## Task 拆分建议',
+      ''
+    ].join('\n'));
+    writeTraceabilityMatrix();
+    const r = checkGate(TEST_DIR, 'to-be-exists');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /tasks\.json/);
+  });
+
+  it('fails when traceability references an unknown task', () => {
+    writeFile('to-be/implementation-plan.md', [
+      '# Plan',
+      '## 目标行为',
+      '## 非目标行为',
+      '## 允许修改范围',
+      '## 禁止修改范围',
+      '## Task 拆分建议',
+      ''
+    ].join('\n'));
+    writeTasksJson();
+    writeTraceabilityMatrix([{ id: 'REQ-001', type: 'goal', source: 'requirement.md', description: '实现目标', covered_by_tasks: ['task-999'], verification: ['node --test'] }]);
+    const r = checkGate(TEST_DIR, 'to-be-exists');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /unknown tasks/);
+  });
+
   it('passes with all required sections', () => {
     writeFile('to-be/implementation-plan.md', [
       '# Plan',
@@ -446,6 +639,7 @@ describe('gate: to-be-exists', () => {
       '## Task 拆分建议',
       ''
     ].join('\n'));
+    writeTasksJson();
     writeTraceabilityMatrix();
     assert.equal(checkGate(TEST_DIR, 'to-be-exists').pass, true);
   });
@@ -545,6 +739,7 @@ describe('gate: task-integrity', () => {
 describe('gate: task-report-exists', () => {
   it('fails when task report lacks wiki proof', () => {
     writeTaskState({ 'task-001': { status: 'coded', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('task-reports/task-001-report.md', validReport({ includeWikiProof: false }));
     const r = checkGate(TEST_DIR, 'task-report-exists');
     assert.equal(r.pass, false);
@@ -553,15 +748,44 @@ describe('gate: task-report-exists', () => {
 
   it('fails when task report lacks scope proof', () => {
     writeTaskState({ 'task-001': { status: 'coded', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('task-reports/task-001-report.md', validReport({ includeScopeProof: false }));
     const r = checkGate(TEST_DIR, 'task-report-exists');
     assert.equal(r.pass, false);
     assert.match(r.reason, /scope proof/);
   });
 
-  it('passes when task report has wiki and scope proof', () => {
+  it('fails when task report misses an invariant proof', () => {
     writeTaskState({ 'task-001': { status: 'coded', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile(['src/a.ts'], ['保持旧行为', '保持错误响应格式']));
     writeFile('task-reports/task-001-report.md', validReport());
+    const r = checkGate(TEST_DIR, 'task-report-exists');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /missing invariant proof/);
+  });
+
+  it('fails when task report invariant proof is placeholder', () => {
+    writeTaskState({ 'task-001': { status: 'coded', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
+    writeFile('task-reports/task-001-report.md', validReport({ invariantRows: '| 保持旧行为 | TODO | pass |' }));
+    const r = checkGate(TEST_DIR, 'task-report-exists');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /invariant proof must be non-empty/);
+  });
+
+  it('fails when task report invariant result is invalid', () => {
+    writeTaskState({ 'task-001': { status: 'coded', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
+    writeFile('task-reports/task-001-report.md', validReport({ invariantRows: '| 保持旧行为 | 已验证旧行为 | ok |' }));
+    const r = checkGate(TEST_DIR, 'task-report-exists');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /invariant result must be pass\/fail/);
+  });
+
+  it('passes when task report has wiki, scope, and invariant proofs', () => {
+    writeTaskState({ 'task-001': { status: 'coded', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile(['src/a.ts'], ['保持旧行为', '保持错误响应格式']));
+    writeFile('task-reports/task-001-report.md', validReport({ invariantRows: '| 保持旧行为 | 已验证旧行为 | pass |\n| 保持错误响应格式 | 已验证错误响应格式 | pass |' }));
     assert.equal(checkGate(TEST_DIR, 'task-report-exists').pass, true);
   });
 });
@@ -569,6 +793,7 @@ describe('gate: task-report-exists', () => {
 describe('gate: cr-complete', () => {
   it('fails when Verification section is missing', () => {
     writeTaskState({ 'task-001': { status: 'approved', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('cr/task-001-cr.md', validCr().replace('## Verification', '## Verification Review'));
     const r = checkGate(TEST_DIR, 'cr-complete');
     assert.equal(r.pass, false);
@@ -577,6 +802,7 @@ describe('gate: cr-complete', () => {
 
   it('fails when CR lacks wiki proof', () => {
     writeTaskState({ 'task-001': { status: 'approved', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('cr/task-001-cr.md', validCr('approved', { includeWikiProof: false }));
     const r = checkGate(TEST_DIR, 'cr-complete');
     assert.equal(r.pass, false);
@@ -585,6 +811,7 @@ describe('gate: cr-complete', () => {
 
   it('fails when CR lacks scope proof', () => {
     writeTaskState({ 'task-001': { status: 'approved', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('cr/task-001-cr.md', validCr('approved', { includeScopeProof: false }));
     const r = checkGate(TEST_DIR, 'cr-complete');
     assert.equal(r.pass, false);
@@ -593,35 +820,65 @@ describe('gate: cr-complete', () => {
 
   it('fails when approved CR records failing scope check', () => {
     writeTaskState({ 'task-001': { status: 'approved', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('cr/task-001-cr.md', validCr('approved', { scopeResult: 'fail' }));
     const r = checkGate(TEST_DIR, 'cr-complete');
     assert.equal(r.pass, false);
     assert.match(r.reason, /approved CR.*Result: pass/);
   });
 
+  it('fails when approved CR has failing invariant result', () => {
+    writeTaskState({ 'task-001': { status: 'approved', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
+    writeFile('cr/task-001-cr.md', validCr('approved', { invariantRows: '| 保持旧行为 | 已验证旧行为失败 | fail |' }));
+    const r = checkGate(TEST_DIR, 'cr-complete');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /approved CR must have all invariant results: pass/);
+  });
+
+  it('fails when approved CR misses an invariant proof', () => {
+    writeTaskState({ 'task-001': { status: 'approved', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile(['src/a.ts'], ['保持旧行为', '保持错误响应格式']));
+    writeFile('cr/task-001-cr.md', validCr());
+    const r = checkGate(TEST_DIR, 'cr-complete');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /missing invariant proof/);
+  });
+
   it('fails when needs_rework lacks CR item id', () => {
     writeTaskState({ 'task-001': { status: 'needs_rework', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('cr/task-001-cr.md', validCr('needs_rework').replace('CR-001', '修复项'));
     const r = checkGate(TEST_DIR, 'cr-complete');
     assert.equal(r.pass, false);
     assert.match(r.reason, /CR-xxx/);
   });
 
-  it('passes with approved CR and verification rerun', () => {
+  it('passes with approved CR and invariant proofs', () => {
     writeTaskState({ 'task-001': { status: 'approved', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('cr/task-001-cr.md', validCr());
     assert.equal(checkGate(TEST_DIR, 'cr-complete').pass, true);
   });
 
   it('passes with needs_rework CR item id', () => {
     writeTaskState({ 'task-001': { status: 'needs_rework', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('cr/task-001-cr.md', validCr('needs_rework'));
     assert.equal(checkGate(TEST_DIR, 'cr-complete').pass, true);
   });
 
   it('passes with needs_rework CR item id and failing scope check', () => {
     writeTaskState({ 'task-001': { status: 'needs_rework', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
     writeFile('cr/task-001-cr.md', validCr('needs_rework', { scopeResult: 'fail' }));
+    assert.equal(checkGate(TEST_DIR, 'cr-complete').pass, true);
+  });
+
+  it('passes with needs_rework CR item id and failing invariant result', () => {
+    writeTaskState({ 'task-001': { status: 'needs_rework', expected_files: ['src/a.ts'] } });
+    writeFile('tasks/task-001.md', validTaskFile());
+    writeFile('cr/task-001-cr.md', validCr('needs_rework', { invariantRows: '| 保持旧行为 | 已确认旧行为失败 | fail |' }));
     assert.equal(checkGate(TEST_DIR, 'cr-complete').pass, true);
   });
 });

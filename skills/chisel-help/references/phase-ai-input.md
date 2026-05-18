@@ -14,8 +14,8 @@
 | `call-graph.md` | core-walkthrough 时序图 → 结构化调用关系表 |
 | `data-schema.md` | details/data-model 或 core-walkthrough 内联数据部分 |
 | `api-surface.md` | details/api-contracts 或 core-walkthrough 内联接口部分 |
-| `constraints.md` | overview 禁区/包袱/坏味道 + clarifications.md |
-| `change-surface.md` | core-walkthrough safe-to-change area |
+| `constraints.md` | overview 禁区/包袱/坏味道 + clarifications.json + confirmations/as-is.json |
+| `change-surface.md` | core-walkthrough safe-to-change area + as-is/coverage-matrix.json |
 
-4. `facts.md`、`constraints.md`、`change-surface.md` 必须写 `## Source Coverage`，逐项说明覆盖了哪些 `F-xxx/C-xxx` 或遗漏原因
+4. `facts.md`、`constraints.md`、`change-surface.md` 必须写 `## Source Coverage`，逐项说明覆盖了哪些 `F-xxx/C-xxx/E-xxx/L-xxx/D-xxx/S-xxx` 或遗漏原因；来源允许为 `as-is/evidence-ledger.json`、`as-is/coverage-matrix.json`、`clarifications.json`、`confirmations/as-is.json`
 5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} ai-input-ready` 验证

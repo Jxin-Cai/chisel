@@ -22,7 +22,11 @@ steps:
       check: as-is-complete
 
   - id: understand:confirm
-    description: 用户确认 as-is，回答待澄清问题并写入 clarifications.md；实时捕获知识候选
+    description: 用户确认 as-is，回答待澄清问题并写入 clarifications.json/clarifications.md 和 confirmations/as-is.json；实时捕获知识候选
+    outputs:
+      - clarifications.json
+      - clarifications.md
+      - confirmations/as-is.json
     postcondition:
       check: as-is-confirmed
 
@@ -41,7 +45,9 @@ steps:
       check: to-be-exists
 
   - id: plan:confirm
-    description: 用户确认 to-be 方案；实时捕获知识候选
+    description: 用户确认 to-be 方案，写入 confirmations/to-be.json；实时捕获知识候选
+    outputs:
+      - confirmations/to-be.json
     postcondition:
       check: to-be-confirmed
 
