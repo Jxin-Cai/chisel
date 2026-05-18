@@ -465,8 +465,13 @@ function validateFinalSummary(ideaDir) {
 export function checkGate(ideaDir, gateId) {
   if (!ideaDir || ideaDir === 'none') return { pass: false, gate: gateId, reason: 'idea-dir does not exist' };
   switch (gateId) {
-    case 'requirement-exists':
-      return result(gateId, has(ideaDir, 'requirement.md'), 'requirement.md missing');
+    case 'requirement-exists': {
+      if (!has(ideaDir, 'requirement.md')) return result(gateId, false, 'requirement.md missing');
+      const reqText = readText(join(ideaDir, 'requirement.md'));
+      const reqLines = meaningfulLines(reqText);
+      if (reqLines.length < 3) return result(gateId, false, 'requirement.md has insufficient content (< 3 meaningful lines)');
+      return result(gateId, true);
+    }
     case 'as-is-complete': {
       const missing = AS_IS_MAIN_FILES.filter(file => !has(ideaDir, file));
       if (missing.length > 0) return result(gateId, false, `missing main files: ${missing.join(', ')}`);
@@ -506,8 +511,11 @@ export function checkGate(ideaDir, gateId) {
       if (traceReason) return result(gateId, false, traceReason);
       return result(gateId, true);
     }
-    case 'to-be-confirmed':
-      return result(gateId, has(ideaDir, '.to-be-confirmed'), '.to-be-confirmed missing');
+    case 'to-be-confirmed': {
+      if (!has(ideaDir, '.to-be-confirmed')) return result(gateId, false, '.to-be-confirmed missing');
+      if (!has(ideaDir, 'to-be/implementation-plan.md')) return result(gateId, false, '.to-be-confirmed exists but implementation-plan.md is missing');
+      return result(gateId, true);
+    }
     case 'tasks-exist':
       return result(gateId, has(ideaDir, 'tasks'), 'tasks directory missing');
     case 'task-workflow-exists':

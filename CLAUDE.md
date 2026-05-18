@@ -32,7 +32,7 @@ This repository contains the `chisel` Claude Code plugin.
 ## 知识系统
 
 - 实时捕获：对话中识别到禁区/包袱/坏味道/术语时即时写入 `knowledge-candidates/`。
-- Wiki 组织：`.chisel/wiki/` 存储长期领域知识，每个文件含 `## 关联关系` 章节。
+- Wiki 组织：`.chisel/wiki/{project-name}/` 存储长期领域知识（project-name = git 仓库名），每个文件含 `## 关联关系` 章节。
 - 自动注入：SessionStart hook 检测 wiki 存在时写入 `.claude/settings.local.json` rule。
 - 知识流：候选 → 用户确认 → wiki-manage.mjs 合入 → rule 激活。
 
@@ -45,8 +45,10 @@ This repository contains the `chisel` Claude Code plugin.
 
 ## 并行开发
 
+- Worktree 粒度为 per-requirement：一个需求对应一个 worktree，内部 task 串行/并行执行。
 - 启动时检测 worktree 隔离状态，建议用户使用 `EnterWorktree` 保护当前分支。
 - `getNextTasks()` 返回多个 task 时，`chisel-implement` 通过 `--check-overlap` 检测文件重叠。
 - 无重叠 task 使用 `Agent(isolation: "worktree")` 并行编码，合并后统一更新状态。
 - 有重叠 task 串行执行；返修 task 始终串行。
 - `chisel-review` 对多个 coded task 并行派发 reviewer（reviewer 只读，无需 worktree）。
+- 需求完成后（`done` 阶段），如果在 worktree 中，提示用户合并分支到主干（PR 或直接 merge）。

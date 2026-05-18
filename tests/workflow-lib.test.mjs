@@ -16,6 +16,7 @@ import {
   markCr,
   taskStateFile,
   getTasksFileOverlap,
+  getTasksImpactOverlap,
   MAX_REWORK_COUNT
 } from '../scripts/workflow-lib.mjs';
 
@@ -95,6 +96,7 @@ describe('task state read/write', () => {
     assert.equal(read.idea, 'test-idea');
     assert.equal(read.tasks['task-001'].status, 'confirmed');
     assert.deepEqual(read.tasks['task-001'].expected_files, ['src/a.ts']);
+    assert.deepEqual(read.tasks['task-001'].impact_surface.files, ['src/a.ts']);
   });
 });
 
@@ -271,5 +273,35 @@ describe('getTasksFileOverlap', () => {
     const overlaps = getTasksFileOverlap(TEST_DIR, ['task-001', 'task-002', 'task-003']);
     assert.equal(overlaps.length, 1);
     assert.deepEqual(overlaps[0].tasks, ['task-001', 'task-002', 'task-003']);
+  });
+});
+
+describe('getTasksImpactOverlap', () => {
+  function setupOverlapTasks(tasks) {
+    const file = taskStateFile(TEST_DIR);
+    writeTaskState(file, { idea: 'test', tasks });
+  }
+
+  it('detects overlapping symbols and shared state', () => {
+    setupOverlapTasks({
+      'task-001': { status: 'confirmed', depends_on: [], expected_files: ['src/a.ts'], impact_surface: { files: ['src/a.ts'], symbols: ['UserService.create'], invariants: [], shared_state: ['user table'] } },
+      'task-002': { status: 'confirmed', depends_on: [], expected_files: ['src/b.ts'], impact_surface: { files: ['src/b.ts'], symbols: ['UserService.create'], invariants: [], shared_state: ['user table'] } }
+    });
+
+    const overlaps = getTasksImpactOverlap(TEST_DIR, ['task-001', 'task-002']);
+
+    assert.deepEqual(overlaps.map(overlap => overlap.kind).sort(), ['shared_state', 'symbols']);
+  });
+
+  it('falls back to expected files when impact surface is missing', () => {
+    setupOverlapTasks({
+      'task-001': { status: 'confirmed', depends_on: [], expected_files: ['src/shared.ts'] },
+      'task-002': { status: 'confirmed', depends_on: [], expected_files: ['src/shared.ts'] }
+    });
+
+    const overlaps = getTasksImpactOverlap(TEST_DIR, ['task-001', 'task-002']);
+
+    assert.equal(overlaps[0].kind, 'files');
+    assert.equal(overlaps[0].value, 'src/shared.ts');
   });
 });

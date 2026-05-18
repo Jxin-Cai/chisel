@@ -21,7 +21,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 |------|------|
 | TASK | `idea_dir`、`requirement_path` |
 | requirement 文件 | 目标功能涉及的范围 |
-| `.chisel/wiki/index.md`（如存在） | 按 agent-shared-rules §1 加载，以代码事实为准 |
+| `.chisel/wiki/{project-name}/index.md`（如存在） | 按 agent-shared-rules §1 加载，以代码事实为准 |
 
 ## 探索策略
 

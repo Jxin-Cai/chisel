@@ -1,6 +1,6 @@
 # Knowledge Candidates 模板
 
-本模板用于 `.chisel/<idea-name>/knowledge-candidates/`。候选知识必须先以 JSON 文件记录，经过用户逐条确认后，才能合入 `.chisel/wiki/`。
+本模板用于 `.chisel/<idea-name>/knowledge-candidates/`。候选知识必须先以 JSON 文件记录，经过用户逐条确认后，才能合入 `.chisel/wiki/{project-name}/`。
 
 `as-is/knowledge-candidates.md` 可以保留人类可读摘要，但不作为 gate 的状态来源。
 

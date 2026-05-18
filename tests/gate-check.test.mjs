@@ -248,8 +248,22 @@ describe('gate: requirement-exists', () => {
     assert.equal(checkGate(TEST_DIR, 'requirement-exists').pass, false);
   });
 
-  it('passes when present', () => {
-    writeFile('requirement.md', '# Requirement');
+  it('fails when file is empty', () => {
+    writeFile('requirement.md', '');
+    const r = checkGate(TEST_DIR, 'requirement-exists');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /insufficient content/);
+  });
+
+  it('fails when file has only a heading', () => {
+    writeFile('requirement.md', '# Requirement\n');
+    const r = checkGate(TEST_DIR, 'requirement-exists');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /insufficient content/);
+  });
+
+  it('passes when file has meaningful content', () => {
+    writeFile('requirement.md', '# Requirement\n\n## 需求目标\n\n在用户创建时增加空名称校验。\n\n## 背景\n\n当前系统允许空名称用户。\n');
     assert.equal(checkGate(TEST_DIR, 'requirement-exists').pass, true);
   });
 });
@@ -385,6 +399,27 @@ describe('gate: as-is-confirmed', () => {
     writeFile('.as-is-confirmed', '');
     writeFile('clarifications.md', '');
     assert.equal(checkGate(TEST_DIR, 'as-is-confirmed').pass, true);
+  });
+});
+
+describe('gate: to-be-confirmed', () => {
+  it('fails without marker', () => {
+    const r = checkGate(TEST_DIR, 'to-be-confirmed');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /to-be-confirmed missing/);
+  });
+
+  it('fails when marker exists but plan is missing', () => {
+    writeFile('.to-be-confirmed', '');
+    const r = checkGate(TEST_DIR, 'to-be-confirmed');
+    assert.equal(r.pass, false);
+    assert.match(r.reason, /implementation-plan.md is missing/);
+  });
+
+  it('passes when marker and plan both exist', () => {
+    writeFile('.to-be-confirmed', '');
+    writeFile('to-be/implementation-plan.md', '# Plan\n');
+    assert.equal(checkGate(TEST_DIR, 'to-be-confirmed').pass, true);
   });
 });
 

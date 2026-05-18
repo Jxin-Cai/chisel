@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { atomicWriteFile, ensureDir } from './workflow-lib.mjs';
-
-const RULE_DESCRIPTION = 'Chisel Wiki: 项目领域知识';
-const RULE_CONTENT = '本项目有领域知识库 .chisel/wiki/。在修改代码或回答架构问题前，先检查 .chisel/wiki/index.md 找到相关的禁区、包袱、术语、坏味道。只按需加载当前任务相关的 wiki 文件。';
+import { atomicWriteFile, ensureDir, resolveProjectName } from './workflow-lib.mjs';
 
 function main() {
   const projectRoot = process.argv[2] || '.';
-  const wikiIndex = join(projectRoot, '.chisel', 'wiki', 'index.md');
+  const projectName = resolveProjectName(projectRoot);
+  const newWikiIndex = join(projectRoot, '.chisel', 'wiki', projectName, 'index.md');
+  const legacyWikiIndex = join(projectRoot, '.chisel', 'wiki', 'index.md');
 
-  if (!existsSync(wikiIndex)) {
+  const wikiIndex = existsSync(newWikiIndex) ? newWikiIndex :
+    existsSync(legacyWikiIndex) ? legacyWikiIndex : null;
+
+  if (!wikiIndex) {
     process.exit(0);
   }
 
@@ -18,6 +20,9 @@ function main() {
   if (!content) {
     process.exit(0);
   }
+
+  const wikiPath = existsSync(newWikiIndex) ? `.chisel/wiki/${projectName}/` : '.chisel/wiki/';
+  const ruleContent = `本项目有领域知识库 ${wikiPath}。在修改代码或回答架构问题前，先检查 ${wikiPath}index.md 找到相关的禁区、包袱、术语、坏味道。只按需加载当前任务相关的 wiki 文件。`;
 
   const settingsDir = join(projectRoot, '.claude');
   const settingsFile = join(settingsDir, 'settings.local.json');
@@ -35,10 +40,11 @@ function main() {
     settings.rules = [];
   }
 
+  const RULE_DESCRIPTION = 'Chisel Wiki: 项目领域知识';
   const existingIndex = settings.rules.findIndex(r => r.description === RULE_DESCRIPTION);
   const rule = {
     description: RULE_DESCRIPTION,
-    content: RULE_CONTENT,
+    content: ruleContent,
     path_match: ['**']
   };
 

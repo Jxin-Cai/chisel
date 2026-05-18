@@ -7,6 +7,7 @@ import {
   getNextTasks,
   getReworkTasks,
   getTasksFileOverlap,
+  getTasksImpactOverlap,
   initTaskState,
   initWorkflowState,
   markCr,
@@ -109,8 +110,9 @@ export async function main(argv) {
       case '--check-overlap': {
         const taskIds = argv.slice(2).join(',').split(',').filter(Boolean);
         if (taskIds.length < 2) fail('--check-overlap 需要至少两个 task-id（逗号分隔或空格分隔）');
-        const overlaps = getTasksFileOverlap(ideaDir, taskIds);
-        print({ overlaps, has_overlap: overlaps.length > 0 });
+        const file_overlap = getTasksFileOverlap(ideaDir, taskIds);
+        const impact_overlap = getTasksImpactOverlap(ideaDir, taskIds);
+        print({ overlaps: file_overlap, file_overlap, impact_overlap, has_overlap: file_overlap.length > 0 || impact_overlap.length > 0 });
         break;
       }
       default:

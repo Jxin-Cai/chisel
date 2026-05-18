@@ -23,8 +23,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 | task report | `{idea_dir}/task-reports/{task_id}-report.md` |
 | task 文件 | `{idea_dir}/tasks/{task_id}.md` |
 | to-be/implementation-plan.md | 本 task 对应的方案段落 |
-| `.chisel/wiki/forbidden-zones.md`（如存在） | 禁区清单 |
-| `.chisel/wiki/weird-but-intentional.md`（如存在） | 包袱清单 |
+| `.chisel/wiki/{project-name}/forbidden-zones.md`（如存在） | 禁区清单 |
+| `.chisel/wiki/{project-name}/weird-but-intentional.md`（如存在） | 包袱清单 |
 
 <HARD-GATE>
 定位变更的实际代码位置。使用 report 中的 changed_files 列表，逐个 Read 变更文件。

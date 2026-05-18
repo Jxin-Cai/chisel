@@ -24,7 +24,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 | `{idea_dir}/as-is/ai-input/` | 先读 `facts.md` + `constraints.md`，再按需读 `call-graph.md`/`data-schema.md`/`api-surface.md`/`change-surface.md` |
 | `{idea_dir}/clarifications.md`（如存在） | 用户在 confirm 阶段的澄清 |
 | `{idea_dir}/as-is/` 人类学习版 | 按需参考 overview/core-walkthrough/details（不要全读） |
-| `.chisel/wiki/index.md`（如存在） | 按 agent-shared-rules §1 加载禁区/包袱/术语 |
+| `.chisel/wiki/{project-name}/index.md`（如存在） | 按 agent-shared-rules §1 加载禁区/包袱/术语 |
 
 ## 就近加载
 

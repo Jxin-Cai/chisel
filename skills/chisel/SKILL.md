@@ -18,6 +18,7 @@ argument-hint: "<需求描述或需求文件路径>"
 2. **Worktree 检测**：运行 `git rev-parse --git-dir` 和 `git rev-parse --git-common-dir`
    - 两者不同且非 submodule → 已在隔离 worktree 中，跳过
    - 两者相同 → 建议用户使用 `EnterWorktree` 创建隔离工作空间，保护当前分支
+   - Worktree 粒度：一个需求对应一个 worktree，内部所有 task 在同一 worktree 中串行/并行执行
 3. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
 4. 设 `{IDEA_DIR}` = `.chisel/<idea-name>/`
 5. 如果目录不存在，设 idea-dir = `none`
@@ -46,9 +47,9 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 | resume_step | 动作 | postcondition |
 |---|---|---|
-| `receive-requirement` | 创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
+| `receive-requirement` | Read `${REF}/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
-| `understand:confirm` | 展示 3分钟摘要、风险地图、用户确认清单和待澄清问题，等用户逐项确认后写入 `clarifications.md`，确认后 `touch .as-is-confirmed`；执行实时知识捕获 | `as-is-confirmed` |
+| `understand:confirm` | Read `${REF}/clarifications-template.md`；展示 3分钟摘要、风险地图、用户确认清单和待澄清问题，等用户逐项确认后按模板写入 `clarifications.md`，确认后 `touch .as-is-confirmed`；执行实时知识捕获 | `as-is-confirmed` |
 | `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
 | `plan:confirm` | 展示 to-be 摘要，等用户确认后 `touch .to-be-confirmed`；执行实时知识捕获 | `to-be-confirmed` |
@@ -57,9 +58,9 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
 | `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行 | `knowledge-extracted` |
-| `final:summary` | 写 `{IDEA_DIR}/final-summary.md` 汇总变更、验证、Scope Control、知识候选和 wiki 更新情况，然后 `touch {IDEA_DIR}/.done` | `done` |
+| `final:summary` | Read `${REF}/final-summary-template.md`，按模板写 `{IDEA_DIR}/final-summary.md`，然后 `touch {IDEA_DIR}/.done` | `done` |
 | `blocked` | 停止，报告阻塞原因 | — |
-| `done` | 报告完成 | — |
+| `done` | 报告完成，检测 worktree 并提示合并（见下方流程） | — |
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references`
 
@@ -100,6 +101,21 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 ## final:summary 详细行为
 
 写入 `{IDEA_DIR}/final-summary.md`，必须包含：变更摘要、验证结果、Scope Control Summary、Knowledge Candidates、Wiki Updates。只有写完后才允许 `touch {IDEA_DIR}/.done`。
+
+---
+
+## 完成后合并流程
+
+当 `resume_step` = `done` 且 `phase_detail.in_worktree` = `true` 时：
+
+1. `git log --oneline main..HEAD` 展示本次需求所有 commit
+2. 告知用户："需求 `{idea-name}` 已完成，当前在 worktree 分支 `{branch}` 中。"
+3. 提供两种合并选项：
+   - **创建 PR**：`git push -u origin {branch}`，然后协助创建 Pull Request
+   - **直接合并**：提醒用户先 `ExitWorktree` 回到主分支，再 `git merge {branch}`
+4. 等待用户选择后协助执行
+
+当 `phase_detail.in_worktree` = `false` 时，直接报告完成，不触发合并流程。
 
 ---
 

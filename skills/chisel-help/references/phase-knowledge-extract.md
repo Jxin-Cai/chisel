@@ -17,7 +17,7 @@
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --candidate-status {IDEA_DIR} <candidate-file> <confirmed|rejected|deferred> --reason "<原因>"
    ```
-7. 如 `.chisel/wiki/` 不存在且有 confirmed 候选：`--init .`
+7. 如 `.chisel/wiki/{project-name}/` 不存在且有 confirmed 候选：`--init .`
 8. 对 confirmed 候选检测冲突后合入：
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --detect-conflicts . <candidate-file>

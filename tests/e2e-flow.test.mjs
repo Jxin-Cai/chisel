@@ -8,6 +8,7 @@ import { initWiki, mergeCandidate, readCandidate, setCandidateStatus } from '../
 import { readTaskState, taskStateFile, writeTaskState } from '../scripts/workflow-lib.mjs';
 
 const TEST_DIR = join(import.meta.dirname, '.tmp-test-e2e-flow');
+const PROJECT_NAME = 'test-project';
 
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
@@ -428,7 +429,7 @@ ${wikiProof()}
 
 describe('chisel e2e artifact flow', () => {
   it('passes gates from requirement through task report, CR, and knowledge extraction', () => {
-    writeFile('requirement.md', '# Requirement\n\n给用户创建增加空名称校验。\n');
+    writeFile('requirement.md', '# Requirement\n\n## 需求目标\n\n给用户创建增加空名称校验。\n\n## 验收标准\n\n- 空名称时返回 400\n');
     assertGatePass('requirement-exists');
 
     writeAsIsArtifacts();
@@ -496,13 +497,13 @@ describe('chisel e2e artifact flow', () => {
     writeFile('.knowledge-extracted', '');
     assert.equal(checkGate(TEST_DIR, 'knowledge-extracted').pass, false);
     setCandidateStatus(TEST_DIR, candidateFile, 'confirmed', '用户确认这是长期禁区');
-    initWiki(TEST_DIR, '');
-    mergeCandidate(TEST_DIR, candidateFile);
+    initWiki(TEST_DIR, '', PROJECT_NAME);
+    mergeCandidate(TEST_DIR, candidateFile, PROJECT_NAME);
     assertGatePass('knowledge-extracted');
     const candidate = readCandidate(candidateFile);
     assert.equal(candidate.status, 'merged');
     assert.equal(candidate.merge.wiki_file, 'forbidden-zones.md');
-    const wiki = readFileSync(join(TEST_DIR, '.chisel/wiki/forbidden-zones.md'), 'utf8');
+    const wiki = readFileSync(join(TEST_DIR, `.chisel/wiki/${PROJECT_NAME}/forbidden-zones.md`), 'utf8');
     assert.match(wiki, /src\/user\.ts/);
 
     assert.equal(checkGate(TEST_DIR, 'done').pass, false);

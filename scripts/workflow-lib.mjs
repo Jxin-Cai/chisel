@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { execSync } from 'node:child_process';
+import { basename, dirname, join } from 'node:path';
 import { appendAuditLog } from './audit-log.mjs';
 
 export const TASK_STATES = ['pending', 'confirmed', 'coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'];
@@ -64,7 +65,8 @@ export function parseTaskSpec(spec) {
       depends_on: Array.isArray(obj.depends_on) ? obj.depends_on : [],
       description: obj.description || '',
       file: obj.file || `tasks/${obj.taskId}.md`,
-      expected_files: Array.isArray(obj.expected_files) ? obj.expected_files : []
+      expected_files: Array.isArray(obj.expected_files) ? obj.expected_files : [],
+      impact_surface: obj.impact_surface && typeof obj.impact_surface === 'object' ? obj.impact_surface : {}
     };
   }
   const parts = raw.split(':');
@@ -82,6 +84,7 @@ export function parseTaskSpec(spec) {
 function parseScalar(value) {
   const trimmed = String(value || '').trim();
   if (trimmed.startsWith('[')) return parseList(trimmed);
+  if (trimmed.startsWith('{')) return JSON.parse(trimmed);
   if (/^-?\d+$/.test(trimmed)) return Number(trimmed);
   if (trimmed === 'true') return true;
   if (trimmed === 'false') return false;
@@ -140,6 +143,15 @@ export function readTaskState(file) {
   return state;
 }
 
+export function normalizeImpactSurface(surface = {}) {
+  return {
+    files: Array.isArray(surface.files) ? surface.files : [],
+    symbols: Array.isArray(surface.symbols) ? surface.symbols : [],
+    invariants: Array.isArray(surface.invariants) ? surface.invariants : [],
+    shared_state: Array.isArray(surface.shared_state) ? surface.shared_state : []
+  };
+}
+
 export function writeTaskState(file, state) {
   ensureDir(dirname(file));
   const out = [];
@@ -152,6 +164,7 @@ export function writeTaskState(file, state) {
     out.push(`    description: ${quoteYaml(task.description || '')}`);
     out.push(`    file: ${quoteYaml(task.file || `tasks/${taskId}.md`)}`);
     out.push(`    expected_files: [${(task.expected_files || []).join(', ')}]`);
+    out.push(`    impact_surface: ${JSON.stringify(normalizeImpactSurface(task.impact_surface || { files: task.expected_files || [] }))}`);
     out.push(`    report_file: ${quoteYaml(task.report_file || `task-reports/${taskId}-report.md`)}`);
     out.push(`    cr_file: ${quoteYaml(task.cr_file || `cr/${taskId}-cr.md`)}`);
     out.push(`    rework_count: ${Number(task.rework_count || 0)}`);
@@ -225,6 +238,7 @@ export function initTaskState(ideaDir, ideaName, specs) {
       description: task.description || '',
       file: taskFile,
       expected_files: task.expected_files?.length ? task.expected_files : readTaskExpectedFiles(join(ideaDir, taskFile)),
+      impact_surface: normalizeImpactSurface(task.impact_surface || { files: task.expected_files || [] }),
       report_file: task.report_file || `task-reports/${task.taskId}-report.md`,
       cr_file: task.cr_file || `cr/${task.taskId}-cr.md`,
       rework_count: Number(task.rework_count || 0),
@@ -279,6 +293,23 @@ export function getTasksFileOverlap(ideaDir, taskIds) {
     .map(([file, tasks]) => ({ file, tasks }));
 }
 
+export function getTasksImpactOverlap(ideaDir, taskIds) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  const byKind = { files: {}, symbols: {}, invariants: {}, shared_state: {} };
+  for (const tid of taskIds) {
+    const task = state.tasks[tid] || {};
+    const surface = normalizeImpactSurface(task.impact_surface || { files: task.expected_files || [] });
+    for (const kind of Object.keys(byKind)) {
+      for (const value of surface[kind] || []) {
+        (byKind[kind][value] ??= []).push(tid);
+      }
+    }
+  }
+  return Object.entries(byKind).flatMap(([kind, values]) => Object.entries(values)
+    .filter(([, tasks]) => tasks.length > 1)
+    .map(([value, tasks]) => ({ kind, value, tasks })));
+}
+
 export function updateTaskStatus(ideaDir, taskId, nextStatus) {
   if (!TASK_STATES.includes(nextStatus)) throw new Error(`invalid task status: ${nextStatus}`);
   const file = taskStateFile(ideaDir);
@@ -311,4 +342,13 @@ export function markCr(ideaDir, taskId, result) {
   writeTaskState(file, state);
   appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from: current, to: task.status, detail: { cr_result: result, rework_count: task.rework_count || 0 } });
   return task;
+}
+
+export function resolveProjectName(projectRoot) {
+  try {
+    const toplevel = execSync('git rev-parse --show-toplevel', { cwd: projectRoot, encoding: 'utf8' }).trim();
+    return basename(toplevel);
+  } catch {
+    return basename(projectRoot);
+  }
 }

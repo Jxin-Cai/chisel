@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { readTaskExpectedFiles, readTaskState, taskStateFile, writeTaskState } from './workflow-lib.mjs';
@@ -20,26 +20,55 @@ function parseNumstat(output) {
   });
 }
 
-function main(argv) {
-  const ideaDir = argv[0];
-  const taskId = argv[1] || '';
-  if (!ideaDir) fail('用法: task-metrics.mjs <idea-dir> [task-id]');
-  if (!existsSync(taskStateFile(ideaDir))) fail('task-workflow-state.yaml missing');
+function gitNames(args) {
+  return execFileSync('git', args, { encoding: 'utf8' }).split('\n').filter(Boolean);
+}
+
+function matchesScope(file, patterns) {
+  if (patterns.length === 0) return true;
+  return patterns.some(pattern => file === pattern || pattern.endsWith('/') && file.startsWith(pattern) || pattern.endsWith('/*') && file.startsWith(pattern.slice(0, -1)) || pattern.endsWith('/**') && file.startsWith(pattern.slice(0, -2)));
+}
+
+function lineCount(file) {
+  try {
+    const text = readFileSync(file, 'utf8');
+    if (!text) return 0;
+    return text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+  } catch {
+    return 0;
+  }
+}
+
+function collectRows(scopedFiles = []) {
+  let trackedRows = [];
+  let untrackedFiles = [];
+  try {
+    trackedRows = parseNumstat(execFileSync('git', ['diff', '--numstat', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+  } catch {
+    trackedRows = [];
+  }
+  try {
+    untrackedFiles = gitNames(['ls-files', '--others', '--exclude-standard']);
+  } catch {
+    untrackedFiles = [];
+  }
+  const trackedFiles = new Set(trackedRows.map(row => row.file));
+  const rows = [
+    ...trackedRows,
+    ...untrackedFiles.filter(file => !trackedFiles.has(file)).map(file => ({ file, added: lineCount(file), deleted: 0 }))
+  ];
+  return rows.filter(row => row.file && !row.file.startsWith('.chisel/') && matchesScope(row.file, scopedFiles));
+}
+
+function updateTaskMetrics(ideaDir, taskId = '') {
+  if (!existsSync(taskStateFile(ideaDir))) throw new Error('task-workflow-state.yaml missing');
 
   const state = readTaskState(taskStateFile(ideaDir));
   const task = taskId ? state.tasks[taskId] : null;
   const taskFile = task ? join(ideaDir, task.file) : '';
   const expectedFiles = readTaskExpectedFiles(taskFile);
   const scopedFiles = expectedFiles.length > 0 ? expectedFiles : task?.expected_files || [];
-  let rows = [];
-  try {
-    const args = ['diff', '--numstat', 'HEAD'];
-    if (scopedFiles.length > 0) args.push('--', ...scopedFiles);
-    rows = parseNumstat(execFileSync('git', args, { encoding: 'utf8' }))
-      .filter(r => !r.file.startsWith('.chisel/'));
-  } catch {
-    rows = [];
-  }
+  const rows = collectRows(scopedFiles);
 
   const metricsDir = join(ideaDir, 'metrics');
   mkdirSync(metricsDir, { recursive: true });
@@ -66,7 +95,22 @@ function main(argv) {
     loc_deleted: locDeleted
   };
   writeFileSync(join(metricsDir, 'task-summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-  console.log(JSON.stringify(summary));
+  return summary;
 }
 
-main(process.argv.slice(2));
+function main(argv) {
+  const ideaDir = argv[0];
+  const taskId = argv[1] || '';
+  if (!ideaDir) fail('用法: task-metrics.mjs <idea-dir> [task-id]');
+  try {
+    console.log(JSON.stringify(updateTaskMetrics(ideaDir, taskId)));
+  } catch (error) {
+    fail(error.message);
+  }
+}
+
+export { collectRows, parseNumstat, updateTaskMetrics };
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main(process.argv.slice(2));
+}

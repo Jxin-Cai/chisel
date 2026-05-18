@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   allTasksApproved,
@@ -38,6 +39,14 @@ function emit(resumeStep, reason, phaseDetail = {}) {
 
 function has(rel) {
   return existsSync(join(IDEA_DIR, rel));
+}
+
+function isInWorktree() {
+  try {
+    const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
+    const commonDir = execSync('git rev-parse --git-common-dir', { encoding: 'utf8' }).trim();
+    return gitDir !== commonDir;
+  } catch { return false; }
 }
 
 function main() {
@@ -98,8 +107,8 @@ function main() {
     return;
   }
 
-  if (allTasksApproved(IDEA_DIR) && !has('.done')) {
-    if (!has('.knowledge-extracted')) {
+  if (allTasksApproved(IDEA_DIR) && !checkGate(IDEA_DIR, 'done').pass) {
+    if (!checkGate(IDEA_DIR, 'knowledge-extracted').pass) {
       emit('knowledge:extract', 'all tasks approved, knowledge candidate extraction is pending');
       return;
     }
@@ -107,8 +116,8 @@ function main() {
     return;
   }
 
-  if (has('.done')) {
-    emit('done', 'workflow is done');
+  if (checkGate(IDEA_DIR, 'done').pass) {
+    emit('done', 'workflow is done', { in_worktree: isInWorktree() });
     return;
   }
 
