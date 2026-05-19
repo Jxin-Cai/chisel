@@ -108,29 +108,80 @@ claude plugin details chisel@chisel
 
 ### 确认与澄清
 
-每个确认阶段都会产出结构化凭据：
+chisel 有 3 个人工确认环节，每个都会暂停流程等待用户逐项确认，确认通过后才能进入下一阶段。
 
-- `clarifications.json` / `clarifications.md` — as-is 确认时的逐项决策记录
-- `confirmations/as-is.json` — as-is 确认凭据
-- `confirmations/strategy.json` — 策略方向确认凭据
-- `confirmations/to-be.json` — task 拆分确认凭据
+#### 1. As-Is 确认（`understand:confirm`）
 
-确认对话中会实时捕获知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射），自动写入 `knowledge-candidates/`。
+explorer 完成 as-is 文档后，chisel 向用户展示：
+
+- **3 分钟摘要**：一句话目标、当前主链路、最可能改动点、最大风险
+- **风险地图**：与本次需求相关的理解和修改风险
+- **常见误解点**：防止误读遗留行为的关键事实
+- **用户确认清单**：每个 `C-xxx` 待确认项，用户逐条回答
+- **待澄清问题**：需要用户补充的业务背景
+
+用户逐项确认或补充后，chisel 将结果写入：
+
+- `clarifications.json` — 每个 `C-xxx` 的 `id/question/decision/rationale/status`，状态为 `confirmed/defaulted/deferred`
+- `clarifications.md` — 人类可读的决策记录镜像
+- `confirmations/as-is.json` — 结构化确认凭据
+
+如果用户对 as-is 理解有异议，可以在此阶段要求 explorer 补充调研。未通过确认前，流程不会进入规划阶段。
+
+#### 2. 策略确认（`plan:strategy-confirm`）
+
+planner 产出 `implementation-plan.md` 后，chisel 向用户展示实现策略方向、设计决策、允许/禁止修改范围。用户确认后写入 `confirmations/strategy.json`。如果用户对方向有异议，可以要求调整后重新运行 `plan:strategy`。
+
+#### 3. Task 拆分确认（`plan:decompose-confirm`）
+
+planner 基于已确认策略产出 task 拆分后，chisel 展示每个 task 的目标、依赖、验证方案和风险。用户确认后写入 `confirmations/to-be.json`。
+
+#### 实时知识捕获
+
+在所有确认对话中，chisel 会监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射），识别到时即时写入 `knowledge-candidates/` 目录。这些候选会在后续 `knowledge:extract` 阶段统一去重和合入。
 
 ### Worktree 隔离
 
-`chisel` 启动时会检测是否在 worktree 中：
+遗留系统改动风险高，chisel 强烈建议在隔离的 worktree 中工作，避免直接在主分支上修改。
 
-- **未在 worktree 中** → 建议使用 `EnterWorktree` 创建隔离工作空间，保护当前分支
-- **已在 worktree 中** → 继续工作
+#### 启动时
 
-Worktree 粒度为 **per-requirement**：一个需求对应一个 worktree，内部所有 task 在同一 worktree 中执行。
+chisel 启动时会自动检测 worktree 状态：
 
-完成后（`done` 阶段），如果在 worktree 中，`chisel` 会：
-1. 展示本次需求的所有 commit
-2. 提供两种合并选项：
-   - **创建 PR**：push 分支并协助创建 Pull Request
-   - **直接合并**：提醒先 `ExitWorktree` 回到主分支再 merge
+- **已在 worktree 中** → 直接继续，无需额外操作
+- **未在 worktree 中** → 提示用户创建隔离空间：
+
+```text
+建议使用 EnterWorktree 创建隔离工作空间，保护当前分支。
+```
+
+用户在 Claude Code 中执行 `EnterWorktree` 即可创建。Worktree 粒度为 **per-requirement**：一个需求对应一个 worktree，内部所有 task 在同一 worktree 中执行。
+
+#### 完成后合并
+
+当需求完成（`done` 阶段）且处于 worktree 中时，chisel 会：
+
+1. 运行 `git log --oneline main..HEAD` 展示本次需求所有 commit
+2. 提供两种合并方式供用户选择：
+
+**方式一：创建 PR（推荐）**
+
+```text
+chisel: 需求 user-phone-validation 已完成，当前在 worktree 分支 claude/worktree-xxx 中。
+       是否创建 PR 合入主分支？
+```
+
+chisel 会协助 `git push -u origin <branch>` 并创建 Pull Request。
+
+**方式二：直接合并**
+
+```text
+chisel: 如需直接合并，请先执行 ExitWorktree 回到主分支，再 git merge <branch>。
+```
+
+#### 不在 worktree 中
+
+如果用户选择不使用 worktree（直接在主分支工作），chisel 也能正常运行，完成后直接报告完成，不触发合并流程。
 
 ### 并行开发
 
@@ -248,18 +299,36 @@ task report 和 CR 必须包含：
 
 ### 独立使用 `/chisel-wiki`
 
-不启动 `/chisel` 主流程，也可以独立管理知识：
+知识管理不依赖 `/chisel` 主流程。你可以随时用 `/chisel-wiki` 直接管理项目知识，典型场景：
+
+- **团队经验沉淀**：把 code review 中发现的禁区、历史包袱直接喂入 wiki
+- **新人入职**：整理散落在各处的业务术语映射，统一录入
+- **日常维护**：定期检查 wiki 引用的文件路径是否还存在
 
 ```text
-/chisel-wiki init                           # 初始化 wiki 目录
-/chisel-wiki feed forbidden_zone <描述>     # 手动喂入一条知识
-/chisel-wiki query <关键词>                 # 查询 wiki
-/chisel-wiki health                         # 检测过时文件引用
-/chisel-wiki list                           # 列出所有条目
-/chisel-wiki import <file>                  # 从文件批量导入
+# 初始化 wiki（首次使用）
+/chisel-wiki init
+
+# 手动喂入一条知识
+/chisel-wiki feed forbidden_zone 支付模块的 PaymentGateway 类不能直接修改，必须通过 adapter 扩展
+/chisel-wiki feed baggage OrderService.calculateTotal 中的折扣逻辑看起来该重构，但三个客户端依赖了它的返回格式
+/chisel-wiki feed terminology "核销"在代码中对应 Redemption.consume()，不是 Voucher.use()
+
+# 查询相关知识
+/chisel-wiki query 支付
+/chisel-wiki query 折扣 --module order
+
+# 从文件批量导入（支持 JSON 数组和 Markdown 格式）
+/chisel-wiki import docs/legacy-knowledge.json
+
+# 检查 wiki 健康状态
+/chisel-wiki health
+
+# 列出所有条目
+/chisel-wiki list
 ```
 
-`feed` 子命令支持交互式创建候选 → 用户确认 → 冲突检测 → 合入 wiki 的完整流程。
+`feed` 子命令的完整流程：解析分类 → 收集内容 → 创建候选 → 用户确认 → 冲突检测 → 合入 wiki。全程交互式，不会跳过确认环节。
 
 ### Wiki Health Check
 
