@@ -90,7 +90,10 @@
 }
 ```
 
-可选字段：`allowed_symbols`、`forbidden_symbols`、`behavior_invariants`、`impact_surface`、`context_to_load`、`exports`、`imports`。
+可选字段：`allowed_symbols`、`forbidden_symbols`、`behavior_invariants`、`impact_surface`、`context_to_load`、`exports`、`imports`、`modification_hints`、`verification_expected_output`。
 
 - `exports`：本 task 产出的、可被其他 task 引用的符号或文件（如新增的函数、类型、配置）。
 - `imports`：本 task 依赖的、由其他 task 产出的符号或文件（引用 `exports` 的 task_id）。
+- `modification_hints`：string[] — 给 coder 的修改提示（如"在 X 函数后添加 Y 调用"），降低上手成本。
+- `verification_expected_output`：string — 预期验证输出描述（如"运行 npm test 应看到 all tests passed"），帮助 coder 判断验证是否通过。
+- `task_complexity`："trivial" | "standard" | "complex"（可选，默认 "standard"）— 决定 coder agent 模型选择：trivial→haiku, standard→sonnet, complex→opus。

@@ -20,7 +20,8 @@ This repository contains the `chisel` Claude Code plugin.
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
 - `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入设计 to-be 方案。
 - `agent-chisel-coder` 只按已确认 task 实现。
-- `agent-chisel-architect-reviewer` 只读 CR，不直接修改代码。
+- `agent-chisel-spec-reviewer` 轻量规格合规检查（haiku），核对 AC 覆盖、scope、forbidden files。
+- `agent-chisel-architect-reviewer` 只读架构质量 CR（sonnet），仅在 spec-cr 通过后触发。
 
 ## As-Is 分层结构
 

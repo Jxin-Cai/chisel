@@ -1,6 +1,6 @@
 ---
 name: chisel-plan
-description: 基于已确认的 as-is 文档和用户澄清，为遗留系统新增功能生成 to-be 实现方案。支持 strategy（策略设计）和 decompose（任务拆分）两种模式。当 chisel 编排器进入 plan:strategy 或 plan:decompose 阶段时触发。
+description: 当 chisel 编排器进入 plan:strategy 或 plan:decompose 阶段时触发。
 argument-hint: "<idea-name> [mode=strategy|decompose]"
 ---
 
@@ -56,4 +56,12 @@ decompose 模式基于已确认的 `to-be/implementation-plan.md` 和 `confirmat
 
 方案中必须包含 task 拆分建议。
 不要创建 `.to-be-confirmed`，也不要创建 `confirmations/to-be.json`；to-be 确认凭据只能由主编排器在用户明确确认后写入。
+
+合理化预防表：
+
+| 你的想法 | 现实 |
+|---------|------|
+| "方案很明显，不需要多选项" | 至少考虑一个替代方案 |
+| "task 拆分太细浪费时间" | 粗粒度 task 导致 CR 困难和返修 |
+| "先写代码再补方案" | 没有方案的代码无法 CR |
 </HARD-GATE>

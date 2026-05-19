@@ -1,9 +1,9 @@
 ---
-name: agent-chisel-coder
+name: agent-chisel-coder-heavy
 description: 遗留系统功能实现 agent，基于 task 文件和 to-be 方案修改代码并产出变更报告
-model: sonnet
+model: opus
 effort: high
-maxTurns: 20
+maxTurns: 30
 tools: Read, Write, Edit, Glob, Grep, Bash
 skills:
   - chisel-agent-rules

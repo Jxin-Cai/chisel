@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { atomicWriteFile, ensureDir, initTaskState, normalizeImpactSurface, readFrontmatter } from './workflow-lib.mjs';
 
 const VALID_RISK_LEVELS = new Set(['low', 'medium', 'high']);
+const VALID_TASK_COMPLEXITIES = new Set(['trivial', 'standard', 'complex']);
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -67,6 +68,7 @@ function validateTask(task, index) {
   for (const key of ['as_is', 'to_be', 'wiki', 'module_map', 'adr', 'tests']) requireArray(task.context_to_load[key] || [], `context_to_load.${key}`, taskId);
   if (!VALID_RISK_LEVELS.has(task.risk_level)) throw new Error(`${taskId} risk_level must be low, medium, or high`);
   if (!task.rollback) throw new Error(`${taskId} missing rollback`);
+  if (task.task_complexity && !VALID_TASK_COMPLEXITIES.has(task.task_complexity)) throw new Error(`${taskId} task_complexity must be trivial, standard, or complex`);
   return task;
 }
 
@@ -123,6 +125,7 @@ forbidden_symbols: ${yamlList(task.forbidden_symbols || [])}
 exports: ${yamlList(task.exports || [])}
 imports: ${yamlList(task.imports || [])}
 impact_surface: ${JSON.stringify(normalizeImpactSurface(task.impact_surface))}
+task_complexity: ${task.task_complexity || 'standard'}
 verification_pre_check: ${verificationPreCheck}
 ---
 
@@ -210,7 +213,16 @@ ${task.risk_level}
 ## Notes for Coder Agent
 
 ${task.notes_for_coder || '无'}
+${task.modification_hints && task.modification_hints.length > 0 ? `
+## Modification Hints
 
+${bulletList(task.modification_hints)}
+` : ''}
+${task.verification_expected_output ? `
+## Verification Expected Output
+
+${task.verification_expected_output}
+` : ''}
 ## Notes for Reviewer Agent
 
 ${task.notes_for_reviewer || '无'}

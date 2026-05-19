@@ -1,6 +1,6 @@
 ---
 name: chisel
-description: 在遗留系统上增加功能的端到端编排器。理解 as-is → 确认 → 规划 to-be → 确认 → 拆 task → coding → 架构师 CR → 返修闭环。当用户要在遗留系统、老系统、已有系统上增加功能、修改行为、扩展接口时使用。即使用户没说"遗留"，只要涉及在已有代码仓上新增功能并且需要先理解现有逻辑再动手，就应该触发。
+description: 当用户要在已有代码仓上新增功能、修改行为、扩展接口，且需要先理解现有逻辑再动手时触发。即使用户没说"遗留"，只要涉及对现有系统做功能增强就应匹配。
 argument-hint: "<需求描述或需求文件路径>"
 ---
 
@@ -52,13 +52,51 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`，严格遵
 
 ## 步骤执行循环
 
+```dot
+digraph chisel_flow {
+  rankdir=TB; node [shape=box, style=rounded];
+  receive [label="receive-requirement"];
+  explore [label="understand:explore"];
+  u_confirm [label="understand:confirm"];
+  ai_input [label="understand:generate-ai-input\n(skip if trivial)"];
+  strategy [label="plan:strategy"];
+  s_confirm [label="plan:strategy-confirm"];
+  decompose [label="plan:decompose"];
+  d_confirm [label="plan:decompose-confirm"];
+  tasks [label="tasks:init"];
+  implement [label="implement:code"];
+  review [label="review:cr"];
+  repair [label="repair:code"];
+  knowledge [label="knowledge:extract\n(skip if trivial)"];
+  final [label="final:summary"];
+  done [label="done"];
+
+  receive -> explore -> u_confirm -> ai_input -> strategy;
+  strategy -> s_confirm -> decompose -> d_confirm -> tasks;
+  tasks -> implement -> review;
+  review -> repair [label="needs_rework"];
+  repair -> review [label="re-review"];
+  review -> knowledge [label="all approved"];
+  knowledge -> final -> done;
+}
+```
+
 <HARD-GATE>
 每轮必须调用：
 ```
 node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 ```
 只执行脚本返回的 `resume_step`。
-**上下文变长时，你可能产生"需求已经很清楚了，直接开始编码"的冲动——这是跳步违规。**
+
+合理化预防表：
+
+| 你的想法 | 现实 |
+|---------|------|
+| "需求很简单，直接编码" | 简单需求也可能有隐藏约束，as-is 不可跳 |
+| "上次 as-is 还有效" | 代码可能已变，必须重新探索 |
+| "用户催得急，先写代码" | 返工成本远高于前期理解成本 |
+| "这个确认环节用户肯定会同意" | 用户确认是质量门禁，不可代替 |
+| "需求已经很清楚了，直接开始编码" | 这是跳步违规——上下文变长后最常见的合理化冲动 |
 </HARD-GATE>
 
 | resume_step | 动作 | postcondition |

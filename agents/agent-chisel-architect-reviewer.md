@@ -50,6 +50,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 | 测试充分性 | 测试覆盖关键路径和边界 |
 | 风格一致性 | 是否与 as-is 现有风格一致 |
 | Verification Review | 必须复跑验证命令或说明不可执行原因 |
+| 验证证据审查 | task report 验证表格每行是否有实际命令输出；缺少证据 → needs_rework |
 
 ## 产物
 
