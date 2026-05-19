@@ -26,7 +26,7 @@ This repository contains the `chisel` Claude Code plugin.
 ## As-Is 分层结构
 
 - **主干文件**（必须）：`overview.md`、`core-walkthrough.md`、`evidence-index.md`、`knowledge-candidates.md`
-- **枝干文件**（按需）：`details/entrypoints.md`、`details/data-model.md`、`details/api-contracts.md`、`details/data-flow.md`、`details/tests.md`
+- **枝干文件**（按需）：`details/entrypoints.md`、`details/data-model.md`、`details/api-contracts.md`、`details/data-flow.md`
 - **AI 输入版**（`as-is/ai-input/`）：用户确认后从人类版提取的结构化数据，供 Planner 使用。
 - 主干聚焦需求相关的核心链路，枝干按需展开细节，主干用 `→ 详见 details/xxx.md` 引用。
 

@@ -25,7 +25,6 @@
 | `as-is/details/data-model.md` | 涉及 > 3 张表或数据关系复杂时 |
 | `as-is/details/api-contracts.md` | 涉及外部接口契约变更时 |
 | `as-is/details/data-flow.md` | 数据流转路径复杂、涉及多系统交互时 |
-| `as-is/details/tests.md` | 已有测试需要评估或回归风险高时 |
 
 ---
 
@@ -99,7 +98,6 @@
 | `details/data-model.md` | ER 图 + 表结构、字段清单、表间关系、关联证据 |
 | `details/api-contracts.md` | 接口清单 + 请求/响应 JSON 示例 + 错误码/鉴权/幂等性 |
 | `details/data-flow.md` | 数据流转路径：从哪来、到哪去、中间变换 |
-| `details/tests.md` | 已有测试、可复用验证命令、缺失测试、回归风险 |
 
 ---
 

@@ -22,7 +22,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 | 来源 | 读取 |
 |------|------|
 | TASK | `idea_dir`、`task_id`、`task_file`、`parallel`（可选） |
-| task 文件 | 目标、修改范围、验证方式 |
+| task 文件 | 目标、修改范围 |
 | requirement | 目标和约束（快速过一遍） |
 | to-be/implementation-plan.md | 本 task 对应的方案段落 |
 | `{idea_dir}/cr/{task_id}-cr.md`（如存在） | 返修模式——按 CR-xxx 清单逐项修改，并在 report 中填写 Rework Resolution Matrix |
@@ -40,20 +40,9 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 2. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
 3. **实现** — 修改代码，靠齐 as-is 风格
 4. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
-5. **验证** — 运行 task 文件中指定的验证命令
 
-<HARD-GATE>
-验证铁律：禁止无新鲜验证证据的完成声明。
-
-Red Flags（出现任一则 report 无效）：
-- "之前的测试已通过" — 必须本次重新运行
-- "代码逻辑上应该正确" — 必须用实际输出证明
-- "编译通过所以功能正常" — 编译 ≠ 功能验证
-- 验证部分只有描述没有命令输出
-</HARD-GATE>
-
-6. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`
-7. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：成功时 `--finish-task {task_id} coded`，失败时用 `failed`
+5. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`
+6. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：成功时 `--finish-task {task_id} coded`，失败时用 `failed`
 
 ## 限制
 

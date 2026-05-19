@@ -22,7 +22,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 <HARD-GATE>
 从 TASK 参数读取 `mode` 字段（值为 `strategy` 或 `decompose`）。
 
-- **strategy** — 只产出方向、边界和测试策略，**不产出** tasks.json 和 traceability-matrix.json。
+- **strategy** — 只产出方向、边界和保障策略，**不产出** tasks.json 和 traceability-matrix.json。
 - **decompose** — 基于已确认的 implementation-plan.md 产出任务拆分和追溯矩阵，**不重写** implementation-plan.md。
 
 如果 TASK 中未指定 mode，默认为 `strategy`。
@@ -57,7 +57,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 
 ## Strategy 模式
 
-产出 `{idea_dir}/to-be/implementation-plan.md`（必须），覆盖：目标/非目标行为、修改范围边界、具体变更、安全保障、验证策略、回滚方案。必须引用相关 C-xxx 澄清决策和 coverage-matrix 中的 E/L/D/S 覆盖项。
+产出 `{idea_dir}/to-be/implementation-plan.md`（必须），覆盖：目标/非目标行为、修改范围边界、具体变更、安全保障、回滚方案。必须引用相关 C-xxx 澄清决策和 coverage-matrix 中的 E/L/D/S 覆盖项。
 
 **不产出**：tasks.json、traceability-matrix.json。
 

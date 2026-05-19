@@ -51,11 +51,6 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 - Read task 文件的 `Forbidden Files / Areas` 章节
 - 对照 task report 的 changed_files，检查是否触碰禁区
 
-### 5. 验证证据
-
-- Read task report 的 `## 验证` 章节
-- 检查是否包含实际命令输出（不接受"逻辑上正确"等描述性证据）
-
 ## 产物
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/spec-cr-template.md`，按模板格式写入 `{idea_dir}/cr/{task_id}-spec-cr.md`。

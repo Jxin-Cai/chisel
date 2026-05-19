@@ -60,7 +60,6 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 | `details/data-model.md` | `coverage-matrix.data.length > 3` |
 | `details/api-contracts.md` | `coverage-matrix.side_effects` 中存在 `type == "external_call"` 的条目 |
 | `details/data-flow.md` | `coverage-matrix.links.length > 5` 或 `links` 中存在 `type == "async"` 的条目 |
-| `details/tests.md` | requirement 文件中提及"回归"、"测试"或"test"（不区分大小写） |
 
 未满足触发条件的枝干文件**不生成**。
 

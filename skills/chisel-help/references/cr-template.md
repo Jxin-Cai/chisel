@@ -47,12 +47,7 @@ approved | needs_rework | blocked
 
 ## 审查详情
 
-按 reviewer 审查维度（健壮性、并发安全、事务边界、兼容性、安全性、可观测性、测试充分性）逐项填写有发现的维度，无发现的跳过。
-
-## Verification
-
-- 已复跑的验证命令：
-- 结果：
+按 reviewer 审查维度（健壮性、并发安全、事务边界、兼容性、安全性、可观测性）逐项填写有发现的维度，无发现的跳过。
 
 ## Wiki Entries Loaded
 

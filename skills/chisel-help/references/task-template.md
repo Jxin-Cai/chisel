@@ -61,7 +61,6 @@ task_complexity: standard # trivial | standard | complex — 决定 coder agent 
 - wiki：
 - module map：
 - ADR：
-- tests：
 
 ## 实现要求
 
@@ -77,12 +76,6 @@ task_complexity: standard # trivial | standard | complex — 决定 coder agent 
 
 - [ ] 
 
-## Verification
-
-```bash
-# 填写本 task 的验证命令；没有自动化验证时写明人工验证方式
-```
-
 ## Rollback Point
 
 ## Risk Level
@@ -92,7 +85,5 @@ low / medium / high
 ## Notes for Coder Agent
 
 ## Modification Hints
-
-## Verification Expected Output
 
 ## Notes for Reviewer Agent

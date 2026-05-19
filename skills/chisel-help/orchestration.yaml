@@ -37,7 +37,7 @@ steps:
       check: ai-input-ready
 
   - id: plan:strategy
-    description: planner 产出 implementation-plan.md（方向、边界、测试策略）
+    description: planner 产出 implementation-plan.md（方向、边界、保障策略）
     action:
       type: skill
       name: chisel-plan

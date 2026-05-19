@@ -250,7 +250,6 @@ function validateTaskIntegrity(ideaDir) {
     '## Context to Load',
     '## Traceability',
     '## Acceptance Criteria',
-    '## Verification',
     '## Behavior Invariants'
   ];
 
@@ -268,8 +267,8 @@ function validateTaskIntegrity(ideaDir) {
     if (!Object.hasOwn(fm, 'expected_files')) return `${taskId} frontmatter missing expected_files`;
     const riskLevel = fm.risk_level || 'high';
     const riskSections = {
-      low: ['## Acceptance Criteria', '## Verification'],
-      medium: ['## Acceptance Criteria', '## Verification', '## Behavior Invariants', '### Forbidden Files / Areas'],
+      low: ['## Acceptance Criteria'],
+      medium: ['## Acceptance Criteria', '## Behavior Invariants', '### Forbidden Files / Areas'],
       high: requiredSections
     };
     const riskRequiredSections = riskSections[riskLevel] || requiredSections;
@@ -384,7 +383,7 @@ function validateScopeProof(text, mode, { behaviorInvariants = [], requireAllInv
 
 function validateTaskReport(reportPath, behaviorInvariants = []) {
   const text = readText(reportPath);
-  if (!hasRequiredLines(reportPath, ['## 做了什么', '## 改了什么', '## 验证'])) return 'missing required report sections';
+  if (!hasRequiredLines(reportPath, ['## 做了什么', '## 改了什么'])) return 'missing required report sections';
   const wikiProofReason = validateWikiLoadProof(text);
   if (wikiProofReason) return wikiProofReason;
   return validateScopeProof(text, 'report', { behaviorInvariants });
@@ -392,7 +391,7 @@ function validateTaskReport(reportPath, behaviorInvariants = []) {
 
 function validateCrFile(crPath, status, behaviorInvariants = []) {
   const text = readText(crPath);
-  const required = ['## 结论', '## 功能完整度', '## Scope Control', '## Verification', '## Rework Items'];
+  const required = ['## 结论', '## 功能完整度', '## Scope Control', '## Rework Items'];
   const missing = required.filter(section => !hasSection(text, section));
   if (missing.length > 0) return `missing sections: ${missing.join(', ')}`;
   const reworkCount = Number(readFrontmatter(text).rework_count || 0);
@@ -628,7 +627,6 @@ function validateToBeConfirmation(ideaDir) {
     if (!acknowledged.has(task.task_id)) return `confirmations/to-be.json task_acknowledgement missing ${task.task_id}`;
   }
   if (doc.task_acknowledgement?.dependencies_reviewed !== true) return 'confirmations/to-be.json dependencies_reviewed must be true';
-  if (doc.task_acknowledgement?.verification_reviewed !== true) return 'confirmations/to-be.json verification_reviewed must be true';
   if (doc.risk_acknowledgement?.reviewed !== true) return 'confirmations/to-be.json risk_acknowledgement.reviewed must be true';
   return '';
 }
@@ -705,13 +703,12 @@ function validateFinalSummary(ideaDir) {
   const summaryPath = join(ideaDir, 'final-summary.md');
   if (!existsSync(summaryPath)) return 'final-summary.md missing';
   const text = readText(summaryPath);
-  const requiredSections = ['## 变更摘要', '## 验证结果', '## Scope Control Summary', '## Knowledge Candidates', '## Wiki Updates'];
+  const requiredSections = ['## 变更摘要', '## Scope Control Summary', '## Knowledge Candidates', '## Wiki Updates'];
   const missing = requiredSections.filter(section => !text.includes(section));
   if (missing.length > 0) return `final-summary.md missing sections: ${missing.join(', ')}`;
   for (const section of requiredSections.map(item => item.replace(/^##\s+/, ''))) {
     if (!hasMeaningfulSection(text, section)) return `final-summary.md section is empty: ${section}`;
   }
-  if (!/node --test|验证|通过|未执行|不可执行/.test(sectionText(text, '验证结果'))) return 'final-summary.md 验证结果 must summarize verification status';
   if (!/scope-check|越界|Scope|forbidden|expected/i.test(sectionText(text, 'Scope Control Summary'))) return 'final-summary.md Scope Control Summary must summarize scope control';
   return '';
 }
@@ -787,8 +784,6 @@ export function checkGate(ideaDir, gateId) {
       if (taskSection.includes('task_id') || taskSection.includes('### task-')) {
         if (!taskSection.includes('Acceptance Criteria') && !taskSection.includes('验收标准'))
           return result(gateId, false, 'Task 拆分建议 section missing Acceptance Criteria in task entries');
-        if (!taskSection.includes('Verification') && !taskSection.includes('验证'))
-          return result(gateId, false, 'Task 拆分建议 section missing Verification in task entries');
       }
       const tasksReason = validateTasksJsonAgainstTraceability(ideaDir);
       if (tasksReason) return result(gateId, false, tasksReason);

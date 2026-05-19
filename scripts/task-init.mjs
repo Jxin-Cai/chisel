@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { atomicWriteFile, ensureDir, initTaskState, normalizeImpactSurface, readFrontmatter } from './workflow-lib.mjs';
 
@@ -51,7 +50,7 @@ function validateTask(task, index) {
   requireArray(task.forbidden_files, 'forbidden_files', taskId);
   requireArray(task.expected_files, 'expected_files', taskId);
   requireArray(task.acceptance_criteria, 'acceptance_criteria', taskId);
-  requireArray(task.verification, 'verification', taskId);
+  requireArray(task.verification || [], 'verification', taskId);
   requireArray(task.trace_refs, 'trace_refs', taskId);
   requireArray(task.exports || [], 'exports', taskId);
   requireArray(task.imports || [], 'imports', taskId);
@@ -61,11 +60,10 @@ function validateTask(task, index) {
   if (!task.impact_surface || typeof task.impact_surface !== 'object' || Array.isArray(task.impact_surface)) throw new Error(`${taskId} missing impact_surface`);
   for (const key of ['files', 'symbols', 'invariants', 'shared_state']) requireArray(task.impact_surface[key] || [], `impact_surface.${key}`, taskId);
   if (task.acceptance_criteria.length === 0) throw new Error(`${taskId} acceptance_criteria must not be empty`);
-  if (task.verification.length === 0) throw new Error(`${taskId} verification must not be empty`);
   if (task.trace_refs.length === 0) throw new Error(`${taskId} trace_refs must not be empty`);
   if (task.behavior_invariants.length === 0) throw new Error(`${taskId} behavior_invariants must not be empty`);
   if (!task.context_to_load || typeof task.context_to_load !== 'object') throw new Error(`${taskId} missing context_to_load`);
-  for (const key of ['as_is', 'to_be', 'wiki', 'module_map', 'adr', 'tests']) requireArray(task.context_to_load[key] || [], `context_to_load.${key}`, taskId);
+  for (const key of ['as_is', 'to_be', 'wiki', 'module_map', 'adr']) requireArray(task.context_to_load[key] || [], `context_to_load.${key}`, taskId);
   if (!VALID_RISK_LEVELS.has(task.risk_level)) throw new Error(`${taskId} risk_level must be low, medium, or high`);
   if (!task.rollback) throw new Error(`${taskId} missing rollback`);
   if (task.task_complexity && !VALID_TASK_COMPLEXITIES.has(task.task_complexity)) throw new Error(`${taskId} task_complexity must be trivial, standard, or complex`);
@@ -106,13 +104,11 @@ function contextLines(context = {}) {
     `- to-be：${(context.to_be || []).join(', ') || '无'}`,
     `- wiki：${(context.wiki || []).join(', ') || '无'}`,
     `- module map：${(context.module_map || []).join(', ') || '无'}`,
-    `- ADR：${(context.adr || []).join(', ') || '无'}`,
-    `- tests：${(context.tests || []).join(', ') || '无'}`
+    `- ADR：${(context.adr || []).join(', ') || '无'}`
   ].join('\n');
 }
 
 function renderTaskMarkdown(task) {
-  const verificationPreCheck = checkVerificationBinaries(task);
   return `---
 task_id: ${task.task_id}
 status: confirmed
@@ -126,7 +122,6 @@ exports: ${yamlList(task.exports || [])}
 imports: ${yamlList(task.imports || [])}
 impact_surface: ${JSON.stringify(normalizeImpactSurface(task.impact_surface))}
 task_complexity: ${task.task_complexity || 'standard'}
-verification_pre_check: ${verificationPreCheck}
 ---
 
 # Task: ${task.task_id} - ${task.title}
@@ -196,12 +191,6 @@ ${checkboxList(task.behavior_invariants)}
 
 ${checkboxList(task.acceptance_criteria)}
 
-## Verification
-
-\`\`\`bash
-${task.verification.join('\n')}
-\`\`\`
-
 ## Rollback Point
 
 ${task.rollback}
@@ -218,29 +207,10 @@ ${task.modification_hints && task.modification_hints.length > 0 ? `
 
 ${bulletList(task.modification_hints)}
 ` : ''}
-${task.verification_expected_output ? `
-## Verification Expected Output
-
-${task.verification_expected_output}
-` : ''}
 ## Notes for Reviewer Agent
 
 ${task.notes_for_reviewer || '无'}
 `;
-}
-
-function checkVerificationBinaries(task) {
-  const warnings = [];
-  for (const cmd of task.verification || []) {
-    const binary = cmd.trim().split(/\s+/)[0];
-    if (!binary || binary.startsWith('#') || binary.startsWith('$') || binary.startsWith('cd')) continue;
-    try {
-      execSync(`command -v ${binary}`, { encoding: 'utf8', stdio: 'pipe' });
-    } catch {
-      warnings.push(binary);
-    }
-  }
-  return warnings.length > 0 ? `missing: ${warnings.join(', ')}` : 'pass';
 }
 
 function checkExistingTaskFiles(ideaDir, tasks) {
