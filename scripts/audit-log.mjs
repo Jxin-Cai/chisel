@@ -31,6 +31,17 @@ export function lastStepTransition(ideaDir) {
   return null;
 }
 
+export function knowledgeLoadedEntries(ideaDir) {
+  return readAuditLog(ideaDir).filter(e => e.type === 'knowledge_loaded');
+}
+
+export function knowledgeHitRate(ideaDir) {
+  const loaded = knowledgeLoadedEntries(ideaDir);
+  const allIds = new Set(loaded.map(e => e.entry_id));
+  const usedIds = new Set(loaded.filter(e => e.used).map(e => e.entry_id));
+  return { loaded: allIds.size, used: usedIds.size, rate: allIds.size > 0 ? usedIds.size / allIds.size : 0 };
+}
+
 function main() {
   const [ideaDir, command, ...rest] = process.argv.slice(2);
   if (!ideaDir || !command) {

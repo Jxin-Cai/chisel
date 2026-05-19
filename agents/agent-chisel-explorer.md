@@ -46,7 +46,21 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 按 agent-shared-rules §4，先 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/as-is-template.md`。
 </HARD-GATE>
 
-在 `{idea_dir}/as-is/` 下按模板写入主干文件（overview、core-walkthrough、evidence-index、evidence-ledger.json、coverage-matrix.json、knowledge-candidates），在 `{idea_dir}/as-is/details/` 下按需写入枝干文件。主干用 `→ 详见 details/xxx.md` 引用枝干。
+在 `{idea_dir}/as-is/` 下按模板写入主干文件（overview、core-walkthrough、evidence-index、evidence-ledger.json、coverage-matrix.json、knowledge-candidates），在 `{idea_dir}/as-is/details/` 下按量化规则写入枝干文件。主干用 `→ 详见 details/xxx.md` 引用枝干。
+
+### 枝干触发规则（基于 coverage-matrix.json）
+
+写完 `coverage-matrix.json` 后，按以下条件判定是否生成对应枝干文件：
+
+| 枝干文件 | 触发条件 |
+|----------|----------|
+| `details/entrypoints.md` | `coverage-matrix.entrypoints.length > 2` |
+| `details/data-model.md` | `coverage-matrix.data.length > 3` |
+| `details/api-contracts.md` | `coverage-matrix.side_effects` 中存在 `type == "external_call"` 的条目 |
+| `details/data-flow.md` | `coverage-matrix.links.length > 5` 或 `links` 中存在 `type == "async"` 的条目 |
+| `details/tests.md` | requirement 文件中提及"回归"、"测试"或"test"（不区分大小写） |
+
+未满足触发条件的枝干文件**不生成**。
 
 `coverage-matrix.json` 必须覆盖入口、链路、数据、副作用四个维度；不涉及的维度必须写 `not_applicable` reason。每个覆盖项必须有 `file + line_start` 证据，`covered_by_facts` 只能引用 evidence-ledger 中已有的 `F-xxx`。
 

@@ -25,6 +25,13 @@
 |---------|------|------|------|
 | <id> | <category> | merged/rejected/deferred | <一句话> |
 
+## Wiki Hit Rate
+
+- 加载 wiki 条目数：<N>
+- 实际命中（CR/实现中引用）条目数：<N>
+- 命中率：<百分比>
+- 未命中条目及原因：<列表或"全部命中">
+
 ## Wiki Updates
 
 - <wiki 文件变更摘要，或"无 wiki 更新">

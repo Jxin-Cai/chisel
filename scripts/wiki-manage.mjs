@@ -59,6 +59,25 @@ const CANDIDATE_TRANSITIONS = new Set([
   'confirmed:merged'
 ]);
 
+const SYNONYM_MAP = new Map([
+  ['用户', ['user', '账号', 'account']],
+  ['user', ['用户', '账号', 'account']],
+  ['订单', ['order', '工单']],
+  ['order', ['订单', '工单']],
+  ['创建', ['create', '新增', 'add']],
+  ['create', ['创建', '新增', 'add']],
+  ['删除', ['delete', 'remove', '移除']],
+  ['delete', ['删除', 'remove', '移除']],
+  ['修改', ['update', 'modify', '变更', 'edit']],
+  ['update', ['修改', 'modify', '变更', 'edit']],
+  ['查询', ['query', 'search', '搜索', 'find']],
+  ['query', ['查询', 'search', '搜索', 'find']],
+  ['登录', ['login', 'sign-in', '认证']],
+  ['login', ['登录', 'sign-in', '认证']],
+  ['支付', ['payment', 'pay', '付款']],
+  ['payment', ['支付', 'pay', '付款']],
+]);
+
 const RELATION_SECTION = `
 ## 关联关系
 
@@ -141,7 +160,7 @@ function validateCandidate(candidate, { requireConfirmed = false } = {}) {
   if (missing.length > 0) throw new Error(`candidate missing required fields: ${missing.join(', ')}`);
   if (!CATEGORY_TO_WIKI[candidate.category]) throw new Error(`unknown category: ${candidate.category}`);
   if (!CANDIDATE_STATUSES.has(candidate.status)) throw new Error(`unknown candidate status: ${candidate.status}`);
-  if (!Number.isFinite(candidate.quality_score) || candidate.quality_score < 0.5) throw new Error('candidate quality_score must be >= 0.5');
+  if (candidate.quality_score !== undefined && (!Number.isFinite(candidate.quality_score) || candidate.quality_score < 0)) throw new Error('candidate quality_score must be a non-negative number');
   if (!Array.isArray(candidate.keywords) || candidate.keywords.filter(Boolean).length === 0) throw new Error('candidate keywords must not be empty');
   const invalidEvidenceIndex = candidate.evidence.findIndex(evidence => !validCandidateEvidence(evidence));
   if (invalidEvidenceIndex >= 0) throw new Error(`candidate evidence[${invalidEvidenceIndex}] must be structured file/line_start or legacy file:line string`);
@@ -254,6 +273,9 @@ function mergeCandidate(projectRoot, candidateFile, projectName) {
     for (const [key, value] of Object.entries(candidate.content)) {
       entry += `**${key}：** ${Array.isArray(value) ? value.join(', ') : value}\n\n`;
     }
+  }
+  if (candidate.relevance) {
+    entry += `**relevance：** ${candidate.relevance}\n\n`;
   }
 
   const relationMarker = '## 关联关系';
@@ -424,24 +446,87 @@ function buildLoadPlan(matches, minScore) {
   return plan;
 }
 
-function queryWiki(projectRoot, { text = '', limit = 10, category = '', minScore = 1, loadPlan = false, projectName } = {}) {
+function expandTokensWithSynonyms(tokens) {
+  const expanded = new Set(tokens);
+  for (const token of tokens) {
+    const synonyms = SYNONYM_MAP.get(token);
+    if (synonyms) {
+      for (const syn of synonyms) expanded.add(syn);
+    }
+  }
+  return [...expanded];
+}
+
+function loadWikiKeywords(dir) {
+  const keywords = new Map();
+  for (const file of queryFiles(dir)) {
+    const content = readFileSync(file.path, 'utf8');
+    for (const entry of splitEntries(content, basename(file.rel, '.md'))) {
+      const id = entryId(entry.title);
+      const body = entry.body.join('\n');
+      const kwMatch = body.match(/\*\*keywords?[：:]\*\*\s*(.+)/i);
+      if (kwMatch) {
+        const kws = kwMatch[1].split(/[,，]/).map(k => k.trim().toLowerCase()).filter(Boolean);
+        for (const kw of kws) {
+          if (!keywords.has(kw)) keywords.set(kw, []);
+          keywords.get(kw).push(id);
+        }
+      }
+    }
+  }
+  return keywords;
+}
+
+function relevanceBoost(entry) {
+  const body = entry.body.join('\n');
+  const match = body.match(/\*\*relevance[：:]\*\*\s*(\S+)/i);
+  if (!match) return 0;
+  const level = match[1].toLowerCase();
+  if (level === 'high') return 2;
+  if (level === 'medium') return 1;
+  return 0;
+}
+
+function queryWiki(projectRoot, { text = '', limit = 10, category = '', minScore = 1, loadPlan = false, projectName, module = '' } = {}) {
   const dir = wikiDir(projectRoot, projectName);
-  const tokens = tokenize(text);
-  const result = { status: 'ok', query: { text, limit, category, min_score: minScore, load_plan: loadPlan }, matches: [], warnings: [] };
+  const rawTokens = tokenize(text);
+  const result = { status: 'ok', query: { text, limit, category, min_score: minScore, load_plan: loadPlan, module }, matches: [], warnings: [] };
   if (loadPlan) result.load_plan = { must_load: [], optional_load: [], skip: [] };
   if (!existsSync(dir)) return result;
-  if (tokens.length === 0) {
+  if (rawTokens.length === 0) {
     result.warnings.push('empty query text');
     return result;
   }
 
+  // Expand tokens with synonym map
+  let tokens = expandTokensWithSynonyms(rawTokens);
+
+  // Expand tokens with wiki-specific keywords
+  const wikiKeywords = loadWikiKeywords(dir);
+  const extraTokens = new Set();
+  for (const token of tokens) {
+    const related = wikiKeywords.get(token);
+    if (related) {
+      for (const id of related) extraTokens.add(id.toLowerCase());
+    }
+  }
+  for (const extra of extraTokens) tokens.push(extra);
+  tokens = [...new Set(tokens)];
+
   const matches = [];
   for (const file of queryFiles(dir)) {
+    // Module filter: if module is set and file is under modules/, only include matching module files
+    if (module && file.rel.startsWith('modules/')) {
+      const fileName = basename(file.rel, '.md');
+      if (fileName !== module) continue;
+    }
+
     const fileCategory = WIKI_TO_CATEGORY[file.rel] || (file.rel.startsWith('modules/') ? 'module' : '');
     if (category && category !== fileCategory) continue;
     const content = readFileSync(file.path, 'utf8');
     for (const entry of splitEntries(content, basename(file.rel, '.md'))) {
-      const { score, matchedTerms } = scoreEntry(entry, file.rel, tokens);
+      const { score: baseScore, matchedTerms } = scoreEntry(entry, file.rel, tokens);
+      const score = baseScore + relevanceBoost(entry);
       if (score <= 0) continue;
       if (score < minScore && !loadPlan) continue;
       matches.push({
@@ -462,6 +547,58 @@ function queryWiki(projectRoot, { text = '', limit = 10, category = '', minScore
   result.matches = sorted.filter(match => match.score >= minScore);
   if (loadPlan) result.load_plan = buildLoadPlan(sorted, minScore);
   return result;
+}
+
+function healthCheck(projectRoot, projectName) {
+  const dir = wikiDir(projectRoot, projectName);
+  const healthFiles = ['forbidden-zones.md', 'weird-but-intentional.md', 'do-not-refactor-yet.md', 'glossary.md'];
+  const stale = [];
+  const healthy = [];
+
+  for (const wikiFile of healthFiles) {
+    const filePath = join(dir, wikiFile);
+    if (!existsSync(filePath)) continue;
+    const content = readFileSync(filePath, 'utf8');
+
+    for (const entry of splitEntries(content, basename(wikiFile, '.md'))) {
+      const id = entryId(entry.title);
+      const paths = [];
+
+      for (const line of entry.body) {
+        // Extract paths from **范围：**, 路径：, **位置：** lines
+        const scopeMatch = line.match(/\*\*范围[：:]\*\*\s*(.+)/);
+        const pathMatch = line.match(/路径[：:]\s*(.+)/);
+        const locationMatch = line.match(/\*\*位置[：:]\*\*\s*(.+)/);
+        const matched = scopeMatch || pathMatch || locationMatch;
+        if (matched) {
+          const rawPaths = matched[1].split(/[,，]/).map(p => p.trim().replace(/`/g, '')).filter(Boolean);
+          paths.push(...rawPaths);
+        }
+      }
+
+      if (paths.length === 0) {
+        healthy.push({ id, file: wikiFile });
+        continue;
+      }
+
+      const pathsMissing = paths.filter(p => !existsSync(join(projectRoot, p)));
+      if (pathsMissing.length > 0) {
+        stale.push({ id, file: wikiFile, paths_missing: pathsMissing });
+      } else {
+        healthy.push({ id, file: wikiFile });
+      }
+    }
+  }
+
+  return {
+    stale,
+    healthy,
+    summary: {
+      total: stale.length + healthy.length,
+      healthy_count: healthy.length,
+      stale_count: stale.length
+    }
+  };
 }
 
 function parseCandidateStatusArgs(args) {
@@ -496,7 +633,7 @@ function parseDetectConflictsArgs(args) {
 
 function parseQueryArgs(args) {
   const projectRoot = args[1] || '.';
-  const options = { text: '', limit: 10, category: '', minScore: 1, loadPlan: false };
+  const options = { text: '', limit: 10, category: '', minScore: 1, loadPlan: false, module: '' };
   for (let i = 2; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === '--text') options.text = args[++i] || '';
@@ -504,6 +641,7 @@ function parseQueryArgs(args) {
     else if (arg === '--category') options.category = args[++i] || '';
     else if (arg === '--min-score') options.minScore = Number(args[++i] || 1);
     else if (arg === '--load-plan') options.loadPlan = true;
+    else if (arg === '--module') options.module = args[++i] || '';
     else if (arg === '--json') continue;
     else {
       process.stderr.write(`unknown query arg: ${arg}\n`);
@@ -518,7 +656,7 @@ function main() {
   const command = args[0];
 
   if (!command) {
-    process.stderr.write('用法: wiki-manage.mjs <--init|--merge|--list|--link|--query|--candidate-status|--candidate-list> [args...]\n');
+    process.stderr.write('用法: wiki-manage.mjs <--init|--merge|--list|--link|--query|--candidate-status|--candidate-list|--health-check> [args...]\n');
     process.exit(1);
   }
 
@@ -579,13 +717,20 @@ function main() {
       console.log(JSON.stringify(queryWiki(projectRoot, options), null, 2));
       break;
     }
+    case '--health-check': {
+      const projectRoot = args[1] || '.';
+      const projectFlag = args.indexOf('--project');
+      const projectName = projectFlag >= 0 ? args[projectFlag + 1] : undefined;
+      console.log(JSON.stringify(healthCheck(projectRoot, projectName), null, 2));
+      break;
+    }
     default:
       process.stderr.write(`unknown command: ${command}\n`);
       process.exit(1);
   }
 }
 
-export { addLink, detectCandidateConflicts, initWiki, listCandidates, listEntries, mergeCandidate, queryWiki, readCandidate, setCandidateStatus, validateCandidate };
+export { addLink, detectCandidateConflicts, healthCheck, initWiki, listCandidates, listEntries, mergeCandidate, queryWiki, readCandidate, setCandidateStatus, validateCandidate };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main();

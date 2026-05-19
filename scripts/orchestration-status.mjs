@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
@@ -8,6 +8,7 @@ import {
   getCodedTasksNeedingReview,
   getNextTasks,
   getReworkTasks,
+  getStaleCodingTasks,
   readTaskState,
   taskStateFile,
   updateWorkflowPhase
@@ -23,9 +24,11 @@ if (!IDEA_DIR) {
 }
 
 function emit(resumeStep, reason, phaseDetail = {}) {
+  const complexity = phaseDetail.complexity || (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? detectComplexity(IDEA_DIR) : 'standard');
   console.log(`resume_step: ${resumeStep}`);
   console.log(`reason: ${JSON.stringify(reason)}`);
-  const entries = Object.entries(phaseDetail).filter(([, value]) => value !== undefined && value !== '');
+  console.log(`complexity: ${complexity}`);
+  const entries = Object.entries(phaseDetail).filter(([k, v]) => v !== undefined && v !== '' && k !== 'complexity');
   if (entries.length > 0) {
     console.log('phase_detail:');
     for (const [key, value] of entries) console.log(`  ${key}: ${Array.isArray(value) ? value.join(',') : value}`);
@@ -39,6 +42,21 @@ function emit(resumeStep, reason, phaseDetail = {}) {
 
 function has(rel) {
   return existsSync(join(IDEA_DIR, rel));
+}
+
+function detectComplexity(ideaDir) {
+  const reqPath = join(ideaDir, 'requirement.md');
+  if (!existsSync(reqPath)) return 'standard';
+  const text = readFileSync(reqPath, 'utf8');
+  const explicitMatch = text.match(/^##\s*复杂度[：:]\s*(trivial|standard|complex)\s*$/m);
+  if (explicitMatch) return explicitMatch[1];
+  const scopeSection = text.split('## 涉及范围')[1]?.split('##')[0] || '';
+  const scopeItems = scopeSection.split('\n').filter(l => /^-\s+\S/.test(l)).length;
+  const hasNewTable = /新增.*表|新.*table|create.*table|DDL/i.test(text);
+  const hasNewApi = /新增.*接口|new.*api|新.*endpoint/i.test(text);
+  if (scopeItems <= 2 && !hasNewTable && !hasNewApi) return 'trivial';
+  if (scopeItems > 5) return 'complex';
+  return 'standard';
 }
 
 function isInWorktree() {
@@ -66,63 +84,79 @@ function main() {
     emit('understand:confirm', 'as-is structured confirmation is missing or invalid');
     return;
   }
-  if (!checkGate(IDEA_DIR, 'ai-input-ready').pass) {
-    emit('understand:generate-ai-input', 'ai-input documents have not been generated from confirmed as-is');
+  const complexity = detectComplexity(IDEA_DIR);
+  if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'ai-input-ready').pass) {
+    emit('understand:generate-ai-input', 'ai-input documents have not been generated from confirmed as-is', { complexity });
+    return;
+  }
+  // Plan: strategy → strategy-confirm → decompose (to-be-exists) → decompose-confirm (to-be-confirmed)
+  if (!checkGate(IDEA_DIR, 'strategy-exists').pass) {
+    emit('plan:strategy', 'implementation strategy does not exist', { complexity });
+    return;
+  }
+  if (!checkGate(IDEA_DIR, 'strategy-confirmed').pass) {
+    emit('plan:strategy-confirm', 'strategy confirmation is missing', { complexity });
     return;
   }
   if (!checkGate(IDEA_DIR, 'to-be-exists').pass) {
-    emit('plan:design', 'to-be implementation plan does not exist');
+    emit('plan:decompose', 'task decomposition (tasks.json + traceability-matrix) does not exist', { complexity });
     return;
   }
   if (!checkGate(IDEA_DIR, 'to-be-confirmed').pass) {
-    emit('plan:confirm', 'to-be structured confirmation is missing or invalid');
+    emit('plan:decompose-confirm', 'task decomposition confirmation is missing', { complexity });
     return;
   }
   if (!has('task-workflow-state.yaml')) {
-    emit('tasks:init', 'task workflow state does not exist');
+    emit('tasks:init', 'task workflow state does not exist', { complexity });
+    return;
+  }
+
+  const staleTasks = getStaleCodingTasks(IDEA_DIR);
+  if (staleTasks.length > 0) {
+    emit('implement:code', 'stale coding tasks detected — may need rollback', { stale_tasks: staleTasks.map(t => t.taskId), complexity: detectComplexity(IDEA_DIR) });
     return;
   }
 
   const blocked = getBlockedReworkTasks(IDEA_DIR);
   if (blocked.length > 0) {
-    emit('blocked', 'task reached max rework count', { blocked_tasks: blocked });
+    emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
     return;
   }
 
   const reworkTasks = getReworkTasks(IDEA_DIR);
   if (reworkTasks.length > 0) {
-    emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks });
+    emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
     return;
   }
 
   const reviewTasks = getCodedTasksNeedingReview(IDEA_DIR);
   if (reviewTasks.length > 0) {
-    emit('review:cr', 'there are coded tasks needing architecture review', { next_tasks: reviewTasks });
+    emit('review:cr', 'there are coded tasks needing architecture review', { next_tasks: reviewTasks, complexity });
     return;
   }
 
   const codeTasks = getNextTasks(IDEA_DIR);
   if (codeTasks.length > 0) {
-    emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks });
+    emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
     return;
   }
 
   if (allTasksApproved(IDEA_DIR) && !checkGate(IDEA_DIR, 'done').pass) {
-    if (!checkGate(IDEA_DIR, 'knowledge-extracted').pass) {
-      emit('knowledge:extract', 'all tasks approved, knowledge candidate extraction is pending');
+    if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'knowledge-extracted').pass) {
+      emit('knowledge:extract', 'all tasks approved, knowledge candidate extraction is pending', { complexity });
       return;
     }
-    emit('final:summary', 'all tasks approved, final summary is pending');
+    emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
     return;
   }
 
   if (checkGate(IDEA_DIR, 'done').pass) {
-    emit('done', 'workflow is done', { in_worktree: isInWorktree() });
+    emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
     return;
   }
 
   const state = readTaskState(taskStateFile(IDEA_DIR));
-  emit('blocked', 'no executable next step found', { task_count: Object.keys(state.tasks).length });
+  emit('blocked', 'no executable next step found', { task_count: Object.keys(state.tasks).length, complexity });
 }
 
 main();

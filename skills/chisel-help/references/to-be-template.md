@@ -90,4 +90,7 @@
 }
 ```
 
-可选字段：`allowed_symbols`、`forbidden_symbols`、`behavior_invariants`、`impact_surface`、`context_to_load`。
+可选字段：`allowed_symbols`、`forbidden_symbols`、`behavior_invariants`、`impact_surface`、`context_to_load`、`exports`、`imports`。
+
+- `exports`：本 task 产出的、可被其他 task 引用的符号或文件（如新增的函数、类型、配置）。
+- `imports`：本 task 依赖的、由其他 task 产出的符号或文件（引用 `exports` 的 task_id）。

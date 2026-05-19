@@ -77,6 +77,10 @@
 
 ### 待澄清问题
 
+### 阅读充分性声明
+
+<根据实际覆盖范围填写，说明本文档已覆盖哪些维度、是否有已知局限>
+
 ---
 
 ## core-walkthrough.md
@@ -144,6 +148,7 @@
       "from": "OrderController.create",
       "to": "OrderService.create",
       "kind": "sync-call",
+      "depth": "happy_path_only | error_paths_included | all_branches",
       "evidence": [{ "file": "src/controller/order.ts", "line_start": 52 }],
       "covered_by_facts": ["F-002"]
     }

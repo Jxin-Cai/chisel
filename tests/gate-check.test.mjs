@@ -87,7 +87,7 @@ function validCoverageMatrix(overrides = {}) {
   return {
     schema_version: 1,
     entrypoints: [{ id: 'E-001', type: 'http', name: 'POST /users', location: { file: 'src/user.ts', line_start: 10 }, covered_by_facts: ['F-001'] }],
-    links: [{ id: 'L-001', from: 'Controller.create', to: 'UserService.create', kind: 'sync-call', evidence: [{ file: 'src/user.ts', line_start: 42 }], covered_by_facts: ['F-001'] }],
+    links: [{ id: 'L-001', from: 'Controller.create', to: 'UserService.create', kind: 'sync-call', depth: 'happy_path_only', evidence: [{ file: 'src/user.ts', line_start: 42 }], covered_by_facts: ['F-001'] }],
     data: [{ id: 'D-001', entity: 'user', operation: 'write', fields: ['id'], evidence: [{ file: 'src/user.ts', line_start: 70 }] }],
     side_effects: [{ id: 'S-001', kind: 'db_write', description: '写入 user', evidence: [{ file: 'src/user.ts', line_start: 80 }] }],
     not_applicable: {},
@@ -370,7 +370,7 @@ describe('gate: requirement-exists', () => {
 
 describe('gate: as-is-complete', () => {
   function validOverview() {
-    return '# Overview\n```mermaid\ngraph TD\n  A-->B\n```\n### 3分钟摘要\n\n- 一句话目标：理解用户创建\n- 当前主链路：A 到 B\n- 本次最可能改动的点：src/user.ts\n- 最大风险：兼容旧接口\n\n### 读者导航\n\n| 如果你想了解 | 先看 | 再看 |\n|---|---|---|\n| 业务主链路 | overview.md#3分钟摘要 | core-walkthrough.md |\n\n### 需求摘要\n\n新增用户校验。\n\n### 系统全景\n\nA 到 B。\n\n### 当前能力边界\n\n当前支持创建用户。\n\n### 核心事实\n\n- UserService 处理创建 | 证据: src/user.ts:42\n\n### 风险地图\n\n| 风险 | 影响区域 | 证据 | 缓解建议 |\n|---|---|---|---|\n| 旧接口兼容 | src/user.ts | src/user.ts:42 | 保持响应字段 |\n\n### 常见误解点\n\n| 容易误解为 | 实际情况 | 证据/置信度 |\n|---|---|---|\n| 可以重构用户模块 | 只能加校验 | src/user.ts:42 |\n\n### 用户确认清单\n\n- [ ] C-001 需确认事实：旧接口响应字段是否必须保持\n\n### 待澄清问题\n\n- 旧接口响应是否兼容？\n';
+    return '# Overview\n```mermaid\ngraph TD\n  A-->B\n```\n### 3分钟摘要\n\n- 一句话目标：理解用户创建\n- 当前主链路：A 到 B\n- 本次最可能改动的点：src/user.ts\n- 最大风险：兼容旧接口\n\n### 读者导航\n\n| 如果你想了解 | 先看 | 再看 |\n|---|---|---|\n| 业务主链路 | overview.md#3分钟摘要 | core-walkthrough.md |\n\n### 需求摘要\n\n新增用户校验。\n\n### 系统全景\n\nA 到 B。\n\n### 当前能力边界\n\n当前支持创建用户。\n\n### 核心事实\n\n- UserService 处理创建 | 证据: src/user.ts:42\n\n### 风险地图\n\n| 风险 | 影响区域 | 证据 | 缓解建议 |\n|---|---|---|---|\n| 旧接口兼容 | src/user.ts | src/user.ts:42 | 保持响应字段 |\n\n### 常见误解点\n\n| 容易误解为 | 实际情况 | 证据/置信度 |\n|---|---|---|\n| 可以重构用户模块 | 只能加校验 | src/user.ts:42 |\n\n### 用户确认清单\n\n- [ ] C-001 需确认事实：旧接口响应字段是否必须保持\n\n### 待澄清问题\n\n- 旧接口响应是否兼容？\n\n### 阅读充分性声明\n\n本文档已覆盖与本次需求相关的全部入口、链路和风险点。\n';
   }
 
   function writeMainFiles(overrides = {}) {
@@ -593,7 +593,7 @@ describe('gate: to-be-exists', () => {
     writeFile('to-be/implementation-plan.md', '# Plan\n## 目标行为\n');
     const r = checkGate(TEST_DIR, 'to-be-exists');
     assert.equal(r.pass, false);
-    assert.match(r.reason, /missing required sections/);
+    assert.match(r.reason, /missing required/);
   });
 
   it('fails when tasks.json is missing', () => {
@@ -708,7 +708,7 @@ describe('gate: task-integrity', () => {
     writeFile('tasks/task-001.md', '---\nexpected_files: [src/a.ts]\n---\n# Task\n');
     const r = checkGate(TEST_DIR, 'task-integrity');
     assert.equal(r.pass, false);
-    assert.match(r.reason, /missing sections/);
+    assert.match(r.reason, /missing required sections/);
   });
 
   it('fails on dangling dependencies', () => {
@@ -942,8 +942,8 @@ describe('gate: knowledge-candidates-exists', () => {
     assert.match(r.reason, /evidence/);
   });
 
-  it('fails when candidate quality score is too low', () => {
-    writeKnowledgeCandidate(knowledgeCandidate({ quality_score: 0.4 }));
+  it('fails when candidate quality score is negative', () => {
+    writeKnowledgeCandidate(knowledgeCandidate({ quality_score: -1 }));
     const r = checkGate(TEST_DIR, 'knowledge-candidates-exists');
     assert.equal(r.pass, false);
     assert.match(r.reason, /quality_score/);

@@ -74,4 +74,12 @@ approved | needs_rework | blocked
 
 ## 建议优化项
 
+## Rework Verification
+
+rework_count > 0 时必填。逐项对照上次 CR 的 Rework Items，验证每项修复结果。
+
+| CR Item | 上次要求 | 本次验证结果 | 证据 |
+|---------|---------|-------------|------|
+| CR-001 | <上次返修要求> | fixed / not_fixed / partially_fixed | <文件:行号或说明> |
+
 ## Final Recommendation

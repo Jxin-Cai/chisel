@@ -31,28 +31,45 @@ steps:
       check: as-is-confirmed
 
   - id: understand:generate-ai-input
+    # complexity-aware: trivial 模式跳过此步，直接进入 plan:strategy
     description: 基于已确认的 as-is 人类学习版生成面向 AI 的结构化输入
     postcondition:
       check: ai-input-ready
 
-  - id: plan:design
-    description: 生成 to-be 实现方案
+  - id: plan:strategy
+    description: planner 产出 implementation-plan.md（方向、边界、测试策略）
     action:
       type: skill
       name: chisel-plan
-      args: "{idea-name}"
+      args: "{idea-name} --phase strategy"
     postcondition:
-      check: to-be-exists
+      check: strategy-exists
 
-  - id: plan:confirm
-    description: 用户确认 to-be 方案，写入 confirmations/to-be.json；实时捕获知识候选
+  - id: plan:strategy-confirm
+    description: 用户确认策略方向，写入 confirmations/strategy.json；实时捕获知识候选
+    outputs:
+      - confirmations/strategy.json
+    postcondition:
+      check: strategy-confirmed
+
+  - id: plan:decompose
+    description: planner 基于已确认策略产出 tasks.json + traceability-matrix.json
+    action:
+      type: skill
+      name: chisel-plan
+      args: "{idea-name} --phase decompose"
+    postcondition:
+      check: decompose-exists
+
+  - id: plan:decompose-confirm
+    description: 用户确认 task 拆分，写入 confirmations/to-be.json；实时捕获知识候选
     outputs:
       - confirmations/to-be.json
     postcondition:
       check: to-be-confirmed
 
   - id: tasks:init
-    description: 基于 to-be 拆 task 并初始化 task-workflow-state.yaml
+    description: 基于 tasks.json 初始化 task-workflow-state.yaml
     postcondition:
       check: task-workflow-exists
 
@@ -84,6 +101,7 @@ steps:
       check: task-report-exists
 
   - id: knowledge:extract
+    # complexity-aware: trivial 模式跳过此步，直接进入 final:summary
     description: 从本次迭代产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule
     postcondition:
       check: knowledge-extracted

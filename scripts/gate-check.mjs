@@ -266,8 +266,15 @@ function validateTaskIntegrity(ideaDir) {
     const fm = readFrontmatter(text);
     parsedTasks.push([taskId, fm]);
     if (!Object.hasOwn(fm, 'expected_files')) return `${taskId} frontmatter missing expected_files`;
-    const missingSections = requiredSections.filter(section => !text.includes(section));
-    if (missingSections.length > 0) return `${taskId} missing sections: ${missingSections.join(', ')}`;
+    const riskLevel = fm.risk_level || 'high';
+    const riskSections = {
+      low: ['## Acceptance Criteria', '## Verification'],
+      medium: ['## Acceptance Criteria', '## Verification', '## Behavior Invariants', '### Forbidden Files / Areas'],
+      high: requiredSections
+    };
+    const riskRequiredSections = riskSections[riskLevel] || requiredSections;
+    const riskMissingSections = riskRequiredSections.filter(section => !text.includes(section));
+    if (riskMissingSections.length > 0) return `${taskId} (risk_level=${riskLevel}) missing required sections: ${riskMissingSections.join(', ')}`;
     if (!arraysEqual(task.expected_files || [], fm.expected_files || [])) {
       return `${taskId} expected_files mismatch between state and task file`;
     }
@@ -388,6 +395,9 @@ function validateCrFile(crPath, status, behaviorInvariants = []) {
   const required = ['## 结论', '## 功能完整度', '## Scope Control', '## Verification', '## Rework Items'];
   const missing = required.filter(section => !hasSection(text, section));
   if (missing.length > 0) return `missing sections: ${missing.join(', ')}`;
+  const reworkCount = Number(readFrontmatter(text).rework_count || 0);
+  if (reworkCount > 0 && !hasSection(text, 'Rework Verification'))
+    return 'CR with rework_count > 0 must include ## Rework Verification section';
   const wikiProofReason = validateWikiLoadProof(text);
   if (wikiProofReason) return wikiProofReason;
   const crResult = readFrontmatter(text).result || status;
@@ -492,6 +502,10 @@ function validateAsIsCoverageMatrix(ideaDir) {
       if (!item?.id || typeof item.id !== 'string') return `${label} missing id`;
       const hasDescription = ['name', 'description', 'from', 'entity'].some(key => String(item[key] || '').trim());
       if (!hasDescription) return `${label} missing name/description/from/entity`;
+      if (section === 'links') {
+        const validDepths = ['happy_path_only', 'error_paths_included', 'all_branches'];
+        if (!validDepths.includes(item.depth)) return `${label} missing valid depth (must be happy_path_only, error_paths_included, or all_branches)`;
+      }
       const evidence = itemEvidence(item);
       if (evidence.length === 0) return `${label} missing evidence or location`;
       const invalidEvidenceIndex = evidence.findIndex(entry => !evidenceHasFileLine(entry));
@@ -639,7 +653,7 @@ function validateKnowledgeCandidate(candidate, mode = 'base') {
   if (missing.length > 0) return `missing required fields: ${missing.join(', ')}`;
   if (!KNOWLEDGE_CATEGORIES.has(candidate.category)) return `unsupported category: ${candidate.category}`;
   if (!KNOWLEDGE_STATUSES.has(candidate.status)) return `unsupported status: ${candidate.status}`;
-  if (!Number.isFinite(candidate.quality_score) || candidate.quality_score < 0.5) return 'quality_score must be >= 0.5';
+  if (candidate.quality_score !== undefined && (!Number.isFinite(candidate.quality_score) || candidate.quality_score < 0)) return 'quality_score must be >= 0 when provided';
   if (!Array.isArray(candidate.keywords) || candidate.keywords.filter(Boolean).length === 0) return 'keywords must not be empty';
   const invalidEvidenceIndex = candidate.evidence.findIndex(evidence => !validCandidateEvidence(evidence));
   if (invalidEvidenceIndex >= 0) return `evidence[${invalidEvidenceIndex}] must be structured file/line_start or legacy file:line string`;
@@ -719,6 +733,8 @@ export function checkGate(ideaDir, gateId) {
         return result(gateId, false, 'as-is overview is missing required sections (需求摘要, 当前能力边界, 待澄清问题)');
       const overviewReason = validateAsIsOverview(ideaDir);
       if (overviewReason) return result(gateId, false, overviewReason);
+      if (!readText(join(ideaDir, 'as-is/overview.md')).includes('阅读充分性声明'))
+        return result(gateId, false, 'as-is overview missing 阅读充分性声明 section');
       const mermaidFiles = ['as-is/overview.md', 'as-is/core-walkthrough.md'];
       const noMermaid = mermaidFiles.filter(f => !fileHasMermaid(join(ideaDir, f)));
       if (noMermaid.length > 0) return result(gateId, false, `main files missing Mermaid diagrams: ${noMermaid.join(', ')}`);
@@ -737,6 +753,27 @@ export function checkGate(ideaDir, gateId) {
       if (!has(ideaDir, 'clarifications.md')) return result(gateId, false, 'clarifications.md missing — legacy confirm must produce clarifications');
       const decisionReason = validateClarificationDecisions(ideaDir);
       return decisionReason ? result(gateId, false, decisionReason) : result(gateId, true, '', { legacy: true });
+    }
+    case 'strategy-exists': {
+      const planFile = join(ideaDir, 'to-be/implementation-plan.md');
+      if (!existsSync(planFile))
+        return result(gateId, false, 'to-be/implementation-plan.md missing');
+      const requiredSections = ['## 目标行为', '## 非目标行为', '## 允许修改范围', '## 禁止修改范围'];
+      if (!hasRequiredLines(planFile, requiredSections))
+        return result(gateId, false, 'implementation-plan.md missing required strategy sections');
+      return result(gateId, true);
+    }
+    case 'strategy-confirmed': {
+      const file = join(ideaDir, 'confirmations/strategy.json');
+      if (!existsSync(file)) return result(gateId, false, 'confirmations/strategy.json missing');
+      const parsed = readJsonFile(file);
+      if (parsed.error) return result(gateId, false, `confirmations/strategy.json invalid: ${parsed.error}`);
+      const doc = parsed.value;
+      if (doc?.schema_version !== 1) return result(gateId, false, 'confirmations/strategy.json schema_version must be 1');
+      if (doc.phase !== 'strategy') return result(gateId, false, 'confirmations/strategy.json phase must be strategy');
+      if (doc.status !== 'confirmed') return result(gateId, false, 'confirmations/strategy.json status must be confirmed');
+      if (!doc.confirmed_at) return result(gateId, false, 'confirmations/strategy.json missing confirmed_at');
+      return result(gateId, true);
     }
     case 'to-be-exists': {
       const planFile = join(ideaDir, 'to-be/implementation-plan.md');

@@ -53,6 +53,27 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/cr-template.md`，按模板格式写入 `{idea_dir}/cr/{task_id}-cr.md`。
 
+### 返修后 CR 规则
+
+<HARD-GATE>
+当 `rework_count > 0` 时，CR 文件**必须**包含 `## Rework Verification` 章节。
+
+该章节逐项对照上一次 CR 文件（`{idea_dir}/cr/{task_id}-cr.md` 的前一版本，或 `{idea_dir}/cr/{task_id}-cr-{N-1}.md`）中的返修清单（CR-001、CR-002...），逐条验证修复结果：
+
+```markdown
+## Rework Verification
+
+| CR Item | 上次问题 | 修复结果 | 状态 |
+|---------|----------|----------|------|
+| CR-001  | <问题描述> | <实际修复情况及代码证据> | fixed / not_fixed / partial |
+| CR-002  | ...      | ...      | ... |
+```
+
+- 必须 Read 上次 CR 文件获取返修清单，不凭记忆。
+- 每个 CR Item 必须有实际代码证据（文件路径+行号）。
+- 存在 `not_fixed` 项时，`result` 不能为 `approved`。
+</HARD-GATE>
+
 <HARD-GATE>
 CR 文件**必须**包含 frontmatter，且 `result` 字段为三个值之一：
 ```yaml

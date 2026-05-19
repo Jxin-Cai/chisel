@@ -165,9 +165,12 @@ export function writeTaskState(file, state) {
     out.push(`    file: ${quoteYaml(task.file || `tasks/${taskId}.md`)}`);
     out.push(`    expected_files: [${(task.expected_files || []).join(', ')}]`);
     out.push(`    impact_surface: ${JSON.stringify(normalizeImpactSurface(task.impact_surface || { files: task.expected_files || [] }))}`);
+    out.push(`    exports: [${(task.exports || []).join(', ')}]`);
+    out.push(`    imports: [${(task.imports || []).join(', ')}]`);
     out.push(`    report_file: ${quoteYaml(task.report_file || `task-reports/${taskId}-report.md`)}`);
     out.push(`    cr_file: ${quoteYaml(task.cr_file || `cr/${taskId}-cr.md`)}`);
     out.push(`    rework_count: ${Number(task.rework_count || 0)}`);
+    if (task.started_at) out.push(`    started_at: ${task.started_at}`);
     out.push(`    changed_files: [${(task.changed_files || []).join(', ')}]`);
     out.push(`    loc_added: ${Number(task.loc_added || 0)}`);
     out.push(`    loc_deleted: ${Number(task.loc_deleted || 0)}`);
@@ -201,6 +204,10 @@ const STEP_TO_PHASE = {
   'understand:explore': 'understand',
   'understand:confirm': 'understand',
   'understand:generate-ai-input': 'understand',
+  'plan:strategy': 'plan',
+  'plan:strategy-confirm': 'plan',
+  'plan:decompose': 'plan',
+  'plan:decompose-confirm': 'plan',
   'plan:design': 'plan',
   'plan:confirm': 'plan',
   'tasks:init': 'tasks',
@@ -239,6 +246,8 @@ export function initTaskState(ideaDir, ideaName, specs) {
       file: taskFile,
       expected_files: task.expected_files?.length ? task.expected_files : readTaskExpectedFiles(join(ideaDir, taskFile)),
       impact_surface: normalizeImpactSurface(task.impact_surface || { files: task.expected_files || [] }),
+      exports: task.exports || [],
+      imports: task.imports || [],
       report_file: task.report_file || `task-reports/${task.taskId}-report.md`,
       cr_file: task.cr_file || `cr/${task.taskId}-cr.md`,
       rework_count: Number(task.rework_count || 0),
@@ -321,6 +330,9 @@ export function updateTaskStatus(ideaDir, taskId, nextStatus) {
     throw new Error(`invalid transition: ${taskId} ${current} -> ${nextStatus}`);
   }
   task.status = nextStatus;
+  if (nextStatus === 'coding' || nextStatus === 'repairing') {
+    task.started_at = new Date().toISOString();
+  }
   writeTaskState(file, state);
   appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from: current, to: nextStatus });
   return task;
@@ -354,6 +366,7 @@ const ROLLBACK_STEPS = {
       'as-is/ai-input',
       'to-be',
       'confirmations/to-be.json',
+      'confirmations/strategy.json',
       '.to-be-confirmed',
       'task-workflow-state.yaml',
       'tasks',
@@ -369,6 +382,53 @@ const ROLLBACK_STEPS = {
       'as-is/ai-input',
       'to-be',
       'confirmations/to-be.json',
+      'confirmations/strategy.json',
+      '.to-be-confirmed',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'plan:strategy': {
+    remove: [
+      'to-be',
+      'confirmations/to-be.json',
+      'confirmations/strategy.json',
+      '.to-be-confirmed',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'plan:strategy-confirm': {
+    remove: [
+      'confirmations/strategy.json',
+      'to-be/tasks.json',
+      'to-be/traceability-matrix.json',
+      'confirmations/to-be.json',
+      '.to-be-confirmed',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'plan:decompose': {
+    remove: [
+      'to-be/tasks.json',
+      'to-be/traceability-matrix.json',
+      'confirmations/to-be.json',
       '.to-be-confirmed',
       'task-workflow-state.yaml',
       'tasks',
@@ -383,6 +443,7 @@ const ROLLBACK_STEPS = {
     remove: [
       'to-be',
       'confirmations/to-be.json',
+      'confirmations/strategy.json',
       '.to-be-confirmed',
       'task-workflow-state.yaml',
       'tasks',
@@ -487,6 +548,62 @@ export function rollbackWorkflow(ideaDir, stepId, { dryRun = false } = {}) {
   updateWorkflowPhase(ideaDir, stepId);
   appendAuditLog(ideaDir, { type: 'rollback', to_step: stepId, removed: plan.removed, missing: plan.missing, task_resets: plan.task_resets });
   return { rolled_back: true, dry_run: false, ...plan };
+}
+
+export function rollbackTask(ideaDir, taskId, { dryRun = false } = {}) {
+  const file = taskStateFile(ideaDir);
+  const state = readTaskState(file);
+  const task = state.tasks[taskId];
+  if (!task) throw new Error(`unknown task: ${taskId}`);
+  const current = task.status;
+  const toRemove = [];
+  if (task.report_file && existsSync(join(ideaDir, task.report_file))) toRemove.push(task.report_file);
+  if (task.cr_file && existsSync(join(ideaDir, task.cr_file))) toRemove.push(task.cr_file);
+  if (dryRun) return { rolled_back: false, dry_run: true, task_id: taskId, from: current, to: 'confirmed', removed: toRemove };
+  for (const rel of toRemove) rmSync(join(ideaDir, rel), { recursive: true, force: true });
+  task.status = 'confirmed';
+  task.changed_files = [];
+  task.loc_added = 0;
+  task.loc_deleted = 0;
+  task.started_at = undefined;
+  writeTaskState(file, state);
+  appendAuditLog(ideaDir, { type: 'task_rollback', task_id: taskId, from: current, to: 'confirmed', removed: toRemove });
+  return { rolled_back: true, dry_run: false, task_id: taskId, from: current, to: 'confirmed', removed: toRemove };
+}
+
+export function getTasksExportsImportsOverlap(ideaDir, taskIds) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  const exportsByTask = new Map();
+  for (const tid of taskIds) {
+    const task = state.tasks[tid] || {};
+    exportsByTask.set(tid, task.exports || []);
+  }
+  const overlaps = [];
+  for (const tid of taskIds) {
+    const task = state.tasks[tid] || {};
+    const imports = task.imports || [];
+    for (const imp of imports) {
+      for (const [exportTid, exports] of exportsByTask) {
+        if (exportTid === tid) continue;
+        if (exports.includes(imp)) {
+          overlaps.push({ importer: tid, exporter: exportTid, symbol: imp });
+        }
+      }
+    }
+  }
+  return overlaps;
+}
+
+export function getStaleCodingTasks(ideaDir, thresholdMs = 30 * 60 * 1000) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  const now = Date.now();
+  return Object.entries(state.tasks)
+    .filter(([, task]) => {
+      if (task.status !== 'coding' && task.status !== 'repairing') return false;
+      if (!task.started_at) return false;
+      return now - new Date(task.started_at).getTime() > thresholdMs;
+    })
+    .map(([taskId, task]) => ({ taskId, status: task.status, started_at: task.started_at }));
 }
 
 export function resolveProjectName(projectRoot) {

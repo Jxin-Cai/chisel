@@ -98,6 +98,10 @@ graph TD
 ### 待澄清问题
 
 - 旧接口响应字段是否必须保持？
+
+### 阅读充分性声明
+
+本文档已覆盖与本次需求相关的全部入口、链路和风险点。
 `);
 
   writeFile('as-is/core-walkthrough.md', `# Core Walkthrough
@@ -150,7 +154,7 @@ flowchart TD
   writeFile('as-is/coverage-matrix.json', JSON.stringify({
     schema_version: 1,
     entrypoints: [{ id: 'E-001', type: 'http', name: '创建用户入口', location: { file: 'src/user.ts', line_start: 10 }, covered_by_facts: ['F-001'] }],
-    links: [{ id: 'L-001', from: '用户入口', to: 'UserService', kind: 'sync-call', evidence: [{ file: 'src/user.ts', line_start: 10 }], covered_by_facts: ['F-001'] }],
+    links: [{ id: 'L-001', from: '用户入口', to: 'UserService', kind: 'sync-call', depth: 'happy_path_only', evidence: [{ file: 'src/user.ts', line_start: 10 }], covered_by_facts: ['F-001'] }],
     data: [{ id: 'D-001', entity: 'user', operation: 'write', evidence: [{ file: 'src/user.ts', line_start: 18 }] }],
     side_effects: [{ id: 'S-001', kind: 'db_write', description: '创建用户', evidence: [{ file: 'src/user.ts', line_start: 18 }] }],
     not_applicable: {}

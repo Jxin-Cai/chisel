@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { atomicWriteFile, ensureDir, initTaskState, normalizeImpactSurface, readFrontmatter } from './workflow-lib.mjs';
 
@@ -51,6 +52,8 @@ function validateTask(task, index) {
   requireArray(task.acceptance_criteria, 'acceptance_criteria', taskId);
   requireArray(task.verification, 'verification', taskId);
   requireArray(task.trace_refs, 'trace_refs', taskId);
+  requireArray(task.exports || [], 'exports', taskId);
+  requireArray(task.imports || [], 'imports', taskId);
   requireArray(task.allowed_symbols || [], 'allowed_symbols', taskId);
   requireArray(task.forbidden_symbols || [], 'forbidden_symbols', taskId);
   requireArray(task.behavior_invariants, 'behavior_invariants', taskId);
@@ -107,6 +110,7 @@ function contextLines(context = {}) {
 }
 
 function renderTaskMarkdown(task) {
+  const verificationPreCheck = checkVerificationBinaries(task);
   return `---
 task_id: ${task.task_id}
 status: confirmed
@@ -116,7 +120,10 @@ expected_files: ${yamlList(task.expected_files || [])}
 trace_refs: ${yamlList(task.trace_refs || [])}
 allowed_symbols: ${yamlList(task.allowed_symbols || [])}
 forbidden_symbols: ${yamlList(task.forbidden_symbols || [])}
+exports: ${yamlList(task.exports || [])}
+imports: ${yamlList(task.imports || [])}
 impact_surface: ${JSON.stringify(normalizeImpactSurface(task.impact_surface))}
+verification_pre_check: ${verificationPreCheck}
 ---
 
 # Task: ${task.task_id} - ${task.title}
@@ -157,6 +164,14 @@ ${bulletList(task.forbidden_symbols || [])}
 - symbols：${inlineList(normalizeImpactSurface(task.impact_surface).symbols)}
 - invariants：${inlineList(normalizeImpactSurface(task.impact_surface).invariants)}
 - shared_state：${inlineList(normalizeImpactSurface(task.impact_surface).shared_state)}
+
+## Exports
+
+${bulletList(task.exports || [])}
+
+## Imports
+
+${bulletList(task.imports || [])}
 
 ## Context to Load
 
@@ -202,6 +217,20 @@ ${task.notes_for_reviewer || '无'}
 `;
 }
 
+function checkVerificationBinaries(task) {
+  const warnings = [];
+  for (const cmd of task.verification || []) {
+    const binary = cmd.trim().split(/\s+/)[0];
+    if (!binary || binary.startsWith('#') || binary.startsWith('$') || binary.startsWith('cd')) continue;
+    try {
+      execSync(`command -v ${binary}`, { encoding: 'utf8', stdio: 'pipe' });
+    } catch {
+      warnings.push(binary);
+    }
+  }
+  return warnings.length > 0 ? `missing: ${warnings.join(', ')}` : 'pass';
+}
+
 function checkExistingTaskFiles(ideaDir, tasks) {
   for (const task of tasks) {
     const taskFile = join(ideaDir, 'tasks', `${task.task_id}.md`);
@@ -237,6 +266,8 @@ function initFromTasksJson(options) {
     description: task.title,
     file: `tasks/${task.task_id}.md`,
     expected_files: task.expected_files || [],
+    exports: task.exports || [],
+    imports: task.imports || [],
     impact_surface: normalizeImpactSurface(task.impact_surface)
   }));
   initTaskState(options.ideaDir, options.ideaName, specs);

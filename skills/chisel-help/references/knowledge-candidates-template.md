@@ -37,6 +37,7 @@ knowledge-candidates/
   "source_step": "understand:confirm",
   "created_at": "2026-05-17T00:00:00.000Z",
   "quality_score": 0.8,
+  "relevance": "high",
   "keywords": ["旧接口响应", "legacy response"],
   "evidence": [
     { "file": "clarifications.md", "line_start": 12, "line_end": 12, "note": "用户确认旧接口响应字段不能改" },
@@ -52,7 +53,9 @@ knowledge-candidates/
 }
 ```
 
-必填字段：`id`, `category`, `status`, `confirmed`, `source_step`, `quality_score`(>=0.5), `keywords`(非空), `evidence`(结构化), `content`(按 category 填齐必填键)。
+必填字段：`id`, `category`, `status`, `confirmed`, `source_step`, `keywords`(非空), `evidence`(结构化), `content`(按 category 填齐必填键)。
+
+可选字段：`quality_score`(>=0.5)、`relevance`(`"high"` | `"medium"` | `"low"`，用户在 confirm 时指定)。
 
 ## 分类 content 必填键
 

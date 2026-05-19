@@ -51,8 +51,10 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
 | `understand:confirm` | Read `${REF}/clarifications-template.md`；展示 3分钟摘要、风险地图、用户确认清单和待澄清问题，等用户逐项确认后写入 `clarifications.json`、`clarifications.md`、`confirmations/as-is.json`；执行实时知识捕获 | `as-is-confirmed` |
 | `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
-| `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
-| `plan:confirm` | 展示 to-be 摘要，等用户确认后写入 `confirmations/to-be.json`；执行实时知识捕获 | `to-be-confirmed` |
+| `plan:strategy` | `/chisel-plan <idea-name>` (mode=strategy) | `strategy-exists` |
+| `plan:strategy-confirm` | 展示策略摘要，用户确认后写入 `confirmations/strategy.json`；执行实时知识捕获 | `strategy-confirmed` |
+| `plan:decompose` | `/chisel-plan <idea-name>` (mode=decompose) | `to-be-exists` |
+| `plan:decompose-confirm` | 展示 to-be 摘要，等用户确认后写入 `confirmations/to-be.json`；执行实时知识捕获 | `to-be-confirmed` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
@@ -63,6 +65,14 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `done` | 报告完成，检测 worktree 并提示合并（见下方流程） | — |
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references`
+
+### Complexity 分级
+
+`orchestration-status.mjs` 的 emit 输出包含 `complexity` 字段（`trivial` | `standard`）。当 `complexity = trivial` 时，跳过以下步骤：
+- `understand:generate-ai-input`
+- `knowledge:extract`
+
+编排器在读取 `resume_step` 时同时检查 `complexity`，若为 `trivial` 且 `resume_step` 命中上述步骤，直接调用 `orchestration-status.mjs` 获取下一步。
 
 当同时存在待 CR、待返修和待编码任务时，优先清空 review / rework backlog，再进入新 coding。
 
@@ -75,6 +85,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 ```
 
 确认清理范围后再执行不带 `--dry-run` 的命令。rollback 只清理白名单内的 chisel 运行态产物，并写入 audit log。
+
+支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`plan:strategy`、`plan:strategy-confirm`、`plan:decompose`、`plan:decompose-confirm`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`knowledge:extract`。
 
 ---
 
@@ -90,7 +102,17 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 
 ---
 
-## plan:confirm 详细行为
+## plan:strategy-confirm 详细行为
+
+展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、允许修改范围和禁止修改范围，等用户确认策略方向正确。
+
+确认后写入 `{IDEA_DIR}/confirmations/strategy.json`，至少包含：`schema_version: 1`、`phase: "strategy"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`strategy_acknowledgement`。
+
+用户可以在此阶段要求调整策略方向，调整后需重新运行 `plan:strategy`。
+
+---
+
+## plan:decompose-confirm 详细行为
 
 展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的目标行为、非目标行为、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
 
@@ -123,4 +145,4 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 
 ## 实时知识捕获
 
-在 `understand:confirm` 和 `plan:confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 agent-shared-rules §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。
+在 `understand:confirm`、`plan:strategy-confirm` 和 `plan:decompose-confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 agent-shared-rules §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。

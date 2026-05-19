@@ -75,6 +75,10 @@ graph TD
 ### 待澄清问题
 
 - 旧接口响应是否兼容？
+
+### 阅读充分性声明
+
+本文档已覆盖与本次需求相关的全部入口、链路和风险点。
 `);
   writeFile('as-is/core-walkthrough.md', '# Core\n```mermaid\nsequenceDiagram\n  A->>B: call\n```\n');
   writeFile('as-is/evidence-index.md', '| 结论 | 证据 | 类型 |\n|---|---|---|\n| [F-001] A | src/user.ts:42 | 已确认 |\n| B | f:2 | 已确认 |\n| C | f:3 | 已确认 |\n| D | f:4 | 已确认 |\n| E | f:5 | 已确认 |\n');
@@ -82,7 +86,7 @@ graph TD
   writeFile('as-is/coverage-matrix.json', JSON.stringify({
     schema_version: 1,
     entrypoints: [{ id: 'E-001', type: 'http', name: 'POST /users', location: { file: 'src/user.ts', line_start: 10 }, covered_by_facts: ['F-001'] }],
-    links: [{ id: 'L-001', from: 'Controller.create', to: 'UserService.create', kind: 'sync-call', evidence: [{ file: 'src/user.ts', line_start: 42 }], covered_by_facts: ['F-001'] }],
+    links: [{ id: 'L-001', from: 'Controller.create', to: 'UserService.create', kind: 'sync-call', depth: 'happy_path_only', evidence: [{ file: 'src/user.ts', line_start: 42 }], covered_by_facts: ['F-001'] }],
     data: [{ id: 'D-001', entity: 'user', operation: 'write', evidence: [{ file: 'src/user.ts', line_start: 70 }] }],
     side_effects: [{ id: 'S-001', kind: 'db_write', description: '写入 user', evidence: [{ file: 'src/user.ts', line_start: 80 }] }],
     not_applicable: {}
@@ -128,6 +132,13 @@ graph TD
   writeFile('as-is/ai-input/constraints.md', `${sourceCoverage.replace('as-is/evidence-ledger.json', 'as-is/overview.md + clarifications.md').replace('F-001', 'C-001')}## 禁区\n\n- 无\n\n## 包袱\n\n- 无\n\n## 坏味道\n\n- 无\n\n## 兼容约束\n\n- 无新增约束\n`);
   writeFile('as-is/ai-input/change-surface.md', `${sourceCoverage.replace('as-is/evidence-ledger.json', 'as-is/core-walkthrough.md')}## Safe-to-Change Areas\n\n- src/user.ts:42-80 可增加校验\n`);
   writeFile('to-be/implementation-plan.md', '# Plan\n## 目标行为\n## 非目标行为\n## 允许修改范围\n## 禁止修改范围\n## Task 拆分建议\n');
+  writeFile('confirmations/strategy.json', JSON.stringify({
+    schema_version: 1,
+    phase: 'strategy',
+    status: 'confirmed',
+    confirmed_at: '2026-05-18T00:00:00.000Z',
+    confirmed_by: 'user'
+  }, null, 2));
   writeFile('to-be/tasks.json', JSON.stringify({ tasks: [{
     task_id: 'task-001',
     title: '实现目标',
@@ -266,14 +277,27 @@ function writeFinalSummary() {
 }
 
 describe('orchestration-status knowledge extraction', () => {
-  it('does not enter final summary when unresolved candidates remain despite marker', () => {
+  it('does not enter final summary when unresolved candidates remain despite marker (non-trivial)', () => {
     writeCompletePreKnowledgeFlow();
+    // Override requirement to make it non-trivial (standard complexity)
+    writeFile('requirement.md', '# Requirement\n\n## 需求目标\n\n给用户创建增加空名称校验。\n\n## 复杂度: standard\n\n## 验收标准\n\n- 空名称时返回 400\n');
     writeProposedCandidate();
     writeFile('.knowledge-extracted', '');
 
     const output = runStatus();
 
     assert.match(output, /resume_step: knowledge:extract/);
+  });
+
+  it('skips knowledge extract for trivial complexity', () => {
+    writeCompletePreKnowledgeFlow();
+    writeProposedCandidate();
+    writeFile('.knowledge-extracted', '');
+
+    const output = runStatus();
+
+    assert.match(output, /resume_step: final:summary/);
+    assert.match(output, /complexity: trivial/);
   });
 
   it('enters final summary when knowledge extraction gate passes', () => {
@@ -310,7 +334,7 @@ describe('orchestration-status knowledge extraction', () => {
     assert.match(output, /in_worktree: (true|false)/);
   });
 
-  it('returns to plan design after rollback removes to-be artifacts', () => {
+  it('returns to plan strategy after rollback removes to-be artifacts', () => {
     writeCompletePreKnowledgeFlow();
     mkdirSync(join(TEST_DIR, 'knowledge-candidates'), { recursive: true });
     writeFile('.knowledge-extracted', '');
@@ -320,7 +344,7 @@ describe('orchestration-status knowledge extraction', () => {
 
     const output = runStatus();
 
-    assert.match(output, /resume_step: plan:design/);
+    assert.match(output, /resume_step: plan:strategy/);
   });
 
   it('returns to final summary after rollback removes done artifacts', () => {
