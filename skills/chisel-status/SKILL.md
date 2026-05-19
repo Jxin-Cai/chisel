@@ -6,6 +6,10 @@ argument-hint: "<idea-name>"
 
 # chisel-status
 
+## 当前工作流状态
+
+!`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+
 运行两条命令，用中文简要报告：
 
 ```bash

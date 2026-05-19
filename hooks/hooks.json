@@ -6,13 +6,35 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs",
             "async": false
           },
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-rule-inject.mjs .",
             "async": true
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-write-guard.mjs"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-write-reminder.mjs"
           }
         ]
       }

@@ -5,6 +5,8 @@ model: sonnet
 effort: high
 maxTurns: 18
 tools: Read, Write, Glob, Grep, Bash
+skills:
+  - chisel-agent-rules
 ---
 
 # 资深架构师 CR Agent

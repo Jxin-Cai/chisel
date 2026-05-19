@@ -5,6 +5,8 @@ model: sonnet
 effort: high
 maxTurns: 25
 tools: Read, Write, Glob, Grep, Bash
+skills:
+  - chisel-agent-rules
 ---
 
 # 遗留系统 As-Is 探索 Agent

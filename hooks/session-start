@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-cat <<'EOF'
-chisel plugin is available.
-Use /chisel <需求描述或需求文件路径> for legacy system feature enhancement.
-Runtime artifacts are stored under .chisel/<idea-name>/ in the target project.
-EOF

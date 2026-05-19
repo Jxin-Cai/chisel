@@ -29,7 +29,7 @@ disable-model-invocation: true
 | `references/requirement-template.md` | receive-requirement 产物模板 |
 | `references/clarifications-template.md` | understand:confirm 产物模板 |
 | `references/final-summary-template.md` | final:summary 产物模板 |
-
+| `references/phase-confirm-details.md` | confirm/final/merge/知识捕获阶段的详细行为指南 |
 ## 运行态目录
 
 `.chisel/<idea-name>/`

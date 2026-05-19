@@ -8,6 +8,10 @@ argument-hint: "<idea-name> [mode=strategy|decompose]"
 
 计划阶段。只写 to-be 方案，不改业务代码。
 
+## 当前工作流状态
+
+!`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+
 ## 参数
 
 - `idea-name`：需求名称（必需）

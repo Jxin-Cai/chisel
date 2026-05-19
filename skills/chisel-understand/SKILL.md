@@ -8,6 +8,10 @@ argument-hint: "<idea-name>"
 
 理解阶段。只产出 as-is，不做方案，不改业务代码。
 
+## 当前工作流状态
+
+!`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+
 ## 执行
 
 启动 `agent-chisel-explorer`，传入 TASK：

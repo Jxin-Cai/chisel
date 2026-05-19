@@ -8,6 +8,10 @@ argument-hint: "<idea-name>"
 
 实现阶段。只处理脚本返回的可执行 task。
 
+## 当前工作流状态
+
+!`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+
 ## 执行流程
 
 1. `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --next-tasks rework`

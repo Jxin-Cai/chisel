@@ -12,6 +12,12 @@ argument-hint: "<需求描述或需求文件路径>"
 
 ---
 
+## 当前工作流状态
+
+!`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+
+---
+
 ## 启动
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/orchestration.yaml`
@@ -30,6 +36,16 @@ argument-hint: "<需求描述或需求文件路径>"
 
 <HARD-GATE>
 Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`，严格遵守其中所有条目（含合理化预防）。
+
+核心摘要（compaction 后仍必须遵守）：
+1. orchestration-status.mjs 输出 = 唯一恢复点
+2. 禁止跳步（每步有前置条件表）
+3. 用户确认不可跳过
+4. 每轮必须调用恢复点脚本
+5. 每步完成后必须验证 gate
+6. 同一 task 最多返修 3 次
+7. 铁律 > 脚本输出 > skill 指令 > agent 默认
+8. 抵抗"需求已经很清楚了，直接开始编码"等合理化跳步冲动
 </HARD-GATE>
 
 ---
@@ -49,22 +65,23 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 |---|---|---|
 | `receive-requirement` | Read `${REF}/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
-| `understand:confirm` | Read `${REF}/clarifications-template.md`；展示 3分钟摘要、风险地图、用户确认清单和待澄清问题，等用户逐项确认后写入 `clarifications.json`、`clarifications.md`、`confirmations/as-is.json`；执行实时知识捕获 | `as-is-confirmed` |
+| `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-confirmed` |
 | `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
 | `plan:strategy` | `/chisel-plan <idea-name>` (mode=strategy) | `strategy-exists` |
-| `plan:strategy-confirm` | 展示策略摘要，用户确认后写入 `confirmations/strategy.json`；执行实时知识捕获 | `strategy-confirmed` |
+| `plan:strategy-confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:strategy-confirm 详细行为执行 | `strategy-confirmed` |
 | `plan:decompose` | `/chisel-plan <idea-name>` (mode=decompose) | `to-be-exists` |
-| `plan:decompose-confirm` | 展示 to-be 摘要，等用户确认后写入 `confirmations/to-be.json`；执行实时知识捕获 | `to-be-confirmed` |
+| `plan:decompose-confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:decompose-confirm 详细行为执行 | `to-be-confirmed` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
 | `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行 | `knowledge-extracted` |
-| `final:summary` | Read `${REF}/final-summary-template.md`，按模板写 `{IDEA_DIR}/final-summary.md`，然后 `touch {IDEA_DIR}/.done` | `done` |
+| `final:summary` | Read `${REF}/phase-confirm-details.md`；按其 final:summary 详细行为执行 | `done` |
 | `blocked` | 停止，报告阻塞原因 | — |
-| `done` | 报告完成，检测 worktree 并提示合并（见下方流程） | — |
+| `done` | Read `${REF}/phase-confirm-details.md`；按其完成后合并流程执行 | — |
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references`
+> 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
 
 ### Complexity 分级
 
@@ -90,59 +107,6 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 
 ---
 
-## understand:confirm 详细行为
+## 阶段详细行为
 
-读取并展示 `{IDEA_DIR}/as-is/overview.md` 中的 `3分钟摘要`、`风险地图`、`用户确认清单` 和 `待澄清问题`，等用户逐项确认或补充。
-
-将结果写入 `{IDEA_DIR}/clarifications.json`（权威机器可读记录）和 `{IDEA_DIR}/clarifications.md`（人类可读镜像）。`clarifications.json` 必须包含每个 `C-xxx` 的 `id/question/decision/rationale/status/source`，状态只能是 `confirmed/defaulted/deferred`。
-
-同时写入 `{IDEA_DIR}/confirmations/as-is.json`，至少包含：`schema_version: 1`、`phase: "as-is"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`checklist`。
-
-新流程不得只创建 `.as-is-confirmed` marker；该 marker 仅用于历史运行目录兼容。
-
----
-
-## plan:strategy-confirm 详细行为
-
-展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、允许修改范围和禁止修改范围，等用户确认策略方向正确。
-
-确认后写入 `{IDEA_DIR}/confirmations/strategy.json`，至少包含：`schema_version: 1`、`phase: "strategy"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`strategy_acknowledgement`。
-
-用户可以在此阶段要求调整策略方向，调整后需重新运行 `plan:strategy`。
-
----
-
-## plan:decompose-confirm 详细行为
-
-展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的目标行为、非目标行为、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
-
-确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，至少包含：`schema_version: 1`、`phase: "to-be"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`task_acknowledgement`、`risk_acknowledgement`。
-
-新流程不得只创建 `.to-be-confirmed` marker；该 marker 仅用于历史运行目录兼容。
-
----
-
-## final:summary 详细行为
-
-写入 `{IDEA_DIR}/final-summary.md`，必须包含：变更摘要、验证结果、Scope Control Summary、Knowledge Candidates、Wiki Updates。只有写完后才允许 `touch {IDEA_DIR}/.done`。
-
----
-
-## 完成后合并流程
-
-当 `resume_step` = `done` 且 `phase_detail.in_worktree` = `true` 时：
-
-1. `git log --oneline main..HEAD` 展示本次需求所有 commit
-2. 告知用户："需求 `{idea-name}` 已完成，当前在 worktree 分支 `{branch}` 中。"
-3. 提供两种合并选项：
-   - **创建 PR**：`git push -u origin {branch}`，然后协助创建 Pull Request
-   - **直接合并**：提醒用户先 `ExitWorktree` 回到主分支，再 `git merge {branch}`
-4. 等待用户选择后协助执行
-
-当 `phase_detail.in_worktree` = `false` 时，直接报告完成，不触发合并流程。
-
----
-
-## 实时知识捕获
-
-在 `understand:confirm`、`plan:strategy-confirm` 和 `plan:decompose-confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 agent-shared-rules §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。
+当进入 `understand:confirm` / `plan:strategy-confirm` / `plan:decompose-confirm` / `final:summary` / `done` 步骤时，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/phase-confirm-details.md` 获取详细执行指南。实时知识捕获规则也在该文件中。
