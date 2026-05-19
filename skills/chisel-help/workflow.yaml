@@ -14,10 +14,18 @@ phases:
       - as-is/coverage-matrix.json
       - as-is/knowledge-candidates.md
 
-  - id: plan
+  - id: clarify
     order: 2
-    description: 设计 to-be 实现方案
+    description: 多维度需求澄清——功能范围、影响分析、兼容约束、非功能需求、优先级、验收标准、风险容忍度
     requires: [understand]
+    outputs:
+      - requirement-clarification.json
+      - requirement-clarification.md
+
+  - id: plan
+    order: 3
+    description: 设计 to-be 实现方案
+    requires: [clarify]
     outputs:
       - to-be/implementation-plan.md
       - to-be/tasks.json
@@ -29,17 +37,17 @@ phases:
       - to-be/risk-and-rollback.md
 
   - id: implement
-    order: 3
+    order: 4
     description: 按 task 编码实现
     requires: [plan]
 
   - id: review
-    order: 4
-    description: 架构师 CR 与返修闭环
+    order: 5
+    description: 需求级 CR 与返修闭环
     requires: [implement]
 
   - id: knowledge-extract
-    order: 5
+    order: 6
     description: 从迭代产物中提取长期知识候选
     requires: [review]
     outputs:

@@ -14,22 +14,29 @@ disable-model-invocation: true
 |------|------|
 | `workflow.yaml` | 阶段定义和 task 状态机 |
 | `orchestration.yaml` | 编排步骤和 gate 映射 |
-| `references/as-is-template.md` | as-is 产物模板 |
-| `references/to-be-template.md` | to-be 方案模板 |
 | `references/task-template.md` | task 文件模板，包含 task frontmatter 元数据 |
-| `references/task-report-template.md` | coding report 模板 |
-| `references/cr-template.md` | CR 模板 |
-| `references/llm-wiki-index-template.md` | `.chisel/wiki/{project-name}/` 根入口模板和渐进加载规则 |
-| `references/glossary-template.md` | 项目术语模板 |
-| `references/forbidden-zones-template.md` | 禁区模板：不能动或需确认后才能动的区域 |
-| `references/weird-but-intentional-template.md` | 包袱模板：看似奇怪但有意保留的设计 |
-| `references/do-not-refactor-yet-template.md` | 坏味道模板：当前不要顺手重构的区域 |
-| `references/module-map-template.md` | 模块地图模板，按任务触碰模块渐进加载 |
-| `references/knowledge-candidates-template.md` | 单次迭代结束后的长期知识候选模板 |
-| `references/requirement-template.md` | receive-requirement 产物模板 |
+| `references/ai-input-template.md` | AI 输入版模板 |
 | `references/clarifications-template.md` | understand:confirm 产物模板 |
+| `references/knowledge-candidates-template.md` | 单次迭代结束后的长期知识候选模板 |
 | `references/final-summary-template.md` | final:summary 产物模板 |
 | `references/phase-confirm-details.md` | confirm/final/merge/知识捕获阶段的详细行为指南 |
+| `references/phase-ai-input.md` | AI 输入生成阶段指南 |
+| `references/phase-task-init.md` | task 初始化阶段指南 |
+| `references/phase-knowledge-extract.md` | 知识提取阶段指南 |
+
+### 已迁移至消费 skill 的模板
+
+| 模板 | 新位置 |
+|------|--------|
+| `requirement-template.md` | `chisel/references/` |
+| `as-is-template.md` | `chisel-understand/references/` |
+| `to-be-template.md` | `chisel-plan/references/` |
+| `task-report-template.md` | `chisel-implement/references/` |
+| `phase-parallel-coding.md` | `chisel-implement/references/` |
+| `cr-template.md` | `chisel-review/references/` |
+| `spec-cr-template.md` | `chisel-review/references/` |
+| `requirement-cr-template.md` | `chisel-review/references/` |
+| 6 个 wiki 模板 | `chisel-wiki/references/` |
 ## 运行态目录
 
 `.chisel/<idea-name>/`

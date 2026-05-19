@@ -18,10 +18,11 @@ This repository contains the `chisel` Claude Code plugin.
 - `scripts/wiki-manage.mjs` wiki 初始化、候选合入、关联关系管理。
 - `scripts/wiki-rule-inject.mjs` 自动向业务项目注入 wiki 加载 rule。
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
-- `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入设计 to-be 方案。
+- `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案。
 - `agent-chisel-coder` 只按已确认 task 实现。
-- `agent-chisel-spec-reviewer` 轻量规格合规检查（haiku），核对 AC 覆盖、scope、forbidden files。
-- `agent-chisel-architect-reviewer` 只读架构质量 CR（sonnet），仅在 spec-cr 通过后触发。
+- `agent-chisel-requirement-reviewer` 需求级整体 CR（sonnet），所有 task 编码完成后统一审查。
+- `agent-chisel-spec-reviewer` 轻量规格合规检查（haiku），可作为 debug 工具。
+- `agent-chisel-architect-reviewer` 只读架构质量 CR（sonnet），可作为 debug 工具。
 
 ## As-Is 分层结构
 
@@ -47,9 +48,9 @@ This repository contains the `chisel` Claude Code plugin.
 ## 并行开发
 
 - Worktree 粒度为 per-requirement：一个需求对应一个 worktree，内部 task 串行/并行执行。
-- 启动时检测 worktree 隔离状态，建议用户使用 `EnterWorktree` 保护当前分支。
+- Worktree 决策在方案确认后（`plan:decompose-confirm` 之后、`tasks:init` 之前）由用户选择，从 main 分支创建 worktree 或在当前分支开发。
 - `getNextTasks()` 返回多个 task 时，`chisel-implement` 通过 `--check-overlap` 检测文件重叠。
 - 无重叠 task 使用 `Agent(isolation: "worktree")` 并行编码，合并后统一更新状态。
 - 有重叠 task 串行执行；返修 task 始终串行。
-- `chisel-review` 对多个 coded task 并行派发 reviewer（reviewer 只读，无需 worktree）。
+- `chisel-review` 在所有 task 编码完成后进行需求级整体 CR（不是逐 task CR），由 `agent-chisel-requirement-reviewer` 统一审查所有变更。
 - 需求完成后（`done` 阶段），如果在 worktree 中，提示用户合并分支到主干（PR 或直接 merge）。

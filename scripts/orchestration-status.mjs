@@ -89,6 +89,10 @@ function main() {
     emit('understand:generate-ai-input', 'ai-input documents have not been generated from confirmed as-is', { complexity });
     return;
   }
+  if (!checkGate(IDEA_DIR, 'clarification-complete').pass) {
+    emit('clarify:requirement', 'requirement clarification is incomplete', { complexity });
+    return;
+  }
   // Plan: strategy → strategy-confirm → decompose (to-be-exists) → decompose-confirm (to-be-confirmed)
   if (!checkGate(IDEA_DIR, 'strategy-exists').pass) {
     emit('plan:strategy', 'implementation strategy does not exist', { complexity });
@@ -104,6 +108,10 @@ function main() {
   }
   if (!checkGate(IDEA_DIR, 'to-be-confirmed').pass) {
     emit('plan:decompose-confirm', 'task decomposition confirmation is missing', { complexity });
+    return;
+  }
+  if (!checkGate(IDEA_DIR, 'worktree-decided').pass) {
+    emit('worktree:setup', 'worktree decision has not been made', { complexity });
     return;
   }
   if (!has('task-workflow-state.yaml')) {
@@ -129,15 +137,15 @@ function main() {
     return;
   }
 
-  const reviewTasks = getCodedTasksNeedingReview(IDEA_DIR);
-  if (reviewTasks.length > 0) {
-    emit('review:cr', 'there are coded tasks needing architecture review', { next_tasks: reviewTasks, complexity });
-    return;
-  }
-
   const codeTasks = getNextTasks(IDEA_DIR);
   if (codeTasks.length > 0) {
     emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
+    return;
+  }
+
+  const reviewTasks = getCodedTasksNeedingReview(IDEA_DIR);
+  if (reviewTasks.length > 0) {
+    emit('review:cr', 'all tasks coded, requirement-level review is ready', { next_tasks: reviewTasks, complexity });
     return;
   }
 

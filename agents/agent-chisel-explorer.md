@@ -45,7 +45,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 ## 产物（分层结构）
 
 <HARD-GATE>
-按 agent-shared-rules §4，先 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/as-is-template.md`。
+按 agent-shared-rules §4，先 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/as-is-template.md`。
 </HARD-GATE>
 
 在 `{idea_dir}/as-is/` 下按模板写入主干文件（overview、core-walkthrough、evidence-index、evidence-ledger.json、coverage-matrix.json、knowledge-candidates），在 `{idea_dir}/as-is/details/` 下按量化规则写入枝干文件。主干用 `→ 详见 details/xxx.md` 引用枝干。

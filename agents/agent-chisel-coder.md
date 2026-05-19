@@ -41,7 +41,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 3. **实现** — 修改代码，靠齐 as-is 风格
 4. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
 
-5. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`
+5. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`
 6. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：成功时 `--finish-task {task_id} coded`，失败时用 `failed`
 
 ## 限制

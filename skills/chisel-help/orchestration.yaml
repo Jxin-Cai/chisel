@@ -31,10 +31,19 @@ steps:
       check: as-is-confirmed
 
   - id: understand:generate-ai-input
-    # complexity-aware: trivial 模式跳过此步，直接进入 plan:strategy
+    # complexity-aware: trivial 模式跳过此步，直接进入 clarify:requirement
     description: 基于已确认的 as-is 人类学习版生成面向 AI 的结构化输入
     postcondition:
       check: ai-input-ready
+
+  - id: clarify:requirement
+    description: 基于 as-is 理解和原始需求，多维度澄清用户真实意图——功能范围、影响分析、兼容约束、非功能需求、优先级、验收标准、风险容忍度
+    action:
+      type: skill
+      name: chisel-clarify
+      args: "{idea-name}"
+    postcondition:
+      check: clarification-complete
 
   - id: plan:strategy
     description: planner 产出 implementation-plan.md（方向、边界、保障策略）
@@ -67,6 +76,11 @@ steps:
       - confirmations/to-be.json
     postcondition:
       check: to-be-confirmed
+
+  - id: worktree:setup
+    description: 询问用户是否创建隔离 worktree；yes → 从 main 创建 worktree；no → 在当前分支开发
+    postcondition:
+      check: worktree-decided
 
   - id: tasks:init
     description: 基于 tasks.json 初始化 task-workflow-state.yaml

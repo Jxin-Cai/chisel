@@ -820,15 +820,19 @@ export function checkGate(ideaDir, gateId) {
     }
     case 'cr-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
-      const invalid = taskEntries(ideaDir).map(([taskId, task]) => {
-        if (!['approved', 'needs_rework', 'blocked'].includes(task.status)) return '';
-        const crPath = join(ideaDir, task.cr_file);
-        if (!has(ideaDir, task.cr_file)) return taskId;
-        const { behaviorInvariants } = getTaskScope(ideaDir, taskId);
-        const reason = validateCrFile(crPath, task.status, behaviorInvariants);
-        return reason ? `${taskId} (${reason})` : '';
-      }).filter(Boolean);
-      return invalid.length === 0 ? result(gateId, true) : result(gateId, false, `invalid cr files: ${invalid.join(', ')}`);
+      const reqCrPath = join(ideaDir, 'cr/requirement-cr.md');
+      if (!existsSync(reqCrPath)) return result(gateId, false, 'cr/requirement-cr.md missing');
+      const crText = readText(reqCrPath);
+      const crFm = readFrontmatter(crText);
+      if (crFm.review_level !== 'requirement') return result(gateId, false, 'cr/requirement-cr.md review_level must be requirement');
+      if (!['approved', 'needs_rework', 'blocked'].includes(crFm.result)) return result(gateId, false, 'cr/requirement-cr.md result must be approved/needs_rework/blocked');
+      const required = ['## 结论', '## 需求覆盖度', '## Scope Control'];
+      const missing = required.filter(section => !crText.includes(section));
+      if (missing.length > 0) return result(gateId, false, `requirement-cr.md missing sections: ${missing.join(', ')}`);
+      const reworkCount = Number(crFm.rework_count || 0);
+      if (reworkCount > 0 && !hasSection(crText, 'Rework Verification'))
+        return result(gateId, false, 'CR with rework_count > 0 must include ## Rework Verification section');
+      return result(gateId, true);
     }
     case 'rework-limit': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
@@ -844,6 +848,36 @@ export function checkGate(ideaDir, gateId) {
     case 'knowledge-extracted': {
       const reason = validateKnowledgeExtracted(ideaDir);
       return reason ? result(gateId, false, reason) : result(gateId, true);
+    }
+    case 'clarification-complete': {
+      if (has(ideaDir, 'confirmations/strategy.json')) return result(gateId, true, '', { legacy: true });
+      const file = join(ideaDir, 'requirement-clarification.json');
+      if (!existsSync(file)) return result(gateId, false, 'requirement-clarification.json missing');
+      const parsed = readJsonFile(file);
+      if (parsed.error) return result(gateId, false, `requirement-clarification.json invalid JSON: ${parsed.error}`);
+      const doc = parsed.value;
+      if (doc?.schema_version !== 1) return result(gateId, false, 'requirement-clarification.json schema_version must be 1');
+      if (doc.source_step !== 'clarify:requirement') return result(gateId, false, 'source_step must be clarify:requirement');
+      if (!doc.clarified_at) return result(gateId, false, 'missing clarified_at');
+      if (!doc.dimensions || typeof doc.dimensions !== 'object') return result(gateId, false, 'missing dimensions');
+      const requiredDimensions = ['functional_scope', 'impact_analysis', 'compatibility_constraints', 'non_functional', 'priority', 'acceptance_criteria', 'risk_tolerance'];
+      const missingDimensions = requiredDimensions.filter(d => !doc.dimensions[d]);
+      if (missingDimensions.length > 0) return result(gateId, false, `missing dimensions: ${missingDimensions.join(', ')}`);
+      if (!Array.isArray(doc.dimensions.acceptance_criteria) || doc.dimensions.acceptance_criteria.length === 0)
+        return result(gateId, false, 'acceptance_criteria must be non-empty array');
+      return result(gateId, true);
+    }
+    case 'worktree-decided': {
+      if (has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, true, '', { legacy: true });
+      const file = join(ideaDir, 'worktree-decision.json');
+      if (!existsSync(file)) return result(gateId, false, 'worktree-decision.json missing');
+      const parsed = readJsonFile(file);
+      if (parsed.error) return result(gateId, false, `worktree-decision.json invalid JSON: ${parsed.error}`);
+      const doc = parsed.value;
+      if (doc?.schema_version !== 1) return result(gateId, false, 'worktree-decision.json schema_version must be 1');
+      if (!['worktree', 'current-branch'].includes(doc.decision)) return result(gateId, false, 'decision must be worktree or current-branch');
+      if (!doc.decided_at) return result(gateId, false, 'missing decided_at');
+      return result(gateId, true);
     }
     case 'ai-input-ready': {
       const reason = validateAiInput(ideaDir);

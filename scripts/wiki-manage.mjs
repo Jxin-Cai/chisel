@@ -103,7 +103,7 @@ function initWiki(projectRoot, pluginRoot, projectName) {
   ensureDir(dir);
 
   const templatePath = pluginRoot
-    ? join(pluginRoot, 'skills/chisel-help/references/llm-wiki-index-template.md')
+    ? join(pluginRoot, 'skills/chisel-wiki/references/llm-wiki-index-template.md')
     : null;
 
   if (templatePath && existsSync(templatePath)) {

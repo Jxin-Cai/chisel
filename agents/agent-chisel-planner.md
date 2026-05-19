@@ -34,6 +34,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 |------|------|
 | TASK | `idea_dir`、`mode` |
 | requirement | 需求目标 |
+| `{idea_dir}/requirement-clarification.json` | 多维需求澄清结果（验收标准、优先级、兼容约束等） |
 | `{idea_dir}/as-is/ai-input/` | 先读 `facts.md` + `constraints.md`，再按需读 `call-graph.md`/`data-schema.md`/`api-surface.md`/`change-surface.md` |
 | `{idea_dir}/clarifications.json` | 用户在 confirm 阶段的结构化澄清、约束和未决项（权威来源） |
 | `{idea_dir}/confirmations/as-is.json` | as-is 确认凭据 |
@@ -52,7 +53,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 ## 就近加载
 
 <HARD-GATE>
-按 agent-shared-rules §4，先 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/to-be-template.md`。
+按 agent-shared-rules §4，先 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/to-be-template.md`。
 </HARD-GATE>
 
 ## Strategy 模式

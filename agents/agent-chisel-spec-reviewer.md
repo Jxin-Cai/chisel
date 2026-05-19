@@ -53,7 +53,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 
 ## 产物
 
-Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/spec-cr-template.md`，按模板格式写入 `{idea_dir}/cr/{task_id}-spec-cr.md`。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-review/references/spec-cr-template.md`，按模板格式写入 `{idea_dir}/cr/{task_id}-spec-cr.md`。
 
 <HARD-GATE>
 Spec CR 文件**必须**包含 frontmatter，且 `result` 字段为两个值之一：

@@ -189,6 +189,7 @@ export function initWorkflowState(ideaDir, ideaName) {
     'phase:',
     '  requirement: done',
     '  understand: pending',
+    '  clarify: pending',
     '  plan: pending',
     '  tasks: pending',
     '  implement: pending',
@@ -204,12 +205,14 @@ const STEP_TO_PHASE = {
   'understand:explore': 'understand',
   'understand:confirm': 'understand',
   'understand:generate-ai-input': 'understand',
+  'clarify:requirement': 'clarify',
   'plan:strategy': 'plan',
   'plan:strategy-confirm': 'plan',
   'plan:decompose': 'plan',
   'plan:decompose-confirm': 'plan',
   'plan:design': 'plan',
   'plan:confirm': 'plan',
+  'worktree:setup': 'plan',
   'tasks:init': 'tasks',
   'implement:code': 'implement',
   'repair:code': 'implement',
@@ -356,6 +359,49 @@ export function markCr(ideaDir, taskId, result) {
   return task;
 }
 
+export function markCrRequirement(ideaDir, result, affectedTaskIds) {
+  const file = taskStateFile(ideaDir);
+  const state = readTaskState(file);
+  const results = [];
+
+  if (result === 'approved') {
+    for (const [taskId, task] of Object.entries(state.tasks)) {
+      if (task.status === 'reviewing' || task.status === 'coded') {
+        const from = task.status;
+        task.status = 'approved';
+        results.push({ task_id: taskId, from, to: 'approved' });
+        appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from, to: 'approved', detail: { cr_result: 'approved', review_level: 'requirement' } });
+      }
+    }
+  } else {
+    const affected = affectedTaskIds || [];
+    for (const taskId of affected) {
+      const task = state.tasks[taskId];
+      if (!task) throw new Error(`unknown task: ${taskId}`);
+      const from = task.status;
+      if (result === 'needs_rework') {
+        task.rework_count = Number(task.rework_count || 0) + 1;
+        task.status = task.rework_count >= MAX_REWORK_COUNT ? 'blocked' : 'needs_rework';
+      } else {
+        task.status = 'blocked';
+      }
+      results.push({ task_id: taskId, from, to: task.status, rework_count: task.rework_count || 0 });
+      appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from, to: task.status, detail: { cr_result: result, review_level: 'requirement', rework_count: task.rework_count || 0 } });
+    }
+    for (const [taskId, task] of Object.entries(state.tasks)) {
+      if (!affected.includes(taskId) && (task.status === 'reviewing' || task.status === 'coded')) {
+        const from = task.status;
+        task.status = 'approved';
+        results.push({ task_id: taskId, from, to: 'approved' });
+        appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from, to: 'approved', detail: { cr_result: 'approved', review_level: 'requirement' } });
+      }
+    }
+  }
+
+  writeTaskState(file, state);
+  return results;
+}
+
 const ROLLBACK_STEPS = {
   'understand:confirm': {
     remove: [
@@ -364,10 +410,13 @@ const ROLLBACK_STEPS = {
       'confirmations/as-is.json',
       '.as-is-confirmed',
       'as-is/ai-input',
+      'requirement-clarification.json',
+      'requirement-clarification.md',
       'to-be',
       'confirmations/to-be.json',
       'confirmations/strategy.json',
       '.to-be-confirmed',
+      'worktree-decision.json',
       'task-workflow-state.yaml',
       'tasks',
       'task-reports',
@@ -380,10 +429,31 @@ const ROLLBACK_STEPS = {
   'understand:generate-ai-input': {
     remove: [
       'as-is/ai-input',
+      'requirement-clarification.json',
+      'requirement-clarification.md',
       'to-be',
       'confirmations/to-be.json',
       'confirmations/strategy.json',
       '.to-be-confirmed',
+      'worktree-decision.json',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'clarify:requirement': {
+    remove: [
+      'requirement-clarification.json',
+      'requirement-clarification.md',
+      'to-be',
+      'confirmations/to-be.json',
+      'confirmations/strategy.json',
+      '.to-be-confirmed',
+      'worktree-decision.json',
       'task-workflow-state.yaml',
       'tasks',
       'task-reports',
@@ -399,6 +469,7 @@ const ROLLBACK_STEPS = {
       'confirmations/to-be.json',
       'confirmations/strategy.json',
       '.to-be-confirmed',
+      'worktree-decision.json',
       'task-workflow-state.yaml',
       'tasks',
       'task-reports',
@@ -415,6 +486,7 @@ const ROLLBACK_STEPS = {
       'to-be/traceability-matrix.json',
       'confirmations/to-be.json',
       '.to-be-confirmed',
+      'worktree-decision.json',
       'task-workflow-state.yaml',
       'tasks',
       'task-reports',
@@ -430,6 +502,21 @@ const ROLLBACK_STEPS = {
       'to-be/traceability-matrix.json',
       'confirmations/to-be.json',
       '.to-be-confirmed',
+      'worktree-decision.json',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'plan:decompose-confirm': {
+    remove: [
+      'confirmations/to-be.json',
+      '.to-be-confirmed',
+      'worktree-decision.json',
       'task-workflow-state.yaml',
       'tasks',
       'task-reports',
@@ -445,6 +532,7 @@ const ROLLBACK_STEPS = {
       'confirmations/to-be.json',
       'confirmations/strategy.json',
       '.to-be-confirmed',
+      'worktree-decision.json',
       'task-workflow-state.yaml',
       'tasks',
       'task-reports',
@@ -458,6 +546,19 @@ const ROLLBACK_STEPS = {
     remove: [
       'confirmations/to-be.json',
       '.to-be-confirmed',
+      'worktree-decision.json',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'worktree:setup': {
+    remove: [
+      'worktree-decision.json',
       'task-workflow-state.yaml',
       'tasks',
       'task-reports',

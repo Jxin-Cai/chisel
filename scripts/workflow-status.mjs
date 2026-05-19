@@ -12,6 +12,7 @@ import {
   initTaskState,
   initWorkflowState,
   markCr,
+  markCrRequirement,
   readTaskState,
   rollbackTask,
   rollbackWorkflow,
@@ -91,6 +92,16 @@ export async function main(argv) {
         if (!['approved', 'needs_rework', 'blocked'].includes(result)) fail('--mark-cr 仅支持 approved|needs_rework|blocked');
         const task = markCr(ideaDir, taskId, result);
         print({ updated: true, task_id: taskId, status: task.status, rework_count: task.rework_count || 0 });
+        break;
+      }
+      case '--mark-cr-requirement': {
+        const result = argv[2];
+        if (!result) fail('--mark-cr-requirement 需要 approved|needs_rework|blocked');
+        if (!['approved', 'needs_rework', 'blocked'].includes(result)) fail('--mark-cr-requirement 仅支持 approved|needs_rework|blocked');
+        const affectedRaw = argv[3] || '';
+        const affectedTasks = affectedRaw ? affectedRaw.split(',').filter(Boolean) : [];
+        const results = markCrRequirement(ideaDir, result, affectedTasks);
+        print({ updated: true, review_level: 'requirement', result, task_updates: results });
         break;
       }
       case '--rollback-step': {

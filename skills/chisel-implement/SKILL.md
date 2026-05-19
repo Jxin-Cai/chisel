@@ -54,7 +54,7 @@ digraph implement_flow {
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>", "task_file": "tasks/<task-id>.md" }
      ```
    - coder 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-metrics.mjs {IDEA_DIR} <task-id>`
-4. **多 task** → Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/phase-parallel-coding.md`，按其流程并行执行
+4. **多 task** → Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/phase-parallel-coding.md`，按其流程并行执行
 
 <HARD-GATE>
 只有 `--next-tasks` 返回的 task 才能启动。

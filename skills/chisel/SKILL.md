@@ -21,14 +21,10 @@ argument-hint: "<需求描述或需求文件路径>"
 ## 启动
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/orchestration.yaml`
-2. **Worktree 检测**：运行 `git rev-parse --git-dir` 和 `git rev-parse --git-common-dir`
-   - 两者不同且非 submodule → 已在隔离 worktree 中，跳过
-   - 两者相同 → 建议用户使用 `EnterWorktree` 创建隔离工作空间，保护当前分支
-   - Worktree 粒度：一个需求对应一个 worktree，内部所有 task 在同一 worktree 中串行/并行执行
-3. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
-4. 设 `{IDEA_DIR}` = `.chisel/<idea-name>/`
-5. 如果目录不存在，设 idea-dir = `none`
-6. 进入步骤执行循环
+2. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
+3. 设 `{IDEA_DIR}` = `.chisel/<idea-name>/`
+4. 如果目录不存在，设 idea-dir = `none`
+5. 进入步骤执行循环
 
 ---
 
@@ -59,20 +55,23 @@ digraph chisel_flow {
   explore [label="understand:explore"];
   u_confirm [label="understand:confirm"];
   ai_input [label="understand:generate-ai-input\n(skip if trivial)"];
+  clarify [label="clarify:requirement"];
   strategy [label="plan:strategy"];
   s_confirm [label="plan:strategy-confirm"];
   decompose [label="plan:decompose"];
   d_confirm [label="plan:decompose-confirm"];
+  worktree [label="worktree:setup"];
   tasks [label="tasks:init"];
   implement [label="implement:code"];
-  review [label="review:cr"];
+  review [label="review:cr\n(requirement-level)"];
   repair [label="repair:code"];
   knowledge [label="knowledge:extract\n(skip if trivial)"];
   final [label="final:summary"];
   done [label="done"];
 
-  receive -> explore -> u_confirm -> ai_input -> strategy;
-  strategy -> s_confirm -> decompose -> d_confirm -> tasks;
+  receive -> explore -> u_confirm -> ai_input -> clarify;
+  clarify -> strategy -> s_confirm -> decompose -> d_confirm;
+  d_confirm -> worktree -> tasks;
   tasks -> implement -> review;
   review -> repair [label="needs_rework"];
   repair -> review [label="re-review"];
@@ -101,14 +100,16 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 | resume_step | 动作 | postcondition |
 |---|---|---|
-| `receive-requirement` | Read `${REF}/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
+| `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
 | `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-confirmed` |
 | `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
+| `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
 | `plan:strategy` | `/chisel-plan <idea-name>` (mode=strategy) | `strategy-exists` |
 | `plan:strategy-confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:strategy-confirm 详细行为执行 | `strategy-confirmed` |
 | `plan:decompose` | `/chisel-plan <idea-name>` (mode=decompose) | `to-be-exists` |
 | `plan:decompose-confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:decompose-confirm 详细行为执行 | `to-be-confirmed` |
+| `worktree:setup` | 使用 `AskUserQuestion` 询问是否创建隔离 worktree；yes → `EnterWorktree`（从 main 分支创建）；no → 当前分支开发。将决策写入 `{IDEA_DIR}/worktree-decision.json` | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
@@ -141,7 +142,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 
 确认清理范围后再执行不带 `--dry-run` 的命令。rollback 只清理白名单内的 chisel 运行态产物，并写入 audit log。
 
-支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`plan:strategy`、`plan:strategy-confirm`、`plan:decompose`、`plan:decompose-confirm`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`knowledge:extract`。
+支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`clarify:requirement`、`plan:strategy`、`plan:strategy-confirm`、`plan:decompose`、`plan:decompose-confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`knowledge:extract`。
 
 ---
 
