@@ -1,0 +1,133 @@
+# 维度：Spec 合规检查
+
+## 审查目标
+
+验证代码实现是否满足 task 规格要求——"做对了吗？"
+
+这是门槛维度：不合规的代码没有资格进入质量审查。
+
+## 检查清单
+
+### 1. Acceptance Criteria 覆盖
+
+- Read task 文件的 `## Acceptance Criteria` 章节
+- Read task report 的 `## Acceptance Criteria Result` 章节
+- 逐条对照：每个 AC 是否在 report 中标记为通过，且有实际证据支持
+
+### 2. Expected Files 覆盖
+
+- Read task 文件 frontmatter 的 `expected_files`
+- Read task report frontmatter 的 `changed_files`
+- 检查 expected_files 是否全部出现在 changed_files 中
+
+### 3. Scope Check
+
+- 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`
+- 结果必须为 `pass=true`
+- 记录完整的 Scope Check Proof
+
+### 4. Forbidden Files / Symbols
+
+- Read task 文件的 `Forbidden Files / Areas` 和 `Forbidden Symbols` 章节
+- 对照 task report 的 changed_files，检查是否触碰禁区
+
+### 5. Behavior Invariants
+
+- Read task 文件的 `## Behavior Invariants` 章节
+- 逐项验证每个不变量是否被保持
+- 必须有实际验证证据（文件路径 + 行号或行为描述）
+
+## CR 产物格式
+
+### Frontmatter
+
+```yaml
+---
+dimension: spec
+result: pass | fail
+affected_tasks: [task-001]
+rework_count: 0
+---
+```
+
+### 正文模板
+
+```markdown
+# Spec CR: {task_ids}
+
+## 结论
+
+pass | fail
+
+## Acceptance Criteria 覆盖
+
+| AC | Task 要求 | Report 证据 | 结果 |
+|----|----------|-------------|------|
+| AC-1 | ... | ... | pass / fail |
+
+## Expected Files 覆盖
+
+- expected_files：
+- changed_files：
+- 未覆盖：（无 / 列出缺失文件）
+- 结果：pass / fail
+
+## Scope Check Proof
+
+- Command：`node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`
+- Result：pass | fail
+- schema_version：3
+- changed_files_count：
+- violations_count：
+- forbidden_symbol_hits_count：
+
+#### Scope Check JSON Summary
+
+粘贴 scope-check.mjs 的完整 JSON 输出。
+
+#### Hit Proofs Reviewed
+
+| File | Expected proof | Forbidden proof | Symbol proof | Status |
+|---|---|---|---|---|
+
+## Forbidden Files / Symbols 检查
+
+- 禁区列表：
+- 触碰情况：（无 / 列出触碰文件）
+- 结果：pass / fail
+
+## Behavior Invariants
+
+| Invariant | Proof | Result |
+|---|---|---|
+| <不变量描述> | <验证证据> | pass / fail |
+
+## Wiki Entries Loaded
+
+| Entry | File | Why Loaded | Used For |
+|---|---|---|---|
+
+## Progressive Load Proof
+
+- Query command：
+- Query summary：
+- category/min-score：
+- load_plan：
+- None matched：
+
+## 不合规项汇总
+
+result 为 fail 时，列出所有不合规项：
+
+| ID | 检查项 | affected_task_id | 问题描述 | 严重度 |
+|----|--------|------------------|---------|--------|
+| SPEC-001 | AC 覆盖 | task-001 | <具体不合规描述> | high/medium/low |
+
+## Rework Verification
+
+（仅 rework_count > 0 时填写）
+
+| Item | 上次问题 | 修复结果 | 状态 |
+|------|----------|----------|------|
+| SPEC-001 | <问题描述> | <实际修复情况及代码证据> | fixed / not_fixed / partial |
+```

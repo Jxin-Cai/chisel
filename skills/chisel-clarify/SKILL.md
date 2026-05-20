@@ -1,6 +1,6 @@
 ---
 name: chisel-clarify
-description: 当 chisel 编排器进入 clarify:requirement 阶段时触发。基于 as-is 理解和原始需求，多维度澄清用户真实意图。
+description: 当 chisel 编排器进入 clarify:requirement 阶段时触发。
 argument-hint: "<idea-name>"
 ---
 

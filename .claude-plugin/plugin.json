@@ -16,9 +16,7 @@
     "./agents/agent-chisel-coder.md",
     "./agents/agent-chisel-coder-light.md",
     "./agents/agent-chisel-coder-heavy.md",
-    "./agents/agent-chisel-spec-reviewer.md",
-    "./agents/agent-chisel-architect-reviewer.md",
-    "./agents/agent-chisel-requirement-reviewer.md"
+    "./agents/agent-chisel-reviewer.md"
   ],
   "skills": ["./skills/"]
 }

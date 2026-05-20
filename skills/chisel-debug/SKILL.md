@@ -1,6 +1,6 @@
 ---
 name: chisel-debug
-description: 当 task 返修次数 ≥ 2 时触发，执行系统化根因调查后再继续返修。
+description: 当 task 返修次数 ≥ 2 且 CR 仍未通过时触发。
 argument-hint: "<idea-name> <task-id>"
 ---
 

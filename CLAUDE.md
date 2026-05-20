@@ -17,16 +17,17 @@ This repository contains the `chisel` Claude Code plugin.
 - `scripts/audit-log.mjs` 全链路审计日志（step 流转、gate 结果、task 状态变更）。
 - `scripts/wiki-manage.mjs` wiki 初始化、候选合入、关联关系管理。
 - `scripts/wiki-rule-inject.mjs` 自动向业务项目注入 wiki 加载 rule。
+- `scripts/repo-map.mjs` 纯文件系统 repo 地图生成器（无 LLM 依赖），explorer 探索前自动运行。
+- `scripts/debt-scan.mjs` 纯静态技术债务扫描器（无 LLM 依赖），explorer 探索前自动运行，产出 proposed 候选。
+- `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
 - `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案。
 - `agent-chisel-coder` 只按已确认 task 实现。
-- `agent-chisel-requirement-reviewer` 需求级整体 CR（sonnet），所有 task 编码完成后统一审查。
-- `agent-chisel-spec-reviewer` 轻量规格合规检查（haiku），可作为 debug 工具。
-- `agent-chisel-architect-reviewer` 只读架构质量 CR（sonnet），可作为 debug 工具。
+- `agent-chisel-reviewer` 通用 CR agent（opus），每次加载一个维度定义文件（dim-spec/dim-d2~d7）执行单维度深度审查。7 个维度 7 次独立调用。
 
 ## As-Is 分层结构
 
-- **主干文件**（必须）：`overview.md`、`core-walkthrough.md`、`evidence-index.md`、`knowledge-candidates.md`
+- **主干文件**（必须）：`repo-map.json`（脚本生成）、`overview.md`、`core-walkthrough.md`、`evidence-index.md`、`knowledge-candidates.md`、`context-budget.md`、`quality-score.json`（脚本生成）
 - **枝干文件**（按需）：`details/entrypoints.md`、`details/data-model.md`、`details/api-contracts.md`、`details/data-flow.md`
 - **AI 输入版**（`as-is/ai-input/`）：用户确认后从人类版提取的结构化数据，供 Planner 使用。
 - 主干聚焦需求相关的核心链路，枝干按需展开细节，主干用 `→ 详见 details/xxx.md` 引用。
@@ -37,6 +38,7 @@ This repository contains the `chisel` Claude Code plugin.
 - Wiki 组织：`.chisel/wiki/{project-name}/` 存储长期领域知识（project-name = git 仓库名），每个文件含 `## 关联关系` 章节。
 - 自动注入：SessionStart hook 检测 wiki 存在时写入 `.claude/settings.local.json` rule。
 - 知识流：候选 → 用户确认 → wiki-manage.mjs 合入 → rule 激活。
+- 自动种子检测：debt-scan.mjs 在 repo-map 之后运行，基于文件指标和模式匹配生成初始候选（source_step: "debt-scan"），explorer 在探索中验证并补充业务语境。
 
 ## 关键约束
 
@@ -52,5 +54,5 @@ This repository contains the `chisel` Claude Code plugin.
 - `getNextTasks()` 返回多个 task 时，`chisel-implement` 通过 `--check-overlap` 检测文件重叠。
 - 无重叠 task 使用 `Agent(isolation: "worktree")` 并行编码，合并后统一更新状态。
 - 有重叠 task 串行执行；返修 task 始终串行。
-- `chisel-review` 在所有 task 编码完成后进行需求级整体 CR（不是逐 task CR），由 `agent-chisel-requirement-reviewer` 统一审查所有变更。
+- `chisel-review` 在所有 task 编码完成后进行 7 维度独立 CR：spec 门槛（opus，合规检查）通过后，D2-D7 每个维度独立一次 opus 调用，全量审查后聚合结果。返修后从 spec 重新开始。
 - 需求完成后（`done` 阶段），如果在 worktree 中，提示用户合并分支到主干（PR 或直接 merge）。

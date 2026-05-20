@@ -1,6 +1,6 @@
 ---
 name: chisel-wiki
-description: 独立管理 chisel 长期知识库（wiki）。初始化、手动喂入知识、查询、健康检查、列出条目、批量导入。不需要启动 /chisel 主流程即可使用。当用户想管理 wiki 知识、查看禁区/包袱/术语/坏味道、添加新知识条目、检查 wiki 健康状态时触发。
+description: 当用户想管理 wiki 知识、查看禁区/包袱/术语/坏味道、添加新知识条目、或检查 wiki 健康状态时触发。不需要启动 /chisel 主流程即可使用。
 argument-hint: "<init|feed|query|health|list|import> [参数]"
 ---
 

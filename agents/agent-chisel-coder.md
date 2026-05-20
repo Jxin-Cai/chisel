@@ -42,7 +42,23 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 4. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
 
 5. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`
-6. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：成功时 `--finish-task {task_id} coded`，失败时用 `failed`
+6. **Completion Status** — 在 report 末尾追加状态章节：
+   ```markdown
+   ## Completion Status
+
+   status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED
+   concerns: <仅 DONE_WITH_CONCERNS 时填写——对实现有疑虑但已完成>
+   missing_context: <仅 NEEDS_CONTEXT 时填写——缺少哪些信息无法继续>
+   blocker: <仅 BLOCKED 时填写——无法完成的原因>
+   ```
+   - DONE：正常完成
+   - DONE_WITH_CONCERNS：完成但对某些决策不确定（如风格不一致的现有代码、不清楚的业务逻辑）
+   - NEEDS_CONTEXT：缺少关键信息无法继续，不写 report，不标状态
+   - BLOCKED：遇到无法绕过的阻碍（如依赖缺失、权限不足）
+7. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：
+   - DONE / DONE_WITH_CONCERNS → `--finish-task {task_id} coded`
+   - BLOCKED → `--finish-task {task_id} failed`
+   - NEEDS_CONTEXT → 不更新状态，直接结束并在输出中说明缺失信息
 
 ## 限制
 

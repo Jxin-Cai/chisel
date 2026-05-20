@@ -12,12 +12,15 @@ function hasSection(text, heading) {
 }
 
 const AS_IS_MAIN_FILES = [
+  'as-is/repo-map.json',
   'as-is/overview.md',
   'as-is/core-walkthrough.md',
   'as-is/evidence-index.md',
   'as-is/evidence-ledger.json',
   'as-is/coverage-matrix.json',
-  'as-is/knowledge-candidates.md'
+  'as-is/knowledge-candidates.md',
+  'as-is/context-budget.md',
+  'as-is/quality-score.json'
 ];
 
 const AI_INPUT_FILES = [
@@ -516,6 +519,74 @@ function validateAsIsCoverageMatrix(ideaDir) {
   return '';
 }
 
+function validateRepoMap(ideaDir) {
+  const file = join(ideaDir, 'as-is/repo-map.json');
+  if (!existsSync(file)) return 'as-is/repo-map.json missing';
+  const parsed = readJsonFile(file);
+  if (parsed.error) return `as-is/repo-map.json invalid JSON: ${parsed.error}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1) return 'repo-map.json schema_version must be 1';
+  if (!doc.generated_at || typeof doc.generated_at !== 'string') return 'repo-map.json missing generated_at';
+  if (!Array.isArray(doc.languages) || doc.languages.length === 0) return 'repo-map.json languages must be non-empty array';
+  for (const [index, lang] of doc.languages.entries()) {
+    if (!lang?.language || typeof lang.language !== 'string') return `repo-map.json languages[${index}] missing language`;
+    if (!Number.isInteger(lang.file_count) || lang.file_count <= 0) return `repo-map.json languages[${index}] missing positive file_count`;
+  }
+  if (!doc.stats || typeof doc.stats !== 'object') return 'repo-map.json missing stats';
+  if (!Number.isInteger(doc.stats.total_files) || doc.stats.total_files <= 0) return 'repo-map.json stats.total_files must be positive';
+  if (!Number.isInteger(doc.stats.source_files)) return 'repo-map.json stats.source_files must be integer';
+  if (!Array.isArray(doc.entry_candidates)) return 'repo-map.json entry_candidates must be an array';
+  for (const [index, entry] of doc.entry_candidates.entries()) {
+    if (!entry?.file || typeof entry.file !== 'string') return `repo-map.json entry_candidates[${index}] missing file`;
+    if (!entry.type || typeof entry.type !== 'string') return `repo-map.json entry_candidates[${index}] missing type`;
+  }
+  if (!Array.isArray(doc.core_modules)) return 'repo-map.json core_modules must be an array';
+  if (!Array.isArray(doc.directory_summary)) return 'repo-map.json directory_summary must be an array';
+  return '';
+}
+
+function validateContextBudget(ideaDir) {
+  const file = join(ideaDir, 'as-is/context-budget.md');
+  if (!existsSync(file)) return 'as-is/context-budget.md missing';
+  const text = readText(file);
+  const requiredSections = ['## 已读文件清单', '## 未读但可能相关的文件', '## 上下文覆盖度自评'];
+  const missing = requiredSections.filter(s => !text.includes(s));
+  if (missing.length > 0) return `context-budget.md missing sections: ${missing.join(', ')}`;
+  const readSection = sectionText(text, '已读文件清单');
+  const rows = meaningfulLines(readSection).filter(l => /^\|.*\|$/.test(l));
+  const dataRows = rows.filter(row => {
+    const cells = row.split('|').map(c => c.trim()).filter(Boolean);
+    return cells.length >= 3 && !cells.every(c => /^-+$/.test(c)) && !cells.includes('文件');
+  });
+  if (dataRows.length === 0) return 'context-budget.md 已读文件清单 must contain at least one file entry';
+  const coverageSection = sectionText(text, '上下文覆盖度自评');
+  if (!coverageSection || meaningfulLines(coverageSection).length < 2) return 'context-budget.md 上下文覆盖度自评 must contain coverage assessment';
+  return '';
+}
+
+const QUALITY_SCORE_DIMENSIONS = ['coverage', 'evidence_density', 'uncertainty', 'diagram', 'structure', 'risk_awareness'];
+
+function validateQualityScore(ideaDir) {
+  const file = join(ideaDir, 'as-is/quality-score.json');
+  if (!existsSync(file)) return 'as-is/quality-score.json missing';
+  const parsed = readJsonFile(file);
+  if (parsed.error) return `as-is/quality-score.json invalid JSON: ${parsed.error}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1) return 'quality-score.json schema_version must be 1';
+  if (typeof doc.overall !== 'number' || doc.overall < 0 || doc.overall > 1) return 'quality-score.json overall must be 0-1';
+  if (!doc.dimensions || typeof doc.dimensions !== 'object') return 'quality-score.json missing dimensions';
+  for (const dim of QUALITY_SCORE_DIMENSIONS) {
+    const d = doc.dimensions[dim];
+    if (!d || typeof d.score !== 'number') return `quality-score.json dimensions.${dim} missing score`;
+    if (d.score < 0 || d.score > 1) return `quality-score.json dimensions.${dim}.score must be 0-1`;
+  }
+  if (doc.overall < 0.6) return `quality-score.json overall ${doc.overall} is below minimum threshold 0.6`;
+  for (const dim of QUALITY_SCORE_DIMENSIONS) {
+    if (doc.dimensions[dim].score < 0.3) return `quality-score.json ${dim} score ${doc.dimensions[dim].score} is below minimum threshold 0.3`;
+  }
+  return '';
+}
+
 function validateTraceabilityMatrix(ideaDir, { requireTaskRefs = false, taskIdsOverride = null, traceRefsOverride = null } = {}) {
   const matrixPath = join(ideaDir, 'to-be/traceability-matrix.json');
   if (!existsSync(matrixPath)) return 'to-be/traceability-matrix.json missing';
@@ -739,6 +810,12 @@ export function checkGate(ideaDir, gateId) {
       if (evidenceLines < MIN_EVIDENCE_LINES) return result(gateId, false, `evidence-index.md has only ${evidenceLines} non-empty lines (min ${MIN_EVIDENCE_LINES})`);
       const coverageReason = validateAsIsCoverageMatrix(ideaDir);
       if (coverageReason) return result(gateId, false, coverageReason);
+      const repoMapReason = validateRepoMap(ideaDir);
+      if (repoMapReason) return result(gateId, false, repoMapReason);
+      const budgetReason = validateContextBudget(ideaDir);
+      if (budgetReason) return result(gateId, false, budgetReason);
+      const qualityReason = validateQualityScore(ideaDir);
+      if (qualityReason) return result(gateId, false, qualityReason);
       return result(gateId, true);
     }
     case 'as-is-confirmed': {

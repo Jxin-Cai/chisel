@@ -102,7 +102,7 @@ git log --oneline main..HEAD
 - **创建 PR**：`git push -u origin {branch}`，然后用 `gh pr create` 创建 PR，展示 PR URL
 - **直接合并**：提醒用户先 `ExitWorktree` 回到主分支，再 `git merge {branch}`，合并后清理 worktree
 - **保留分支**：仅提示用户分支名和 worktree 路径，告知后续可手动处理
-- **放弃变更**：二次确认后，`ExitWorktree(action: "remove", discard_changes: true)`
+- **放弃变更**：先展示将被删除的内容（分支名、commit 列表 `git log --oneline main..HEAD`），要求用户明确输入"确认放弃"后才执行 `ExitWorktree(action: "remove", discard_changes: true)`。未收到确认文字前不得执行删除。
 
 ---
 

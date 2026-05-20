@@ -1,6 +1,6 @@
 ---
 name: chisel-agent-rules
-description: Agent 共享规则预加载。自动注入 wiki 查询、候选创建、scope/wiki proof、模板优先四条规则。通过 agent frontmatter skills 字段预加载，确保 subagent 启动时即拥有共享规则上下文。
+description: 当 chisel subagent 通过 frontmatter skills 字段启动时预加载。
 user-invocable: false
 ---
 
