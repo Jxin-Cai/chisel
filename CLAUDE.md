@@ -23,7 +23,7 @@ This repository contains the `chisel` Claude Code plugin.
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
 - `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案。
 - `agent-chisel-coder` 只按已确认 task 实现。
-- `agent-chisel-reviewer` 通用 CR agent（opus），每次加载一个维度定义文件（dim-spec/dim-d2~d7）执行单维度深度审查。7 个维度 7 次独立调用。
+- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），每次加载一个维度定义文件（dim-spec/dim-d2~d7）执行单维度深度审查。7 个维度 7 次独立调用。
 
 ## As-Is 分层结构
 

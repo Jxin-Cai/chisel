@@ -27,6 +27,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 | `task_ids` | 待审查的 task ID 列表 |
 | `dimension` | 本次审查维度（`spec`、`d2`、`d3`、`d4`、`d5`、`d6`、`d7`） |
 | `rework_count` | 当前返修轮次 |
+| `base_ref` | diff 基准 commit（功能分叉点），为空则降级到 git log |
 
 ## 执行步骤
 
@@ -44,14 +45,24 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-review/references/dim-{dimension}.md`
 
 **必须先 Read 维度定义再开始审查。不得凭记忆审查。**
 
-### 2. 加载变更上下文
+### 2. 获取功能 diff
 
 对每个 task_id：
-1. Read task 文件 `{idea_dir}/tasks/{task_id}.md`
-2. Read task report `{idea_dir}/task-reports/{task_id}-report.md`
-3. 从 report 的 `changed_files` 中逐个 Read 实际变更文件
 
-**不要只看 report 描述就下结论——必须看到实际代码。**
+1. Read task 文件 `{idea_dir}/tasks/{task_id}.md`（获取需求约束：AC、invariants、forbidden 等）
+2. Read task report `{idea_dir}/task-reports/{task_id}-report.md`（获取 changed_files 列表和实现说明）
+3. 用行级 diff 作为审查主材料——聚焦本次功能变更，不通篇阅读未变更的代码：
+   - 如果 `base_ref` 非空：
+     ```bash
+     git diff {base_ref}...HEAD -- <changed_file_1> <changed_file_2> ...
+     ```
+   - 如果 `base_ref` 为空（在 main 上没有分叉）：
+     ```bash
+     git log --format="" -p HEAD -- <changed_file_1> <changed_file_2> ...
+     ```
+4. 仅当 diff 上下文不足以判断时（需理解调用方、继承关系、数据流上下游），才 Read 相关文件的特定片段作为补充
+
+**从 diff 出发，不从全文件出发。diff 是主材料，全文件是按需补充。**
 
 ### 3. 按维度定义执行审查
 

@@ -109,7 +109,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `plan:strategy-confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:strategy-confirm 详细行为执行 | `strategy-confirmed` |
 | `plan:decompose` | `/chisel-plan <idea-name>` (mode=decompose) | `to-be-exists` |
 | `plan:decompose-confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:decompose-confirm 详细行为执行 | `to-be-confirmed` |
-| `worktree:setup` | 使用 `AskUserQuestion` 询问是否创建隔离 worktree；yes → `EnterWorktree`（从 main 分支创建）；no → 当前分支开发。将决策写入 `{IDEA_DIR}/worktree-decision.json` | `worktree-decided` |
+| `worktree:setup` | 使用 `AskUserQuestion` 询问是否创建隔离 worktree；yes → `EnterWorktree`（从 main 分支创建）；no → 当前分支开发。运行 `git rev-parse HEAD` 记录当前 commit 作为 `base_commit`。将决策写入 `{IDEA_DIR}/worktree-decision.json`（含 `base_commit` 字段，CR 阶段用它做 diff 基准） | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
