@@ -4,51 +4,56 @@
 
 ## 安装
 
-### 从 GitHub 安装
+### 第一步：添加插件市场
 
-在 Claude Code 中运行：
+Claude Code 的第三方插件通过 marketplace 分发。首次使用需要先添加市场源：
 
 ```text
 /plugin marketplace add Jxin-Cai/chisel
+```
+
+这会把 `Jxin-Cai/chisel` 仓库注册为你的插件市场。只需执行一次，后续升级不用重复。
+
+### 第二步：安装 chisel 插件
+
+从市场安装并激活：
+
+```text
 /plugin install chisel@chisel
 /reload-plugins
 ```
 
-安装后可以查看插件和技能是否加载成功：
+验证安装成功：
 
 ```text
 /plugin
 /skills
 ```
 
-然后在目标项目中使用：
+你应该在输出中看到 `chisel` 插件和 `/chisel` 等技能。
+
+### 第三步：使用
+
+在你的**业务代码仓库**中启动 Claude Code，然后执行：
 
 ```text
 /chisel <需求描述或需求文件路径>
 ```
 
-### 本地开发加载
+> chisel 需要在目标代码仓库中运行，不是在 chisel 插件仓库中运行。
 
-如果你正在本地开发或调试这个插件，可以不安装到插件列表，直接用插件目录启动 Claude Code：
+### 其他安装方式
 
-```bash
-claude --plugin-dir /absolute/path/to/chisel
-```
-
-### CLI 安装方式
-
-也可以用 Claude Code CLI 安装到用户级 scope：
+**CLI 安装**（不进入交互模式）：
 
 ```bash
 claude plugin install chisel@chisel --scope user
 ```
 
-常用验证命令：
+**本地开发加载**（直接从本地目录加载，不经过市场）：
 
 ```bash
-claude --version
-claude plugin list
-claude plugin details chisel@chisel
+claude --plugin-dir /absolute/path/to/chisel
 ```
 
 ## 快速使用
