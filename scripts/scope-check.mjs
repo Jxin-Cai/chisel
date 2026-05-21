@@ -191,12 +191,31 @@ function symbolHits(text, symbols = []) {
   return symbols.filter(symbol => symbol && text.includes(symbol));
 }
 
+function getOtherTasksExpectedPatterns(ideaDir, currentTaskId) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  const patterns = [];
+  for (const [id, task] of Object.entries(state.tasks || {})) {
+    if (id === currentTaskId) continue;
+    const files = task.expected_files || [];
+    const taskFilePath = join(ideaDir, task.file);
+    let fromFile = [];
+    if (existsSync(taskFilePath)) {
+      const fm = readFrontmatter(readFileSync(taskFilePath, 'utf8'));
+      if (Array.isArray(fm.expected_files) && fm.expected_files.length > 0) fromFile = fm.expected_files;
+    }
+    const src = fromFile.length > 0 ? fromFile : files;
+    for (const p of src) patterns.push(patternSource(p, `other-task:${id}`));
+  }
+  return patterns;
+}
+
 function check(ideaDir, taskId, projectRoot = '.') {
   const { expected, forbidden, allowedSymbols, forbiddenSymbols, behaviorInvariants, expectedPatterns, forbiddenPatterns } = getTaskScope(ideaDir, taskId);
   const wikiForbidden = getWikiForbiddenZones(projectRoot);
   const wikiForbiddenPatterns = wikiForbidden.map(pattern => patternSource(pattern, 'wiki.forbidden-zones'));
   const allForbidden = [...new Set([...forbidden, ...wikiForbidden])];
   const allForbiddenPatterns = [...forbiddenPatterns, ...wikiForbiddenPatterns];
+  const otherTasksPatterns = getOtherTasksExpectedPatterns(ideaDir, taskId);
   const changedFiles = getChangedFiles(projectRoot);
 
   const violations = [];
@@ -222,7 +241,12 @@ function check(ideaDir, taskId, projectRoot = '.') {
       violations.push({ file, type: 'forbidden_symbol', reason: 'diff touches forbidden symbol', symbol });
     }
     if (expected.length > 0 && expectedProofs.length === 0) {
-      violations.push({ file, type: 'unexpected', reason: 'file is outside expected scope' });
+      const otherProofs = matchScopeProofs(file, otherTasksPatterns);
+      if (otherProofs.length > 0) {
+        scopeWarnings.push({ file, type: 'belongs_to_other_task', reason: `file is in scope of ${otherProofs[0].source}`, proof: otherProofs[0] });
+      } else {
+        violations.push({ file, type: 'unexpected', reason: 'file is outside expected scope' });
+      }
     }
     if (undeclaredSymbolChange) {
       scopeWarnings.push({ file, type: 'undeclared_symbol_change', reason: 'changed file did not hit any allowed symbol' });
