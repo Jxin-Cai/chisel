@@ -545,6 +545,7 @@ function validateEvidenceLedger(ideaDir) {
     if (ids.has(fact.id)) return `${fact.id} is duplicated in evidence-ledger`;
     ids.add(fact.id);
     if (!fact.claim || typeof fact.claim !== 'string') return `${label} missing claim`;
+    if (fact.status !== 'confirmed') return `${label} status must be "confirmed" (got "${fact.status || ''}")`;
     if (!Array.isArray(fact.evidence) || fact.evidence.length === 0) return `${label} missing evidence`;
     for (const [evidenceIndex, evidence] of fact.evidence.entries()) {
       if (!evidence?.file || typeof evidence.file !== 'string') return `${label} evidence[${evidenceIndex}] missing file`;

@@ -111,6 +111,8 @@
 
 ## evidence-ledger.json
 
+所有 fact 的 `status` 必须为 `"confirmed"`（gate 会拒绝其他值）。只有 Read 过源码并验证了行号的事实才能写入 ledger。无法确认的推断不入 ledger，写入 overview 的「不确定点」。
+
 ```json
 {
   "facts": [

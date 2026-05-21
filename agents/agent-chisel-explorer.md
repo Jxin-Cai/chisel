@@ -87,6 +87,7 @@ debt-scan 的候选不需要在探索阶段处理终态，留给 knowledge:extra
 <HARD-GATE>
 每个关键结论必须标注证据文件路径和行号。未确认的关系标记为"推断"。
 不要在没有证据的情况下编造调用关系或 ER 关系。
+evidence-ledger.json 中所有 fact 的 status 必须为 "confirmed"——即必须 Read 过对应源码文件并验证行号。如果探索中发现某条推断无法在源码中确认，不要写入 ledger，改写到 overview 的「不确定点」或 coverage-matrix 的 `not_applicable` 中。gate 会拒绝任何 status != "confirmed" 的 fact。
 </HARD-GATE>
 
 ## 产物（分层结构）
