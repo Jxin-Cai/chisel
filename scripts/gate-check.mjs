@@ -384,9 +384,22 @@ function validateScopeProof(text, mode, { behaviorInvariants = [], requireAllInv
   return '';
 }
 
-function validateTaskReport(reportPath, behaviorInvariants = []) {
+function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = []) {
   const text = readText(reportPath);
   if (!hasRequiredLines(reportPath, ['## 做了什么', '## 改了什么'])) return 'missing required report sections';
+  if (traceRefs.length > 0) {
+    if (!hasSection(text, '## Traceability Evidence')) return 'missing ## Traceability Evidence';
+    const traceSection = sectionText(text, 'Traceability Evidence');
+    for (const ref of traceRefs) {
+      if (!traceSection.includes(ref)) return `Traceability Evidence missing ${ref}`;
+    }
+    const traceRows = meaningfulLines(traceSection).filter(line => /^\|.*\|$/.test(line));
+    const hasEvidenceRow = traceRows.some(row => {
+      const cells = row.split('|').map(cell => cell.trim()).filter(Boolean);
+      return cells.length >= 3 && !cells.includes('Trace Ref') && !cells.every(cell => /^-+$/.test(cell));
+    });
+    if (!hasEvidenceRow) return 'Traceability Evidence must contain at least one evidence row';
+  }
   const wikiProofReason = validateWikiLoadProof(text);
   if (wikiProofReason) return wikiProofReason;
   return validateScopeProof(text, 'report', { behaviorInvariants });
@@ -407,6 +420,119 @@ function validateCrFile(crPath, status, behaviorInvariants = []) {
   if (scopeProofReason) return scopeProofReason;
   if (crResult === 'needs_rework' && !/\bCR-\d{3}\b/.test(text)) return 'needs_rework CR must include at least one CR-xxx rework item';
   return '';
+}
+
+const REVIEW_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7'];
+const QUALITY_REVIEW_DIMENSIONS = ['d2', 'd3', 'd4', 'd5', 'd6', 'd7'];
+
+function dimensionCrPath(ideaDir, dimension) {
+  return join(ideaDir, `cr/dim-${dimension}-cr.md`);
+}
+
+function taskStatusMap(ideaDir) {
+  return new Map(taskEntries(ideaDir).map(([taskId, task]) => [taskId, task.status]));
+}
+
+function affectedTasks(fm) {
+  return Array.isArray(fm.affected_tasks) ? fm.affected_tasks.filter(Boolean) : [];
+}
+
+function validateAffectedTaskStatuses(ideaDir, taskIds, allowedStatuses) {
+  const statuses = taskStatusMap(ideaDir);
+  for (const taskId of taskIds) {
+    const status = statuses.get(taskId);
+    if (!status) return `affected task not found in task workflow: ${taskId}`;
+    if (!allowedStatuses.includes(status)) return `affected task ${taskId} status must be ${allowedStatuses.join('/')} but is ${status}`;
+  }
+  return '';
+}
+
+function behaviorInvariantsForTasks(ideaDir, taskIds) {
+  return [...new Set(taskIds.flatMap(taskId => getTaskScope(ideaDir, taskId).behaviorInvariants || []))];
+}
+
+function validateDimensionCrFile(ideaDir, dimension) {
+  const crPath = dimensionCrPath(ideaDir, dimension);
+  if (!existsSync(crPath)) return { valid: false, reason: `cr/dim-${dimension}-cr.md missing` };
+
+  const text = readText(crPath);
+  const fm = readFrontmatter(text);
+  if (fm.dimension !== dimension) return { valid: false, reason: `cr/dim-${dimension}-cr.md dimension must be ${dimension}` };
+  if (!['pass', 'fail'].includes(fm.result)) return { valid: false, reason: `cr/dim-${dimension}-cr.md result must be pass/fail` };
+  if (!Array.isArray(fm.affected_tasks)) return { valid: false, reason: `cr/dim-${dimension}-cr.md affected_tasks must be an array` };
+  if (!Number.isFinite(Number(fm.rework_count || 0))) return { valid: false, reason: `cr/dim-${dimension}-cr.md rework_count must be numeric` };
+
+  const required = dimension === 'spec'
+    ? ['## 结论', '## Acceptance Criteria 覆盖', '## Expected Files 覆盖', '## Scope Check Proof']
+    : ['## 结论', '## 检查结果', '## Scope Check Proof', '## Rework Items'];
+  const missing = required.filter(section => !hasSection(text, section));
+  if (missing.length > 0) return { valid: false, reason: `cr/dim-${dimension}-cr.md missing sections: ${missing.join(', ')}` };
+
+  const wikiProofReason = validateWikiLoadProof(text);
+  if (wikiProofReason) return { valid: false, reason: `cr/dim-${dimension}-cr.md ${wikiProofReason}` };
+  const invariants = behaviorInvariantsForTasks(ideaDir, affectedTasks(fm));
+  const scopeProofReason = validateScopeProof(text, 'cr', { behaviorInvariants: invariants, requireAllInvariantPass: fm.result === 'pass' });
+  if (scopeProofReason) return { valid: false, reason: `cr/dim-${dimension}-cr.md ${scopeProofReason}` };
+
+  const reworkCount = Number(fm.rework_count || 0);
+  if (reworkCount > 0 && !hasSection(text, 'Rework Verification')) {
+    return { valid: false, reason: `cr/dim-${dimension}-cr.md with rework_count > 0 must include ## Rework Verification section` };
+  }
+  if (fm.result === 'fail') {
+    const issuePattern = dimension === 'spec' ? /\bSPEC-\d{3}\b/ : new RegExp(`\\bCR-\\d{3}\\s*\\[${dimension.toUpperCase()}\\]`);
+    if (!issuePattern.test(text)) return { valid: false, reason: `cr/dim-${dimension}-cr.md fail result must include ${dimension === 'spec' ? 'SPEC-xxx' : `CR-xxx [${dimension.toUpperCase()}]`} item` };
+  }
+
+  return { valid: true, fm };
+}
+
+function validateLegacyRequirementCr(ideaDir, gateId) {
+  const reqCrPath = join(ideaDir, 'cr/requirement-cr.md');
+  if (!existsSync(reqCrPath)) return result(gateId, false, 'cr/requirement-cr.md missing');
+  const crText = readText(reqCrPath);
+  const crFm = readFrontmatter(crText);
+  if (crFm.review_level !== 'requirement') return result(gateId, false, 'cr/requirement-cr.md review_level must be requirement');
+  if (!['approved', 'needs_rework', 'blocked'].includes(crFm.result)) return result(gateId, false, 'cr/requirement-cr.md result must be approved/needs_rework/blocked');
+  const required = ['## 结论', '## 需求覆盖度', '## Scope Control'];
+  const missing = required.filter(section => !crText.includes(section));
+  if (missing.length > 0) return result(gateId, false, `requirement-cr.md missing sections: ${missing.join(', ')}`);
+  const reworkCount = Number(crFm.rework_count || 0);
+  if (reworkCount > 0 && !hasSection(crText, 'Rework Verification'))
+    return result(gateId, false, 'CR with rework_count > 0 must include ## Rework Verification section');
+  return result(gateId, true, '', { legacy: true });
+}
+
+function validateDimensionCrComplete(ideaDir, gateId) {
+  const hasAnyDimensionCr = REVIEW_DIMENSIONS.some(dimension => existsSync(dimensionCrPath(ideaDir, dimension)));
+  if (!hasAnyDimensionCr) return validateLegacyRequirementCr(ideaDir, gateId);
+
+  const spec = validateDimensionCrFile(ideaDir, 'spec');
+  if (!spec.valid) return result(gateId, false, spec.reason);
+  const specAffectedTasks = affectedTasks(spec.fm);
+  if (spec.fm.result === 'fail') {
+    if (specAffectedTasks.length === 0) return result(gateId, false, 'dim-spec fail result must include affected_tasks');
+    const statusReason = validateAffectedTaskStatuses(ideaDir, specAffectedTasks, ['needs_rework', 'blocked']);
+    return statusReason ? result(gateId, false, statusReason) : result(gateId, true, '', { review_result: 'needs_rework', dimensions: ['spec'] });
+  }
+
+  const parsedDimensions = [spec];
+  for (const dimension of QUALITY_REVIEW_DIMENSIONS) {
+    const parsed = validateDimensionCrFile(ideaDir, dimension);
+    if (!parsed.valid) return result(gateId, false, parsed.reason);
+    parsedDimensions.push(parsed);
+  }
+
+  const failed = parsedDimensions.filter(parsed => parsed.fm.result === 'fail');
+  if (failed.length === 0) {
+    return allTasksApproved(ideaDir)
+      ? result(gateId, true, '', { review_result: 'approved', dimensions: REVIEW_DIMENSIONS })
+      : result(gateId, false, 'all dimension CRs passed but not all tasks are approved');
+  }
+
+  const failedTasks = [...new Set(failed.flatMap(parsed => affectedTasks(parsed.fm)))];
+  if (failedTasks.length === 0) return result(gateId, false, 'failed dimension CRs must include affected_tasks');
+  const statusReason = validateAffectedTaskStatuses(ideaDir, failedTasks, ['needs_rework', 'blocked']);
+  return statusReason ? result(gateId, false, statusReason) : result(gateId, true, '', { review_result: 'needs_rework', dimensions: REVIEW_DIMENSIONS });
 }
 
 const MIN_EVIDENCE_LINES = 5;
@@ -890,26 +1016,17 @@ export function checkGate(ideaDir, gateId) {
         const reportPath = join(ideaDir, task.report_file);
         if (!has(ideaDir, task.report_file)) return taskId;
         const { behaviorInvariants } = getTaskScope(ideaDir, taskId);
-        const reason = validateTaskReport(reportPath, behaviorInvariants);
+        const taskPath = join(ideaDir, task.file || `tasks/${taskId}.md`);
+        const taskFm = existsSync(taskPath) ? readFrontmatter(readText(taskPath)) : {};
+        const traceRefs = Array.isArray(taskFm.trace_refs) ? taskFm.trace_refs : [];
+        const reason = validateTaskReport(reportPath, behaviorInvariants, traceRefs);
         return reason ? `${taskId} (${reason})` : '';
       }).filter(Boolean);
       return invalid.length === 0 ? result(gateId, true) : result(gateId, false, `invalid task reports: ${invalid.join(', ')}`);
     }
     case 'cr-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
-      const reqCrPath = join(ideaDir, 'cr/requirement-cr.md');
-      if (!existsSync(reqCrPath)) return result(gateId, false, 'cr/requirement-cr.md missing');
-      const crText = readText(reqCrPath);
-      const crFm = readFrontmatter(crText);
-      if (crFm.review_level !== 'requirement') return result(gateId, false, 'cr/requirement-cr.md review_level must be requirement');
-      if (!['approved', 'needs_rework', 'blocked'].includes(crFm.result)) return result(gateId, false, 'cr/requirement-cr.md result must be approved/needs_rework/blocked');
-      const required = ['## 结论', '## 需求覆盖度', '## Scope Control'];
-      const missing = required.filter(section => !crText.includes(section));
-      if (missing.length > 0) return result(gateId, false, `requirement-cr.md missing sections: ${missing.join(', ')}`);
-      const reworkCount = Number(crFm.rework_count || 0);
-      if (reworkCount > 0 && !hasSection(crText, 'Rework Verification'))
-        return result(gateId, false, 'CR with rework_count > 0 must include ## Rework Verification section');
-      return result(gateId, true);
+      return validateDimensionCrComplete(ideaDir, gateId);
     }
     case 'rework-limit': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');

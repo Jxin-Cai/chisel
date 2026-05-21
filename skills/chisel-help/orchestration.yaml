@@ -68,7 +68,7 @@ steps:
       name: chisel-plan
       args: "{idea-name} --phase decompose"
     postcondition:
-      check: decompose-exists
+      check: to-be-exists
 
   - id: plan:decompose-confirm
     description: 用户确认 task 拆分，写入 confirmations/to-be.json；实时捕获知识候选
@@ -97,7 +97,7 @@ steps:
       check: task-report-exists
 
   - id: review:cr
-    description: 资深架构师 CR（多 task 可并行审查）
+    description: spec + D2-D7 多维 CR；spec fail 直接返修，spec pass 后并行执行 D2-D7 并聚合返修项
     action:
       type: skill
       name: chisel-review

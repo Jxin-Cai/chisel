@@ -63,7 +63,7 @@ digraph chisel_flow {
   worktree [label="worktree:setup"];
   tasks [label="tasks:init"];
   implement [label="implement:code"];
-  review [label="review:cr\n(requirement-level)"];
+  review [label="review:cr\n(spec + D2-D7)"];
   repair [label="repair:code"];
   knowledge [label="knowledge:extract\n(skip if trivial)"];
   final [label="final:summary"];
@@ -112,7 +112,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `worktree:setup` | 使用 `AskUserQuestion` 询问是否创建隔离 worktree；yes → `EnterWorktree`（从 main 分支创建）；no → 当前分支开发。运行 `git rev-parse HEAD` 记录当前 commit 作为 `base_commit`。将决策写入 `{IDEA_DIR}/worktree-decision.json`（含 `base_commit` 字段，CR 阶段用它做 diff 基准） | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
-| `review:cr` | `/chisel-review <idea-name>` | `cr-complete` |
+| `review:cr` | `/chisel-review <idea-name>`；`cr-complete` 检查 `dim-spec-cr.md` 与 D2-D7 维度 CR。spec fail 可只完成 spec CR 并进入 repair；spec pass 后才要求 D2-D7 全部完成并聚合。 | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
 | `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行 | `knowledge-extracted` |
 | `final:summary` | Read `${REF}/phase-confirm-details.md`；按其 final:summary 详细行为执行 | `done` |

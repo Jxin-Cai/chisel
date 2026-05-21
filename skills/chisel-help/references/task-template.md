@@ -4,7 +4,7 @@ status: confirmed
 depends_on: []
 description: 描述这个 task 完成的业务能力
 expected_files: [] # 仓库相对路径，填本 task 预计修改或必须审查的文件
-trace_refs: [] # 对应 to-be/traceability-matrix.json 的条目 ID
+trace_refs: [] # 必须对应 to-be/traceability-matrix.json 的条目 ID，并在 task report 的 Traceability Evidence 中逐项证明
 allowed_symbols: [] # 本 task 允许触碰的关键函数/类/接口名
 forbidden_symbols: [] # 本 task 禁止触碰的关键函数/类/接口名
 impact_surface: {"files":[],"symbols":[],"invariants":[],"shared_state":[]} # 并行调度使用的影响面
@@ -67,6 +67,8 @@ task_complexity: standard # trivial | standard | complex — 决定 coder agent 
 ## Traceability
 
 - REQ-001
+
+每个 trace ref 必须来自 `to-be/traceability-matrix.json.items[].id`，并最终由 task report 的 `Traceability Evidence` 证明。
 
 ## Behavior Invariants
 

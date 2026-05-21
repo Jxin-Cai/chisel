@@ -128,13 +128,13 @@ context-budget.md 写完后，运行质量评分脚本：
 node ${CLAUDE_PLUGIN_ROOT}/scripts/as-is-score.mjs {idea_dir}
 ```
 
-Read stdout 查看各维度得分。如果 `overall < 0.6` 或任一维度 `< 0.4`，检查 `weaknesses` 列表并针对性补强：
+Read stdout 查看各维度得分。hard gate 是 `overall >= 0.6` 且每个维度 `>= 0.3`；低于 0.4 的维度属于建议补强目标，需要检查 `weaknesses` 并解释或补强：
 - coverage 低 → 检查 coverage-matrix 是否遗漏维度，context-budget 已读文件是否覆盖核心入口
 - evidence_density 低 → 检查 evidence-ledger 的 fact 数量是否不足
 - diagram 低 → 补充 Mermaid 图
 - risk_awareness 低 → 检查 overview 的风险地图和误解点是否为空
 
-补强后重新运行评分，直到 overall ≥ 0.6 且无维度 < 0.4。
+补强后重新运行评分，直到满足 hard gate；低于 0.4 但已足够支撑本需求的维度，必须在 context-budget 中说明取舍。
 </HARD-GATE>
 
 ## 限制

@@ -22,6 +22,9 @@ const BRANCH_FILES = [
 
 const COVERAGE_DIMENSIONS = ['entrypoints', 'links', 'data', 'side_effects'];
 
+const MIN_OVERALL_SCORE = 0.6;
+const MIN_DIMENSION_SCORE = 0.3;
+
 const DIMENSION_WEIGHTS = {
   coverage: 0.30,
   evidence_density: 0.25,
@@ -325,6 +328,7 @@ export function computeScore(ideaDir) {
 
 function printSummary(result) {
   console.log(`as-is quality score: ${result.overall.toFixed(2)} / 1.0`);
+  console.log(`gate threshold: overall >= ${MIN_OVERALL_SCORE.toFixed(2)} and every dimension >= ${MIN_DIMENSION_SCORE.toFixed(2)}`);
   for (const [dim, data] of Object.entries(result.dimensions)) {
     const label = dim.padEnd(20);
     console.log(`  ${label} ${data.score.toFixed(2)}  ${bar(data.score)}`);

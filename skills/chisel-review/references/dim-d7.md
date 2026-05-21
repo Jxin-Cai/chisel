@@ -70,6 +70,49 @@ PASS | FAIL
 | 未使用 import | <文件:行号> | <模块名> |
 | 不可达代码 | <文件:行号> | <说明> |
 
+## Scope Check Proof
+
+- Command：`node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`
+- Result：pass | fail
+- schema_version：3
+- changed_files_count：
+- violations_count：
+- forbidden_symbol_hits_count：
+
+#### Scope Check JSON Summary
+
+粘贴 scope-check.mjs 的完整 JSON 输出。
+
+#### Hit Proofs Reviewed
+
+| File | Expected proof | Forbidden proof | Symbol proof | Status |
+|---|---|---|---|---|
+| | | | | |
+
+#### Invariant Proofs
+
+| Invariant | Proof | Result |
+|---|---|---|
+| <不变量描述> | <验证证据> | pass / fail |
+
+必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须填写实际验证证据，不得为空或占位；`Result` 只能是 `pass` 或 `fail`。
+
+## Wiki Entries Loaded
+
+| Entry | File | Why Loaded | Used For |
+|---|---|---|---|
+| | | | |
+
+## Progressive Load Proof
+
+- Query command：
+- Query summary：
+- category/min-score：
+- load_plan：
+- None matched：
+
+N/A 只用于正文检查项；frontmatter `result` 仍只能是 `pass | fail`。`pass` 表示该维度无阻塞问题，不表示所有检查项都适用。
+
 ## 问题详情
 
 （FAIL 项逐条展开）

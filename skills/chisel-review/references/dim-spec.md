@@ -98,9 +98,13 @@ pass | fail
 
 ## Behavior Invariants
 
+#### Invariant Proofs
+
 | Invariant | Proof | Result |
 |---|---|---|
 | <不变量描述> | <验证证据> | pass / fail |
+
+必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须填写实际验证证据，不得为空或占位；`Result` 只能是 `pass` 或 `fail`。
 
 ## Wiki Entries Loaded
 

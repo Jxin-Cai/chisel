@@ -104,7 +104,7 @@ function main() {
 
   if (type === 'requirement') {
     if (!ideaDir) {
-      process.stderr.write('用法: cr-parse.mjs <idea-dir> --type requirement\n');
+      process.stderr.write('用法: cr-parse.mjs <idea-dir> --type requirement（legacy compatibility；新流程使用 --dim spec|d2|...|d7）\n');
       process.exit(1);
     }
     const crFile = join(ideaDir, 'cr/requirement-cr.md');
@@ -119,7 +119,7 @@ function main() {
   }
 
   if (!ideaDir || !taskId) {
-    process.stderr.write('用法: cr-parse.mjs <idea-dir> <task-id> [--type spec|cr|requirement]\n');
+    process.stderr.write('用法: cr-parse.mjs <idea-dir> --dim <spec|d2|d3|d4|d5|d6|d7>；legacy: cr-parse.mjs <idea-dir> <task-id> [--type spec|cr|requirement]\n');
     process.exit(1);
   }
 

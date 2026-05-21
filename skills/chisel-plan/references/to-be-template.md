@@ -78,6 +78,9 @@
       "expected_files": ["src/a.ts"],
       "trace_refs": ["REQ-001"],
       "acceptance_criteria": ["满足某个可验证行为"],
+      "behavior_invariants": ["需要保持的旧行为、接口契约或包袱"],
+      "impact_surface": {"files": ["src/a.ts"], "symbols": [], "invariants": [], "shared_state": []},
+      "context_to_load": {"as_is": [], "to_be": [], "wiki": [], "module_map": [], "adr": []},
       "risk_level": "low",
       "rollback": "回退本 task 修改的文件"
     }
@@ -85,7 +88,9 @@
 }
 ```
 
-可选字段：`allowed_symbols`、`forbidden_symbols`、`behavior_invariants`、`impact_surface`、`context_to_load`、`exports`、`imports`、`modification_hints`。
+必填字段：`behavior_invariants`、`impact_surface`、`context_to_load` 必须填写，即使为空数组也要显式给出结构，供 task-init、并行调度和 coder 上下文加载使用。
+
+可选字段：`allowed_symbols`、`forbidden_symbols`、`exports`、`imports`、`modification_hints`、`task_complexity`。
 
 - `exports`：本 task 产出的、可被其他 task 引用的符号或文件（如新增的函数、类型、配置）。
 - `imports`：本 task 依赖的、由其他 task 产出的符号或文件（引用 `exports` 的 task_id）。

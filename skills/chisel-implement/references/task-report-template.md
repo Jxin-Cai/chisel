@@ -25,7 +25,15 @@ changed_files: []
 
 ## Acceptance Criteria Result
 
-- [ ] 
+- [x] <AC> — Evidence: <文件:行号 / 验证命令 / 行为说明>
+
+## Traceability Evidence
+
+| Trace Ref | Evidence | Result |
+|---|---|---|
+| REQ-001 | <文件:行号 / 验证命令 / 行为说明> | pass / fail |
+
+必须覆盖 task frontmatter 中的每个 `trace_refs`；Evidence 不得为空或占位。
 
 ## 风格对齐
 
