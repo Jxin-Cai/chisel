@@ -20,7 +20,30 @@
 
 展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、目标行为、非目标行为、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
 
-确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，至少包含：`schema_version: 1`、`phase: "to-be"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`task_acknowledgement`、`risk_acknowledgement`。
+确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，必须严格包含以下结构（gate-check 会逐字段校验）：
+
+```json
+{
+  "schema_version": 1,
+  "phase": "to-be",
+  "status": "confirmed",
+  "confirmed_at": "<ISO 8601>",
+  "confirmed_by": "user",
+  "source_files": ["to-be/implementation-plan.md", "to-be/tasks.json", "to-be/traceability-matrix.json"],
+  "task_acknowledgement": {
+    "task_ids": ["task-001", "task-002"],
+    "dependencies_reviewed": true
+  },
+  "risk_acknowledgement": {
+    "reviewed": true
+  }
+}
+```
+
+- `task_acknowledgement.task_ids` 必须列出 `to-be/tasks.json` 中所有 task_id
+- `task_acknowledgement.dependencies_reviewed` 必须为 `true`
+- `risk_acknowledgement.reviewed` 必须为 `true`
+- 任何字段缺失或值错误都会导致 `to-be-confirmed` gate 失败
 
 新流程不得只创建 `.to-be-confirmed` marker；该 marker 仅用于历史运行目录兼容。
 

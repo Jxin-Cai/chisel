@@ -117,6 +117,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references`
 > 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
+> 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `ai-input-ready` | `clarification-complete` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `cr-complete` | `rework-limit` | `all-approved` | `knowledge-candidates-exists` | `knowledge-extracted` | `done`。不要发明其他 gate 名称。
 
 ### Complexity 分级
 

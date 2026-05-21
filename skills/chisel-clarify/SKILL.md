@@ -19,7 +19,7 @@ argument-hint: "<idea-name>"
 | `{IDEA_DIR}/requirement.md` | 原始需求目标和初步验收标准 |
 | `{IDEA_DIR}/as-is/overview.md` | 当前系统能力边界、风险地图 |
 | `{IDEA_DIR}/clarifications.json` | understand:confirm 阶段的 as-is 澄清结论 |
-| `{IDEA_DIR}/as-is/ai-input/`（如存在） | 结构化事实、约束、变更面 |
+| `{IDEA_DIR}/as-is/ai-input/`（如存在） | 必读 facts.md + constraints.md；按维度按需读 call-graph/data-schema/api-surface/change-surface |
 
 ## 七个澄清维度
 
@@ -47,8 +47,13 @@ argument-hint: "<idea-name>"
 1. Read `{IDEA_DIR}/requirement.md`
 2. Read `{IDEA_DIR}/as-is/overview.md`
 3. Read `{IDEA_DIR}/clarifications.json`（如存在）
-4. 如存在 `{IDEA_DIR}/as-is/ai-input/`，按需 Read `constraints.md` 和 `change-surface.md`
-5. 基于以上内容，为每个维度生成 1-3 个针对性问题
+4. 如存在 `{IDEA_DIR}/as-is/ai-input/`：
+   - 必读：`facts.md`（事实锚点）+ `constraints.md`
+   - 按维度按需读：
+     - 影响分析 → `call-graph.md` + `change-surface.md`
+     - 兼容性约束 → `api-surface.md` + `data-schema.md`
+     - 非功能需求 → `change-surface.md`
+5. 基于以上内容，为每个维度生成 1-3 个针对性问题（必须引用具体 F-xxx 事实编号或文件位置）
 6. 使用 `AskUserQuestion` 向用户提问（可分批，每批不超过 4 个问题）
 7. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-clarify/references/requirement-clarification-template.md`
 8. 将用户回答写入 `{IDEA_DIR}/requirement-clarification.json`（权威机器可读记录）
@@ -59,7 +64,7 @@ argument-hint: "<idea-name>"
 此步骤澄清的是需求本身的诉求和边界，不是 as-is 理解的正确性（那是 understand:confirm 的职责）。
 必须按复杂度覆盖对应维度（trivial=2，standard/complex=7），即使某些维度用户回答"无特殊要求"也要记录。
 不能代替用户回答——每个维度必须由用户明确确认。
-问题要基于 as-is 中实际发现的事实来提，不要泛泛而问。
+问题要基于 as-is 中实际发现的事实来提，不要泛泛而问。每个问题必须能追溯到 facts.md 中的 F-xxx 编号、constraints.md 中的 FZ/WBI/DNR 编号、或具体文件位置。
 
 合理化预防表：
 
