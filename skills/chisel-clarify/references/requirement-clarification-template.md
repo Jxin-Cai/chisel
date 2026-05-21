@@ -5,6 +5,8 @@
 - `{IDEA_DIR}/requirement-clarification.json`：权威机器可读记录，供 Planner 和后续 gate 使用。
 - `{IDEA_DIR}/requirement-clarification.md`：人类可读镜像，便于用户审阅。
 
+**复杂度裁剪**：trivial 需求只需覆盖 `functional_scope` + `acceptance_criteria` 两个维度，其余维度可省略。standard/complex 需求仍需覆盖全部 7 维度。
+
 ---
 
 ## requirement-clarification.json

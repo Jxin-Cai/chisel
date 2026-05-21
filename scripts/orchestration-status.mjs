@@ -14,7 +14,6 @@ import {
   updateWorkflowPhase
 } from './workflow-lib.mjs';
 import { checkGate } from './gate-check.mjs';
-import { appendAuditLog, lastStepTransition } from './audit-log.mjs';
 
 const IDEA_DIR = process.argv[2];
 
@@ -34,8 +33,6 @@ function emit(resumeStep, reason, phaseDetail = {}) {
     for (const [key, value] of entries) console.log(`  ${key}: ${Array.isArray(value) ? value.join(',') : value}`);
   }
   if (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)) {
-    const prev = lastStepTransition(IDEA_DIR);
-    appendAuditLog(IDEA_DIR, { type: 'step_transition', from: prev?.to || 'unknown', to: resumeStep, reason });
     updateWorkflowPhase(IDEA_DIR, resumeStep);
   }
 }
@@ -76,8 +73,9 @@ function main() {
     emit('receive-requirement', 'requirement.md does not exist');
     return;
   }
-  if (!checkGate(IDEA_DIR, 'as-is-complete').pass) {
-    emit('understand:explore', 'as-is documents are incomplete');
+  const asIsGate = checkGate(IDEA_DIR, 'as-is-complete');
+  if (!asIsGate.pass) {
+    emit('understand:explore', 'as-is documents are incomplete', { gate_reason: asIsGate.reason });
     return;
   }
   if (!checkGate(IDEA_DIR, 'as-is-confirmed').pass) {
@@ -93,21 +91,17 @@ function main() {
     emit('clarify:requirement', 'requirement clarification is incomplete', { complexity });
     return;
   }
-  // Plan: strategy → strategy-confirm → decompose (to-be-exists) → decompose-confirm (to-be-confirmed)
-  if (!checkGate(IDEA_DIR, 'strategy-exists').pass) {
-    emit('plan:strategy', 'implementation strategy does not exist', { complexity });
-    return;
-  }
-  if (!checkGate(IDEA_DIR, 'strategy-confirmed').pass) {
-    emit('plan:strategy-confirm', 'strategy confirmation is missing', { complexity });
-    return;
-  }
+  // Plan: design → confirm
   if (!checkGate(IDEA_DIR, 'to-be-exists').pass) {
-    emit('plan:decompose', 'task decomposition (tasks.json + traceability-matrix) does not exist', { complexity });
+    emit('plan:design', 'implementation plan does not exist', { complexity });
     return;
   }
   if (!checkGate(IDEA_DIR, 'to-be-confirmed').pass) {
-    emit('plan:decompose-confirm', 'task decomposition confirmation is missing', { complexity });
+    emit('plan:confirm', 'plan confirmation is missing', { complexity });
+    return;
+  }
+  if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'knowledge-extracted').pass) {
+    emit('knowledge:extract', 'plan confirmed, knowledge candidate extraction is pending', { complexity });
     return;
   }
   if (!checkGate(IDEA_DIR, 'worktree-decided').pass) {
@@ -150,10 +144,6 @@ function main() {
   }
 
   if (allTasksApproved(IDEA_DIR) && !checkGate(IDEA_DIR, 'done').pass) {
-    if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'knowledge-extracted').pass) {
-      emit('knowledge:extract', 'all tasks approved, knowledge candidate extraction is pending', { complexity });
-      return;
-    }
     emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
     return;
   }

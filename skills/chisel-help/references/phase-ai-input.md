@@ -1,6 +1,10 @@
-# AI 输入版生成指南
+# 上下文裁剪指南
 
 当 `resume_step` = `understand:generate-ai-input` 时加载本文件。
+
+## 目的
+
+从人类版 as-is 文档裁剪无关内容，降低 planner 阶段噪音。只保留设计方案所需的结构化数据。
 
 ## 流程
 
@@ -19,5 +23,4 @@
 | `constraints.md` | overview 禁区/包袱/坏味道 + clarifications.json + confirmations/as-is.json |
 | `change-surface.md` | core-walkthrough safe-to-change area + as-is/coverage-matrix.json |
 
-4. `facts.md`、`constraints.md`、`change-surface.md` 必须写 `## Source Coverage`，逐项说明覆盖了哪些 `F-xxx/C-xxx/E-xxx/L-xxx/D-xxx/S-xxx` 或遗漏原因；来源允许为 `as-is/evidence-ledger.json`、`as-is/coverage-matrix.json`、`clarifications.json`、`confirmations/as-is.json`
-5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} ai-input-ready` 验证
+4. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} ai-input-ready` 验证

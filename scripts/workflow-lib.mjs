@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
-import { appendAuditLog } from './audit-log.mjs';
 
 export const TASK_STATES = ['pending', 'confirmed', 'coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'];
 export const MAX_REWORK_COUNT = 3;
@@ -337,7 +336,6 @@ export function updateTaskStatus(ideaDir, taskId, nextStatus) {
     task.started_at = new Date().toISOString();
   }
   writeTaskState(file, state);
-  appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from: current, to: nextStatus });
   return task;
 }
 
@@ -355,7 +353,6 @@ export function markCr(ideaDir, taskId, result) {
   task.status = status;
   if (task.rework_count >= MAX_REWORK_COUNT && status === 'needs_rework') task.status = 'blocked';
   writeTaskState(file, state);
-  appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from: current, to: task.status, detail: { cr_result: result, rework_count: task.rework_count || 0 } });
   return task;
 }
 
@@ -370,7 +367,6 @@ export function markCrRequirement(ideaDir, result, affectedTaskIds) {
         const from = task.status;
         task.status = 'approved';
         results.push({ task_id: taskId, from, to: 'approved' });
-        appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from, to: 'approved', detail: { cr_result: 'approved', review_level: 'requirement' } });
       }
     }
   } else {
@@ -386,14 +382,12 @@ export function markCrRequirement(ideaDir, result, affectedTaskIds) {
         task.status = 'blocked';
       }
       results.push({ task_id: taskId, from, to: task.status, rework_count: task.rework_count || 0 });
-      appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from, to: task.status, detail: { cr_result: result, review_level: 'requirement', rework_count: task.rework_count || 0 } });
     }
     for (const [taskId, task] of Object.entries(state.tasks)) {
       if (!affected.includes(taskId) && (task.status === 'reviewing' || task.status === 'coded')) {
         const from = task.status;
         task.status = 'approved';
         results.push({ task_id: taskId, from, to: 'approved' });
-        appendAuditLog(ideaDir, { type: 'task_state_change', task_id: taskId, from, to: 'approved', detail: { cr_result: 'approved', review_level: 'requirement' } });
       }
     }
   }
@@ -647,7 +641,6 @@ export function rollbackWorkflow(ideaDir, stepId, { dryRun = false } = {}) {
   }
   applyTaskResets(ideaDir, plan.task_resets);
   updateWorkflowPhase(ideaDir, stepId);
-  appendAuditLog(ideaDir, { type: 'rollback', to_step: stepId, removed: plan.removed, missing: plan.missing, task_resets: plan.task_resets });
   return { rolled_back: true, dry_run: false, ...plan };
 }
 
@@ -668,7 +661,6 @@ export function rollbackTask(ideaDir, taskId, { dryRun = false } = {}) {
   task.loc_deleted = 0;
   task.started_at = undefined;
   writeTaskState(file, state);
-  appendAuditLog(ideaDir, { type: 'task_rollback', task_id: taskId, from: current, to: 'confirmed', removed: toRemove });
   return { rolled_back: true, dry_run: false, task_id: taskId, from: current, to: 'confirmed', removed: toRemove };
 }
 

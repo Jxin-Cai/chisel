@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { extname, join, relative, dirname, sep } from 'node:path';
+import { extname, join, dirname } from 'node:path';
 
 const EXTENSION_TO_LANGUAGE = {
   '.java': 'Java', '.kt': 'Kotlin', '.scala': 'Scala', '.groovy': 'Groovy',
@@ -59,128 +59,6 @@ const CLASSIFICATION_RULES = [
   { role: 'build', patterns: [/[/\\]dist[/\\]/, /[/\\]build[/\\]/, /[/\\]out[/\\]/, /webpack\./, /vite\.config/, /rollup\.config/] },
   { role: 'generated', patterns: [/generated/i, /\.g\.dart$/, /\.pb\.go$/, /swagger.*\.json$/, /openapi.*\.json$/] },
 ];
-
-const ENTRY_PATTERNS = {
-  http: [
-    '@RestController', '@Controller', '@RequestMapping',
-    '@GetMapping', '@PostMapping', '@PutMapping', '@DeleteMapping', '@PatchMapping',
-    'router.get(', 'router.post(', 'router.put(', 'router.delete(', 'router.patch(',
-    'app.get(', 'app.post(', 'app.put(', 'app.delete(',
-    '@app.route', '@api_view', '@app.get(', '@app.post(',
-    'HandleFunc(', 'r.GET(', 'r.POST(', 'r.PUT(', 'r.DELETE(',
-    '@ApiOperation', '@Path',
-  ],
-  rpc: ['@GrpcService', 'ServiceImpl', 'bindService('],
-  message: [
-    '@KafkaListener', '@RabbitListener', '@EventListener',
-    '@SqsListener', 'consumer.subscribe(', 'channel.consume(',
-    '@StreamListener', '@JmsListener',
-  ],
-  job: [
-    '@Scheduled', 'CronJob', 'scheduler.', 'setInterval(',
-    'cron.schedule(', '@Cron',
-  ],
-  cli: [
-    'public static void main(', 'func main()',
-    "if __name__ == '__main__'", "if __name__ == \"__main__\"",
-    'program.command(', 'process.argv',
-  ],
-};
-
-const IMPORT_PATTERNS = [
-  /from\s+['"]([^'"]+)['"]/g,
-  /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
-  /^import\s+(?:[\w.*{},\s]+\s+from\s+)?['"]([^'"]+)['"]/gm,
-  /^import\s+([\w.]+)/gm,
-  /^from\s+([\w.]+)\s+import/gm,
-];
-
-const FRAMEWORK_DETECTORS = [
-  {
-    config: 'package.json', field: 'dependencies', patterns: [
-      { match: /express/, name: 'Express' },
-      { match: /"react"/, name: 'React' },
-      { match: /next/, name: 'Next.js' },
-      { match: /"vue"/, name: 'Vue.js' },
-      { match: /@angular\/core/, name: 'Angular' },
-      { match: /@nestjs/, name: 'NestJS' },
-      { match: /fastify/, name: 'Fastify' },
-      { match: /koa/, name: 'Koa' },
-      { match: /hono/, name: 'Hono' },
-    ]
-  },
-  {
-    config: 'pom.xml', patterns: [
-      { match: /spring-boot/, name: 'Spring Boot' },
-      { match: /spring-cloud/, name: 'Spring Cloud' },
-      { match: /mybatis/, name: 'MyBatis' },
-      { match: /hibernate/, name: 'Hibernate' },
-    ]
-  },
-  {
-    config: 'build.gradle', patterns: [
-      { match: /spring-boot/, name: 'Spring Boot' },
-      { match: /spring-cloud/, name: 'Spring Cloud' },
-    ]
-  },
-  {
-    config: 'build.gradle.kts', patterns: [
-      { match: /spring-boot/, name: 'Spring Boot' },
-    ]
-  },
-  {
-    config: 'requirements.txt', patterns: [
-      { match: /django/i, name: 'Django' },
-      { match: /flask/i, name: 'Flask' },
-      { match: /fastapi/i, name: 'FastAPI' },
-      { match: /sqlalchemy/i, name: 'SQLAlchemy' },
-    ]
-  },
-  {
-    config: 'pyproject.toml', patterns: [
-      { match: /django/i, name: 'Django' },
-      { match: /flask/i, name: 'Flask' },
-      { match: /fastapi/i, name: 'FastAPI' },
-    ]
-  },
-  {
-    config: 'go.mod', patterns: [
-      { match: /gin-gonic/, name: 'Gin' },
-      { match: /gorilla\/mux/, name: 'Gorilla Mux' },
-      { match: /labstack\/echo/, name: 'Echo' },
-      { match: /gofiber\/fiber/, name: 'Fiber' },
-    ]
-  },
-  {
-    config: 'Gemfile', patterns: [
-      { match: /rails/, name: 'Rails' },
-      { match: /sinatra/, name: 'Sinatra' },
-    ]
-  },
-  {
-    config: 'Cargo.toml', patterns: [
-      { match: /actix-web/, name: 'Actix Web' },
-      { match: /axum/, name: 'Axum' },
-      { match: /rocket/, name: 'Rocket' },
-    ]
-  },
-];
-
-const STOP_WORDS = new Set([
-  'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
-  'of', 'with', 'by', 'from', 'is', 'are', 'was', 'were', 'be', 'been',
-  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'shall',
-  'should', 'may', 'might', 'can', 'could', 'not', 'no', 'if', 'then',
-  'else', 'when', 'while', 'as', 'so', 'than', 'that', 'this', 'it',
-  'all', 'each', 'every', 'any', 'some', 'such', 'only', 'own', 'same',
-  'too', 'very', 'just', 'about', 'above', 'after', 'before', 'between',
-  'into', 'through', 'during', 'under', 'over', 'out', 'up', 'down',
-  '的', '了', '和', '是', '在', '有', '为', '与', '或', '等', '及',
-  '将', '对', '中', '个', '被', '把', '从', '到', '要', '这', '那',
-  '需要', '使用', '进行', '可以', '通过', '实现', '功能', '系统',
-  'null', 'undefined', 'true', 'false', 'return', 'function', 'class',
-  'import', 'export', 'const', 'let', 'var', 'new', 'public', 'private',
-]);
 
 function listFiles(projectRoot) {
   try {
@@ -249,29 +127,6 @@ function detectLanguages(files) {
     }));
 }
 
-function detectFrameworks(projectRoot) {
-  const found = [];
-  for (const detector of FRAMEWORK_DETECTORS) {
-    const configPath = join(projectRoot, detector.config);
-    if (!existsSync(configPath)) continue;
-    try {
-      const content = readFileSync(configPath, 'utf8');
-      for (const { match, name } of detector.patterns) {
-        if (match.test(content)) {
-          const line = content.split('\n').find(l => match.test(l));
-          found.push({ name, evidence: `${detector.config}: ${(line || '').trim().slice(0, 80)}` });
-        }
-      }
-    } catch { /* skip unreadable */ }
-  }
-  const seen = new Set();
-  return found.filter(f => {
-    if (seen.has(f.name)) return false;
-    seen.add(f.name);
-    return true;
-  });
-}
-
 function buildDirectorySummary(files) {
   const dirs = new Map();
   for (const file of files) {
@@ -294,108 +149,6 @@ function buildDirectorySummary(files) {
     });
 }
 
-function findEntryCandidates(projectRoot, sourceFiles) {
-  const candidates = [];
-  const maxFiles = 5000;
-  const filesToScan = sourceFiles.slice(0, maxFiles);
-
-  for (const [type, patterns] of Object.entries(ENTRY_PATTERNS)) {
-    for (const pattern of patterns) {
-      try {
-        const escaped = pattern.replace(/[[\]{}()*+?.\\^$|]/g, '\\$&');
-        const output = execSync(
-          `grep -rnl --include='*' -- '${escaped}' . 2>/dev/null || true`,
-          { cwd: projectRoot, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024, timeout: 15000 }
-        );
-        for (const line of output.split('\n').filter(Boolean)) {
-          const file = line.replace(/^\.\//, '');
-          if (!filesToScan.includes(file)) continue;
-          if (candidates.some(c => c.file === file && c.type === type)) continue;
-          try {
-            const lineOutput = execSync(
-              `grep -n -- '${escaped}' '${file}' 2>/dev/null | head -1`,
-              { cwd: projectRoot, encoding: 'utf8', timeout: 5000 }
-            );
-            const lineNum = parseInt(lineOutput.split(':')[0], 10) || 0;
-            candidates.push({ file, type, evidence: pattern, line: lineNum });
-          } catch {
-            candidates.push({ file, type, evidence: pattern, line: 0 });
-          }
-        }
-      } catch { /* grep failure or timeout */ }
-    }
-    if (candidates.length >= 50) break;
-  }
-
-  const seen = new Set();
-  return candidates
-    .filter(c => {
-      const key = `${c.file}:${c.type}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 50);
-}
-
-function analyzeImports(projectRoot, sourceFiles) {
-  const importCounts = new Map();
-  const maxFiles = 3000;
-  const filesToAnalyze = sourceFiles.slice(0, maxFiles);
-
-  for (const file of filesToAnalyze) {
-    const fullPath = join(projectRoot, file);
-    let content;
-    try {
-      const stat = statSync(fullPath);
-      if (stat.size > 512 * 1024) continue;
-      content = readFileSync(fullPath, 'utf8');
-    } catch { continue; }
-
-    for (const pattern of IMPORT_PATTERNS) {
-      const regex = new RegExp(pattern.source, pattern.flags);
-      let match;
-      while ((match = regex.exec(content)) !== null) {
-        const target = match[1];
-        if (!target) continue;
-        if (target.startsWith('.') || target.startsWith('/')) {
-          const resolved = resolveRelativeImport(file, target);
-          if (resolved) {
-            importCounts.set(resolved, (importCounts.get(resolved) || 0) + 1);
-          }
-        } else {
-          importCounts.set(target, (importCounts.get(target) || 0) + 1);
-        }
-      }
-    }
-  }
-
-  const internalModules = [...importCounts.entries()]
-    .filter(([mod]) => {
-      if (mod.startsWith('.') || mod.startsWith('/') || mod.includes('/')) {
-        return sourceFiles.some(f => f.includes(mod.replace(/\.[^.]+$/, '')));
-      }
-      return false;
-    })
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 20)
-    .map(([file, count]) => ({ file, imported_by_count: count }));
-
-  if (internalModules.length > 0) return internalModules;
-
-  return [...importCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 20)
-    .map(([file, count]) => ({ file, imported_by_count: count }));
-}
-
-function resolveRelativeImport(fromFile, target) {
-  const dir = dirname(fromFile);
-  let resolved = join(dir, target).replace(/\\/g, '/');
-  resolved = resolved.replace(/^\.\//, '');
-  return resolved;
-}
-
 function countLines(projectRoot, files) {
   if (files.length === 0) return 0;
   const batch = files.slice(0, 5000);
@@ -415,50 +168,7 @@ function countLines(projectRoot, files) {
   }
 }
 
-function extractRequirementKeywords(requirementPath) {
-  if (!requirementPath || !existsSync(requirementPath)) return [];
-  const text = readFileSync(requirementPath, 'utf8');
-  const cleaned = text
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`[^`]+`/g, '')
-    .replace(/!\[.*?\]\(.*?\)/g, '')
-    .replace(/\[.*?\]\(.*?\)/g, '')
-    .replace(/^#+\s*/gm, '')
-    .replace(/[|*_~>-]/g, ' ');
-
-  const words = [];
-  const cnMatches = cleaned.match(/[一-鿿]{2,}/g) || [];
-  words.push(...cnMatches);
-  const enMatches = cleaned.match(/[a-zA-Z_][a-zA-Z0-9_]{2,}/g) || [];
-  words.push(...enMatches.map(w => w.toLowerCase()));
-
-  const freq = new Map();
-  for (const w of words) {
-    if (STOP_WORDS.has(w)) continue;
-    freq.set(w, (freq.get(w) || 0) + 1);
-  }
-  return [...freq.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 30)
-    .map(([word]) => word);
-}
-
-function findRequirementHints(keywords, sourceFiles) {
-  if (keywords.length === 0) return [];
-  const results = [];
-  for (const file of sourceFiles) {
-    const fileLower = file.toLowerCase();
-    const matched = keywords.filter(kw => fileLower.includes(kw.toLowerCase()));
-    if (matched.length > 0) {
-      results.push({ file, matched_keywords: matched });
-    }
-  }
-  return results
-    .sort((a, b) => b.matched_keywords.length - a.matched_keywords.length)
-    .slice(0, 30);
-}
-
-export function generateRepoMap(projectRoot, requirementPath) {
+export function generateRepoMap(projectRoot) {
   const allFiles = listFiles(projectRoot);
   const nonBinaryFiles = allFiles.filter(f => !isBinaryFile(f));
 
@@ -470,10 +180,8 @@ export function generateRepoMap(projectRoot, requirementPath) {
   const sourceFiles = classified.source;
   const totalLines = countLines(projectRoot, sourceFiles);
 
-  const keywords = extractRequirementKeywords(requirementPath);
-
   return {
-    schema_version: 1,
+    schema_version: 2,
     generated_at: new Date().toISOString(),
     project_root: projectRoot,
     stats: {
@@ -486,23 +194,18 @@ export function generateRepoMap(projectRoot, requirementPath) {
       other_files: classified.build.length + classified.generated.length + classified.other.length,
     },
     languages: detectLanguages(nonBinaryFiles),
-    frameworks: detectFrameworks(projectRoot),
     directory_summary: buildDirectorySummary(nonBinaryFiles),
-    entry_candidates: findEntryCandidates(projectRoot, sourceFiles),
-    core_modules: analyzeImports(projectRoot, sourceFiles),
-    requirement_hints: findRequirementHints(keywords, sourceFiles),
   };
 }
 
 function parseArgs(argv) {
-  const args = { projectRoot: null, requirement: null, output: null };
+  const args = { projectRoot: null, output: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--project-root' && argv[i + 1]) { args.projectRoot = argv[++i]; continue; }
-    if (argv[i] === '--requirement' && argv[i + 1]) { args.requirement = argv[++i]; continue; }
     if (argv[i] === '--output' && argv[i + 1]) { args.output = argv[++i]; continue; }
   }
   if (!args.projectRoot) {
-    process.stderr.write('用法: repo-map.mjs --project-root <path> [--requirement <file>] [--output <file>]\n');
+    process.stderr.write('用法: repo-map.mjs --project-root <path> [--output <file>]\n');
     process.exit(1);
   }
   return args;
@@ -510,7 +213,7 @@ function parseArgs(argv) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = parseArgs(process.argv.slice(2));
-  const result = generateRepoMap(args.projectRoot, args.requirement);
+  const result = generateRepoMap(args.projectRoot);
   const json = JSON.stringify(result, null, 2);
   if (args.output) {
     writeFileSync(args.output, json + '\n');

@@ -33,6 +33,15 @@ argument-hint: "<idea-name>"
 | 验收标准细化 | 将初步标准细化为可验证条件 | "怎么算通过？需不需要边界测试？" |
 | 风险容忍度 | 对不确定因素的态度 | "不确定的地方偏保守还是激进？" |
 
+## Complexity-Aware 维度选择
+
+| 复杂度 | 必须覆盖的维度 |
+|--------|--------------|
+| trivial | 功能范围、验收标准细化（2 维度） |
+| standard / complex | 全部 7 维度 |
+
+复杂度由 `requirement.md` 自动判定（显式标注 `## 复杂度: trivial/standard/complex`，或基于涉及范围条目数推断）。
+
 ## 执行流程
 
 1. Read `{IDEA_DIR}/requirement.md`
@@ -48,7 +57,7 @@ argument-hint: "<idea-name>"
 
 <HARD-GATE>
 此步骤澄清的是需求本身的诉求和边界，不是 as-is 理解的正确性（那是 understand:confirm 的职责）。
-必须覆盖全部七个维度，即使某些维度用户回答"无特殊要求"也要记录。
+必须按复杂度覆盖对应维度（trivial=2，standard/complex=7），即使某些维度用户回答"无特殊要求"也要记录。
 不能代替用户回答——每个维度必须由用户明确确认。
 问题要基于 as-is 中实际发现的事实来提，不要泛泛而问。
 

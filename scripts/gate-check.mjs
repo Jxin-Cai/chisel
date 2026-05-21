@@ -3,8 +3,23 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { MAX_REWORK_COUNT, allTasksApproved, readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { validateTasksDocument } from './task-init.mjs';
-import { appendAuditLog } from './audit-log.mjs';
+
 import { getTaskScope } from './scope-check.mjs';
+
+function detectComplexity(ideaDir) {
+  const reqPath = join(ideaDir, 'requirement.md');
+  if (!existsSync(reqPath)) return 'standard';
+  const text = readFileSync(reqPath, 'utf8');
+  const explicitMatch = text.match(/^##\s*复杂度[：:]\s*(trivial|standard|complex)\s*$/m);
+  if (explicitMatch) return explicitMatch[1];
+  const scopeSection = text.split('## 涉及范围')[1]?.split('##')[0] || '';
+  const scopeItems = scopeSection.split('\n').filter(l => /^-\s+\S/.test(l)).length;
+  const hasNewTable = /新增.*表|新.*table|create.*table|DDL/i.test(text);
+  const hasNewApi = /新增.*接口|new.*api|新.*endpoint/i.test(text);
+  if (scopeItems <= 2 && !hasNewTable && !hasNewApi) return 'trivial';
+  if (scopeItems > 5) return 'complex';
+  return 'standard';
+}
 
 function hasSection(text, heading) {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -169,75 +184,13 @@ function validateClarificationsJson(ideaDir) {
   return '';
 }
 
-function validateSourceCoverage(text, file) {
-  const body = sectionText(text, 'Source Coverage');
-  if (!body) return `${file} missing ## Source Coverage`;
-  const rows = meaningfulLines(body).filter(line => /^\|.*\|$/.test(line));
-  for (const row of rows) {
-    const cells = row.split('|').map(cell => cell.trim()).filter(Boolean);
-    if (cells.includes('Source') && cells.includes('Covered refs')) continue;
-    if (cells.length < 4) continue;
-    const covered = cells[1] || '';
-    const omissions = cells[2] || '';
-    const reason = cells[3] || '';
-    const hasCoveredRefs = /\b[FCI]-\d{3}\b/.test(covered) || !['', '无', '-', '—'].includes(covered);
-    const hasOmissionReason = !['', '无', '-', '—'].includes(omissions) && !['', '无', '-', '—'].includes(reason);
-    if (hasCoveredRefs || hasOmissionReason) return '';
-  }
-  return `${file} Source Coverage must declare covered refs or omissions reason`;
-}
-
 function validateAiInput(ideaDir) {
   const missing = AI_INPUT_FILES.filter(file => !has(ideaDir, file));
   if (missing.length > 0) return `missing ai-input files: ${missing.join(', ')}`;
-
-  for (const rel of ['as-is/ai-input/facts.md', 'as-is/ai-input/constraints.md', 'as-is/ai-input/change-surface.md']) {
-    const reason = validateSourceCoverage(readText(join(ideaDir, rel)), rel);
-    if (reason) return reason;
+  for (const rel of AI_INPUT_FILES) {
+    const text = readText(join(ideaDir, rel));
+    if (hasTemplatePlaceholder(text)) return `${rel} still contains template placeholders`;
   }
-
-  const facts = readText(join(ideaDir, 'as-is/ai-input/facts.md'));
-  if (!facts.includes('## 已确认事实')) return 'facts.md missing ## 已确认事实';
-  if (hasTemplatePlaceholder(facts)) return 'facts.md still contains template placeholders';
-  if (!/^\s*-\s*\[F-\d{3}\].*证据[：:]\s*[^|\n]+:\d+/m.test(facts)) {
-    return 'facts.md must contain at least one [F-xxx] fact with file:line evidence';
-  }
-  const ledgerReason = validateEvidenceLedger(ideaDir);
-  if (ledgerReason) return ledgerReason;
-  const ledgerIds = evidenceLedgerFactIds(ideaDir);
-  const missingFactIds = factIds(facts).filter(id => !ledgerIds.has(id));
-  if (missingFactIds.length > 0) return `facts.md references facts missing from evidence-ledger: ${missingFactIds.join(', ')}`;
-
-  const constraints = readText(join(ideaDir, 'as-is/ai-input/constraints.md'));
-  const requiredConstraintSections = ['## 禁区', '## 包袱', '## 坏味道', '## 兼容约束'];
-  const missingConstraintSections = requiredConstraintSections.filter(section => !constraints.includes(section));
-  if (missingConstraintSections.length > 0) return `constraints.md missing sections: ${missingConstraintSections.join(', ')}`;
-  if (hasTemplatePlaceholder(constraints)) return 'constraints.md still contains template placeholders';
-  if (has(ideaDir, 'clarifications.json')) {
-    const parsedClarifications = readJsonFile(join(ideaDir, 'clarifications.json'));
-    if (parsedClarifications.error) return `clarifications.json invalid JSON: ${parsedClarifications.error}`;
-    const decisions = parsedClarifications.value?.decisions || [];
-    const constraintsAdded = parsedClarifications.value?.constraints_added || [];
-    const decisionRefs = decisions.map(decision => decision?.id).filter(Boolean);
-    const hasClarificationSummary = constraints.includes('澄清') || constraints.includes('无新增约束') || decisionRefs.some(id => constraints.includes(id));
-    if ((decisions.length > 0 || constraintsAdded.length > 0) && !hasClarificationSummary) {
-      return 'constraints.md must summarize clarifications.json decisions or explicitly state 无新增约束';
-    }
-  } else {
-    const clarifications = readText(join(ideaDir, 'clarifications.md')).trim();
-    if (clarifications && !constraints.includes('澄清') && !constraints.includes('无新增约束')) {
-      return 'constraints.md must summarize clarifications.md or explicitly state 无新增约束';
-    }
-  }
-
-  const changeSurface = readText(join(ideaDir, 'as-is/ai-input/change-surface.md'));
-  if (!changeSurface.includes('## Safe-to-Change Areas')) return 'change-surface.md missing ## Safe-to-Change Areas';
-  if (hasTemplatePlaceholder(changeSurface)) return 'change-surface.md still contains template placeholders';
-  const hasNoSafeAreaStatement = changeSurface.includes('无安全修改区') || changeSurface.includes('需要重新确认');
-  if (!hasMeaningfulSection(changeSurface, 'Safe-to-Change Areas') && !hasNoSafeAreaStatement) {
-    return 'change-surface.md must contain a safe-to-change area or explicitly state no safe area';
-  }
-
   return '';
 }
 
@@ -656,7 +609,7 @@ function validateRepoMap(ideaDir) {
   const parsed = readJsonFile(file);
   if (parsed.error) return `as-is/repo-map.json invalid JSON: ${parsed.error}`;
   const doc = parsed.value;
-  if (doc?.schema_version !== 1) return 'repo-map.json schema_version must be 1';
+  if (doc?.schema_version !== 1 && doc?.schema_version !== 2) return 'repo-map.json schema_version must be 1 or 2';
   if (!doc.generated_at || typeof doc.generated_at !== 'string') return 'repo-map.json missing generated_at';
   if (!Array.isArray(doc.languages) || doc.languages.length === 0) return 'repo-map.json languages must be non-empty array';
   for (const [index, lang] of doc.languages.entries()) {
@@ -666,12 +619,14 @@ function validateRepoMap(ideaDir) {
   if (!doc.stats || typeof doc.stats !== 'object') return 'repo-map.json missing stats';
   if (!Number.isInteger(doc.stats.total_files) || doc.stats.total_files <= 0) return 'repo-map.json stats.total_files must be positive';
   if (!Number.isInteger(doc.stats.source_files)) return 'repo-map.json stats.source_files must be integer';
-  if (!Array.isArray(doc.entry_candidates)) return 'repo-map.json entry_candidates must be an array';
-  for (const [index, entry] of doc.entry_candidates.entries()) {
-    if (!entry?.file || typeof entry.file !== 'string') return `repo-map.json entry_candidates[${index}] missing file`;
-    if (!entry.type || typeof entry.type !== 'string') return `repo-map.json entry_candidates[${index}] missing type`;
+  if (doc.schema_version === 1) {
+    if (!Array.isArray(doc.entry_candidates)) return 'repo-map.json entry_candidates must be an array';
+    for (const [index, entry] of doc.entry_candidates.entries()) {
+      if (!entry?.file || typeof entry.file !== 'string') return `repo-map.json entry_candidates[${index}] missing file`;
+      if (!entry.type || typeof entry.type !== 'string') return `repo-map.json entry_candidates[${index}] missing type`;
+    }
+    if (!Array.isArray(doc.core_modules)) return 'repo-map.json core_modules must be an array';
   }
-  if (!Array.isArray(doc.core_modules)) return 'repo-map.json core_modules must be an array';
   if (!Array.isArray(doc.directory_summary)) return 'repo-map.json directory_summary must be an array';
   return '';
 }
@@ -959,27 +914,10 @@ export function checkGate(ideaDir, gateId) {
       const decisionReason = validateClarificationDecisions(ideaDir);
       return decisionReason ? result(gateId, false, decisionReason) : result(gateId, true, '', { legacy: true });
     }
-    case 'strategy-exists': {
-      const planFile = join(ideaDir, 'to-be/implementation-plan.md');
-      if (!existsSync(planFile))
-        return result(gateId, false, 'to-be/implementation-plan.md missing');
-      const requiredSections = ['## 目标行为', '## 非目标行为', '## 允许修改范围', '## 禁止修改范围'];
-      if (!hasRequiredLines(planFile, requiredSections))
-        return result(gateId, false, 'implementation-plan.md missing required strategy sections');
-      return result(gateId, true);
-    }
-    case 'strategy-confirmed': {
-      const file = join(ideaDir, 'confirmations/strategy.json');
-      if (!existsSync(file)) return result(gateId, false, 'confirmations/strategy.json missing');
-      const parsed = readJsonFile(file);
-      if (parsed.error) return result(gateId, false, `confirmations/strategy.json invalid: ${parsed.error}`);
-      const doc = parsed.value;
-      if (doc?.schema_version !== 1) return result(gateId, false, 'confirmations/strategy.json schema_version must be 1');
-      if (doc.phase !== 'strategy') return result(gateId, false, 'confirmations/strategy.json phase must be strategy');
-      if (doc.status !== 'confirmed') return result(gateId, false, 'confirmations/strategy.json status must be confirmed');
-      if (!doc.confirmed_at) return result(gateId, false, 'confirmations/strategy.json missing confirmed_at');
-      return result(gateId, true);
-    }
+    case 'strategy-exists':
+      return checkGate(ideaDir, 'to-be-exists');
+    case 'strategy-confirmed':
+      return checkGate(ideaDir, 'to-be-confirmed');
     case 'to-be-exists': {
       const planFile = join(ideaDir, 'to-be/implementation-plan.md');
       if (!has(ideaDir, 'to-be/implementation-plan.md'))
@@ -1049,7 +987,7 @@ export function checkGate(ideaDir, gateId) {
       return reason ? result(gateId, false, reason) : result(gateId, true);
     }
     case 'clarification-complete': {
-      if (has(ideaDir, 'confirmations/strategy.json')) return result(gateId, true, '', { legacy: true });
+      if (has(ideaDir, 'confirmations/strategy.json') || has(ideaDir, 'confirmations/to-be.json')) return result(gateId, true, '', { legacy: true });
       const file = join(ideaDir, 'requirement-clarification.json');
       if (!existsSync(file)) return result(gateId, false, 'requirement-clarification.json missing');
       const parsed = readJsonFile(file);
@@ -1059,7 +997,10 @@ export function checkGate(ideaDir, gateId) {
       if (doc.source_step !== 'clarify:requirement') return result(gateId, false, 'source_step must be clarify:requirement');
       if (!doc.clarified_at) return result(gateId, false, 'missing clarified_at');
       if (!doc.dimensions || typeof doc.dimensions !== 'object') return result(gateId, false, 'missing dimensions');
-      const requiredDimensions = ['functional_scope', 'impact_analysis', 'compatibility_constraints', 'non_functional', 'priority', 'acceptance_criteria', 'risk_tolerance'];
+      const complexity = detectComplexity(ideaDir);
+      const requiredDimensions = complexity === 'trivial'
+        ? ['functional_scope', 'acceptance_criteria']
+        : ['functional_scope', 'impact_analysis', 'compatibility_constraints', 'non_functional', 'priority', 'acceptance_criteria', 'risk_tolerance'];
       const missingDimensions = requiredDimensions.filter(d => !doc.dimensions[d]);
       if (missingDimensions.length > 0) return result(gateId, false, `missing dimensions: ${missingDimensions.join(', ')}`);
       if (!Array.isArray(doc.dimensions.acceptance_criteria) || doc.dimensions.acceptance_criteria.length === 0)
@@ -1103,7 +1044,6 @@ export async function main(argv) {
     process.exit(1);
   }
   const checked = checkGate(ideaDir, gateId);
-  appendAuditLog(ideaDir, { type: 'gate_result', gate: gateId, pass: checked.pass, reason: checked.reason || '' });
   console.log(JSON.stringify(checked));
   if (!checked.pass) process.exit(1);
 }

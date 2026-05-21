@@ -36,22 +36,22 @@ phases:
       - to-be/api-change-plan.md
       - to-be/risk-and-rollback.md
 
-  - id: implement
+  - id: knowledge-extract
     order: 4
+    description: 从方案确认后的产物中提取长期知识候选
+    requires: [plan]
+    outputs:
+      - knowledge-candidates/
+
+  - id: implement
+    order: 5
     description: 按 task 编码实现
     requires: [plan]
 
   - id: review
-    order: 5
+    order: 6
     description: 需求级 CR 与返修闭环
     requires: [implement]
-
-  - id: knowledge-extract
-    order: 6
-    description: 从迭代产物中提取长期知识候选
-    requires: [review]
-    outputs:
-      - knowledge-candidates/
 
 state-machine:
   tasks:

@@ -16,23 +16,15 @@
 
 ---
 
-## plan:strategy-confirm 详细行为
+## plan:confirm 详细行为
 
-展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、允许修改范围和禁止修改范围，等用户确认策略方向正确。
-
-确认后写入 `{IDEA_DIR}/confirmations/strategy.json`，至少包含：`schema_version: 1`、`phase: "strategy"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`strategy_acknowledgement`。
-
-用户可以在此阶段要求调整策略方向，调整后需重新运行 `plan:strategy`。
-
----
-
-## plan:decompose-confirm 详细行为
-
-展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的目标行为、非目标行为、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
+展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、目标行为、非目标行为、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
 
 确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，至少包含：`schema_version: 1`、`phase: "to-be"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`task_acknowledgement`、`risk_acknowledgement`。
 
 新流程不得只创建 `.to-be-confirmed` marker；该 marker 仅用于历史运行目录兼容。
+
+用户可以在此阶段要求调整方案，调整后需重新运行 `plan:design`。
 
 ---
 
@@ -108,4 +100,4 @@ git log --oneline main..HEAD
 
 ## 实时知识捕获
 
-在 `understand:confirm`、`plan:strategy-confirm` 和 `plan:decompose-confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 agent-shared-rules §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。
+在 `understand:confirm` 和 `plan:confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 agent-shared-rules §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。

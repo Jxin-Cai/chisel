@@ -13,9 +13,8 @@
 | 阶段 | 前置条件 |
 |------|---------|
 | 需求澄清 | as-is 已确认（`confirmations/as-is.json` 通过 gate）且 AI 输入版已生成（`as-is/ai-input/` 6 个文件存在）|
-| to-be 方案 | 需求澄清完成（`requirement-clarification.json` 通过 gate） |
-| task 拆分 | to-be 已确认（`confirmations/strategy.json` 通过 gate） |
-| worktree 决策 | to-be task 拆分已确认（`confirmations/to-be.json` 通过 gate） |
+| to-be 方案和 task 拆分 | 需求澄清完成（`requirement-clarification.json` 通过 gate） |
+| worktree 决策 | to-be 方案已确认（`confirmations/to-be.json` 通过 gate） |
 | task 初始化 | worktree 决策已完成（`worktree-decision.json` 通过 gate） |
 | coding | task 初始化且 `--next-tasks` 返回该 task |
 | 需求级 CR | 所有 task 编码完成（无待编码、无待返修 task） |
@@ -23,7 +22,7 @@
 
 ## 3. 用户确认不可跳过
 
-`understand:confirm`、`plan:strategy-confirm` 和 `plan:decompose-confirm` 必须等用户明确确认后才能创建结构化确认文件。  
+`understand:confirm` 和 `plan:confirm` 必须等用户明确确认后才能创建结构化确认文件。  
 旧 `.as-is-confirmed` / `.to-be-confirmed` marker 仅用于历史运行目录兼容，新流程不得只创建 marker。  
 不要因"需求描述很清楚"而绕过确认。
 

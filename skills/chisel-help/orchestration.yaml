@@ -45,37 +45,27 @@ steps:
     postcondition:
       check: clarification-complete
 
-  - id: plan:strategy
-    description: planner 产出 implementation-plan.md（方向、边界、保障策略）
+  - id: plan:design
+    description: planner 一次性产出 implementation-plan.md + tasks.json + traceability-matrix.json
     action:
       type: skill
       name: chisel-plan
-      args: "{idea-name} --phase strategy"
-    postcondition:
-      check: strategy-exists
-
-  - id: plan:strategy-confirm
-    description: 用户确认策略方向，写入 confirmations/strategy.json；实时捕获知识候选
-    outputs:
-      - confirmations/strategy.json
-    postcondition:
-      check: strategy-confirmed
-
-  - id: plan:decompose
-    description: planner 基于已确认策略产出 tasks.json + traceability-matrix.json
-    action:
-      type: skill
-      name: chisel-plan
-      args: "{idea-name} --phase decompose"
+      args: "{idea-name}"
     postcondition:
       check: to-be-exists
 
-  - id: plan:decompose-confirm
-    description: 用户确认 task 拆分，写入 confirmations/to-be.json；实时捕获知识候选
+  - id: plan:confirm
+    description: 用户确认方案和 task 拆分，写入 confirmations/to-be.json；实时捕获知识候选
     outputs:
       - confirmations/to-be.json
     postcondition:
       check: to-be-confirmed
+
+  - id: knowledge:extract
+    # complexity-aware: trivial 模式跳过此步
+    description: 从本次迭代产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule
+    postcondition:
+      check: knowledge-extracted
 
   - id: worktree:setup
     description: 询问用户是否创建隔离 worktree；yes → 从 main 创建 worktree；no → 在当前分支开发
@@ -113,12 +103,6 @@ steps:
       args: "{idea-name}"
     postcondition:
       check: task-report-exists
-
-  - id: knowledge:extract
-    # complexity-aware: trivial 模式跳过此步，直接进入 final:summary
-    description: 从本次迭代产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule
-    postcondition:
-      check: knowledge-extracted
 
   - id: final:summary
     description: 汇总变更、CR、返修、验证方法，呈现知识候选摘要

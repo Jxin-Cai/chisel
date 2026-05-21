@@ -8,7 +8,7 @@
 
 ## 流程
 
-1. 扫描候选来源：`{IDEA_DIR}/as-is/knowledge-candidates.md`、`task-reports/`、`cr/`、`knowledge-candidates/*.json`
+1. 扫描候选来源：`{IDEA_DIR}/as-is/knowledge-candidates.md`、`knowledge-candidates/*.json`
 2. 去重：同 `category + content` 的 scope/name 合并
 3. 按需 Read 相关模板（knowledge-candidates-template / wiki category 模板）
 4. 在 `{IDEA_DIR}/knowledge-candidates/` 下补充或更新候选 JSON（必须满足 agent-shared-rules §2 要求）

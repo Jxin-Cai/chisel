@@ -56,27 +56,25 @@ digraph chisel_flow {
   u_confirm [label="understand:confirm"];
   ai_input [label="understand:generate-ai-input\n(skip if trivial)"];
   clarify [label="clarify:requirement"];
-  strategy [label="plan:strategy"];
-  s_confirm [label="plan:strategy-confirm"];
-  decompose [label="plan:decompose"];
-  d_confirm [label="plan:decompose-confirm"];
+  design [label="plan:design"];
+  p_confirm [label="plan:confirm"];
+  knowledge [label="knowledge:extract\n(skip if trivial)"];
   worktree [label="worktree:setup"];
   tasks [label="tasks:init"];
   implement [label="implement:code"];
   review [label="review:cr\n(spec + D2-D7)"];
   repair [label="repair:code"];
-  knowledge [label="knowledge:extract\n(skip if trivial)"];
   final [label="final:summary"];
   done [label="done"];
 
   receive -> explore -> u_confirm -> ai_input -> clarify;
-  clarify -> strategy -> s_confirm -> decompose -> d_confirm;
-  d_confirm -> worktree -> tasks;
+  clarify -> design -> p_confirm -> knowledge;
+  knowledge -> worktree -> tasks;
   tasks -> implement -> review;
   review -> repair [label="needs_rework"];
   repair -> review [label="re-review"];
-  review -> knowledge [label="all approved"];
-  knowledge -> final -> done;
+  review -> final [label="all approved"];
+  final -> done;
 }
 ```
 
@@ -105,16 +103,14 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-confirmed` |
 | `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
-| `plan:strategy` | `/chisel-plan <idea-name>` (mode=strategy) | `strategy-exists` |
-| `plan:strategy-confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:strategy-confirm 详细行为执行 | `strategy-confirmed` |
-| `plan:decompose` | `/chisel-plan <idea-name>` (mode=decompose) | `to-be-exists` |
-| `plan:decompose-confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:decompose-confirm 详细行为执行 | `to-be-confirmed` |
+| `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
+| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-confirmed` |
+| `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行 | `knowledge-extracted` |
 | `worktree:setup` | 使用 `AskUserQuestion` 询问是否创建隔离 worktree；yes → `EnterWorktree`（从 main 分支创建）；no → 当前分支开发。运行 `git rev-parse HEAD` 记录当前 commit 作为 `base_commit`。将决策写入 `{IDEA_DIR}/worktree-decision.json`（含 `base_commit` 字段，CR 阶段用它做 diff 基准） | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>`；`cr-complete` 检查 `dim-spec-cr.md` 与 D2-D7 维度 CR。spec fail 可只完成 spec CR 并进入 repair；spec pass 后才要求 D2-D7 全部完成并聚合。 | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
-| `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行 | `knowledge-extracted` |
 | `final:summary` | Read `${REF}/phase-confirm-details.md`；按其 final:summary 详细行为执行 | `done` |
 | `blocked` | 停止，报告阻塞原因 | — |
 | `done` | Read `${REF}/phase-confirm-details.md`；按其完成后合并流程执行 | — |
@@ -140,12 +136,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-step <step> --dry-run
 ```
 
-确认清理范围后再执行不带 `--dry-run` 的命令。rollback 只清理白名单内的 chisel 运行态产物，并写入 audit log。
+确认清理范围后再执行不带 `--dry-run` 的命令。rollback 只清理白名单内的 chisel 运行态产物。
 
-支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`clarify:requirement`、`plan:strategy`、`plan:strategy-confirm`、`plan:decompose`、`plan:decompose-confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`knowledge:extract`。
+支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`clarify:requirement`、`plan:design`、`plan:confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`knowledge:extract`。
 
 ---
 
 ## 阶段详细行为
 
-当进入 `understand:confirm` / `plan:strategy-confirm` / `plan:decompose-confirm` / `final:summary` / `done` 步骤时，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/phase-confirm-details.md` 获取详细执行指南。实时知识捕获规则也在该文件中。
+当进入 `understand:confirm` / `plan:confirm` / `final:summary` / `done` 步骤时，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/phase-confirm-details.md` 获取详细执行指南。实时知识捕获规则也在该文件中。

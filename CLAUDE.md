@@ -14,10 +14,9 @@ This repository contains the `chisel` Claude Code plugin.
 - `scripts/workflow-status.mjs` 和 `scripts/workflow-lib.mjs` 管理 task 状态机。
 - `scripts/gate-check.mjs` 管理每步 postcondition。
 - `scripts/scope-check.mjs` 检查变更文件是否越界或触碰禁区。
-- `scripts/audit-log.mjs` 全链路审计日志（step 流转、gate 结果、task 状态变更）。
 - `scripts/wiki-manage.mjs` wiki 初始化、候选合入、关联关系管理。
 - `scripts/wiki-rule-inject.mjs` 自动向业务项目注入 wiki 加载 rule。
-- `scripts/repo-map.mjs` 纯文件系统 repo 地图生成器（无 LLM 依赖），explorer 探索前自动运行。
+- `scripts/repo-map.mjs` 产出语言统计和目录结构（无 LLM 依赖），explorer 探索前自动运行。
 - `scripts/debt-scan.mjs` 纯静态技术债务扫描器（无 LLM 依赖），explorer 探索前自动运行，产出 proposed 候选。
 - `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
@@ -51,7 +50,7 @@ This repository contains the `chisel` Claude Code plugin.
 ## 并行开发
 
 - Worktree 粒度为 per-requirement：一个需求对应一个 worktree，内部 task 串行/并行执行。
-- Worktree 决策在方案确认后（`plan:decompose-confirm` 之后、`tasks:init` 之前）由用户选择，从 main 分支创建 worktree 或在当前分支开发。
+- Worktree 决策在方案确认后（`plan:confirm` 之后、`tasks:init` 之前）由用户选择，从 main 分支创建 worktree 或在当前分支开发。
 - `getNextTasks()` 返回多个 task 时，`chisel-implement` 通过 `--check-overlap` 检测文件重叠。
 - 无重叠 task 使用 `Agent(isolation: "worktree")` 并行编码，合并后统一更新状态。
 - 有重叠 task 串行执行；返修 task 始终串行。

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { appendAuditLog } from './audit-log.mjs';
 import { atomicWriteFile, ensureDir, resolveProjectName } from './workflow-lib.mjs';
 
 const WIKI_FILES = [
@@ -194,7 +193,6 @@ function setCandidateStatus(ideaDir, candidateFile, nextStatus, reason) {
   candidate.confirmed = nextStatus === 'confirmed';
   candidate.decision = { by: 'user', at: new Date().toISOString(), reason: String(reason).trim() };
   writeCandidate(candidateFile, candidate);
-  appendAuditLog(ideaDir, { type: 'knowledge_candidate_decision', candidate_id: candidate.id, from: current, to: nextStatus, reason: candidate.decision.reason });
   return candidate;
 }
 
@@ -291,10 +289,6 @@ function mergeCandidate(projectRoot, candidateFile, projectName) {
   candidate.confirmed = true;
   candidate.merge = { wiki_file: wikiFile, entry_id: fullEntryId, merged_at: new Date().toISOString() };
   writeCandidate(candidateFile, candidate);
-  const ideaDir = candidateIdeaDir(candidateFile);
-  if (ideaDir) {
-    appendAuditLog(ideaDir, { type: 'knowledge_candidate_merged', candidate_id: candidate.id, category: candidate.category, wiki_file: wikiFile, entry_id: fullEntryId });
-  }
   return { status: 'merged', file: wikiFile, entry_id: fullEntryId };
 }
 
