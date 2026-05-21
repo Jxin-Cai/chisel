@@ -64,7 +64,7 @@ digraph implement_flow {
 只有 `--next-tasks` 返回的 task 才能启动。
 有依赖的 task 必须串行。
 有 expected_files 重叠的 task 必须串行（用 `--check-overlap` 检测）。
-无依赖且无文件重叠的 task 通过 worktree 并行。
+无依赖且无文件重叠的 task 通过 Agent worktree 并行——**但前提是 `worktree-decision.json` decision = "worktree"**。若 decision = "current-branch"，所有 task 串行执行，不使用 Agent worktree 隔离。
 
 合理化预防表：
 

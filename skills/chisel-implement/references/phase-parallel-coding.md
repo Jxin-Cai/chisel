@@ -6,6 +6,9 @@
 
 - `--next-tasks` 返回 N > 1 个 task
 - 所有 task 的依赖已 approved（由调度器保证）
+- `{IDEA_DIR}/worktree-decision.json` 的 `decision` 字段为 `"worktree"`（用户选择了需求级 worktree 隔离）
+
+**如果 `decision` 为 `"current-branch"`，直接降级为串行执行，不使用本文件的并行流程。**
 
 ## 流程
 
@@ -28,6 +31,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --check-overla
 
 对每个 task 使用 `Agent({ isolation: "worktree" })`，所有 Agent 调用在同一条消息中发出。TASK 输入增加 `"parallel": true`，告知 coder 不要自行更新状态。
 
+注意：这里的 worktree 是 Agent 工具的 **临时隔离机制**（task 级，用完即弃），不是用户在 `worktree:setup` 阶段选择的需求级 worktree。Agent 的临时 worktree 在合并回收后自动清理。
+
 ### 4. 合并回收
 
 每个 Agent 返回后：
@@ -47,4 +52,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --check-overla
 
 ## 串行降级
 
-所有 task 有文件/影响面交叉、只有 1 个 task、或返修模式时回退到串行执行。
+以下情况回退到串行执行（不使用 Agent worktree 隔离）：
+- 用户在 `worktree:setup` 选择了 `current-branch`（`worktree-decision.json` decision = "current-branch"）
+- 所有 task 有文件/影响面交叉
+- 只有 1 个 task
+- 返修模式

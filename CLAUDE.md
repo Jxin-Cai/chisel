@@ -49,10 +49,10 @@ This repository contains the `chisel` Claude Code plugin.
 
 ## 并行开发
 
-- Worktree 粒度为 per-requirement：一个需求对应一个 worktree，内部 task 串行/并行执行。
+- Worktree 粒度为 per-requirement：一个需求对应一个 worktree（用户在 `worktree:setup` 选择），内部 task 串行/并行执行。
 - Worktree 决策在方案确认后（`plan:confirm` 之后、`tasks:init` 之前）由用户选择，从 main 分支创建 worktree 或在当前分支开发。
-- `getNextTasks()` 返回多个 task 时，`chisel-implement` 通过 `--check-overlap` 检测文件重叠。
-- 无重叠 task 使用 `Agent(isolation: "worktree")` 并行编码，合并后统一更新状态。
+- 用户选 `current-branch` 时，所有 task 串行执行，**不使用 Agent worktree 隔离**。
+- 用户选 `worktree` 时，`getNextTasks()` 返回多个 task 且无文件重叠时，使用 `Agent(isolation: "worktree")` 并行编码（这是 Agent 工具的临时隔离，task 级，用完即弃），合并后统一更新状态。
 - 有重叠 task 串行执行；返修 task 始终串行。
 - `chisel-review` 在所有 task 编码完成后进行 7 维度独立 CR：spec 门槛（opus，合规检查）通过后，D2-D7 每个维度独立一次 opus 调用，全量审查后聚合结果。返修后从 spec 重新开始。
 - 需求完成后（`done` 阶段），如果在 worktree 中，提示用户合并分支到主干（PR 或直接 merge）。
