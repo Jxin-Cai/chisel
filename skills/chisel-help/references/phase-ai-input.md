@@ -4,8 +4,10 @@
 
 ## 流程
 
+**转换原则**：从人类版提取数据时，去掉所有叙事文本、解释段落、Mermaid 图。只保留结构化表格行和证据引用。如果人类版用段落描述了一个事实，在 AI 版中只保留一行 `[F-xxx] 事实描述 | 证据: file:line`。
+
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/ai-input-template.md`
-2. 基于 `{IDEA_DIR}/as-is/` 下已确认的人类学习版，提取结构化信息
+2. 基于 `{IDEA_DIR}/as-is/` 下已确认的人类学习版，按转换原则提取结构化信息
 3. 在 `{IDEA_DIR}/as-is/ai-input/` 下生成 6 个文件：
 
 | 文件 | 数据来源 |

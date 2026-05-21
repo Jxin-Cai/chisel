@@ -83,6 +83,8 @@ debt-scan 的候选不需要在探索阶段处理终态，留给 knowledge:extra
 
 ## 产物（分层结构）
 
+**受众定位**：人类学习版面向不了解系统的开发者。写作时假设读者是第一次接触这段代码，用叙事方式讲透"为什么是这样"，图先行文字后补。避免表格堆砌或清单罗列——那是 AI 输入版的职责。
+
 <HARD-GATE>
 按 agent-shared-rules §4，先 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/as-is-template.md`。
 </HARD-GATE>
