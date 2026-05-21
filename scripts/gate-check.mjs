@@ -561,9 +561,14 @@ function knowledgeCandidateFiles(ideaDir) {
   };
 }
 
+function sanitizeSmartQuotes(text) {
+  return text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
+}
+
 function readJsonFile(file) {
   try {
-    return { value: JSON.parse(readFileSync(file, 'utf8')) };
+    const raw = readFileSync(file, 'utf8');
+    return { value: JSON.parse(sanitizeSmartQuotes(raw)) };
   } catch (error) {
     return { error: error.message };
   }
