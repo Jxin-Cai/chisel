@@ -73,6 +73,66 @@ function main() {
     emit('receive-requirement', 'requirement.md does not exist');
     return;
   }
+
+  const complexity = detectComplexity(IDEA_DIR);
+
+  // === TRIVIAL QUICK-DEV PATH ===
+  if (complexity === 'trivial') {
+    if (!checkGate(IDEA_DIR, 'clarification-complete').pass) {
+      emit('clarify:requirement', 'lightweight clarification needed (trivial: only functional_scope + acceptance_criteria)', { complexity });
+      return;
+    }
+    if (!has('task-workflow-state.yaml')) {
+      emit('quick-dev:init', 'auto-generating task from requirement-clarification (trivial quick-dev)', { complexity });
+      return;
+    }
+    // From here, trivial reuses the standard implement/review loop
+    const staleTasks = getStaleCodingTasks(IDEA_DIR);
+    if (staleTasks.length > 0) {
+      emit('implement:code', 'stale coding tasks detected', { stale_tasks: staleTasks.map(t => t.taskId), complexity });
+      return;
+    }
+    const blocked = getBlockedReworkTasks(IDEA_DIR);
+    if (blocked.length > 0) {
+      emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
+      return;
+    }
+    const reworkTasks = getReworkTasks(IDEA_DIR);
+    if (reworkTasks.length > 0) {
+      emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
+      return;
+    }
+    const codeTasks = getNextTasks(IDEA_DIR);
+    if (codeTasks.length > 0) {
+      emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
+      return;
+    }
+    const reviewTasks = getCodedTasksNeedingReview(IDEA_DIR);
+    if (reviewTasks.length > 0) {
+      emit('review:cr-light', 'all tasks coded, spec-only review (trivial)', { next_tasks: reviewTasks, complexity });
+      return;
+    }
+    if (allTasksApproved(IDEA_DIR)) {
+      const traceGate = checkGate(IDEA_DIR, 'traceability-complete');
+      if (!traceGate.pass && !traceGate.skipped) {
+        emit('blocked', 'traceability incomplete', { complexity, trace_reason: traceGate.reason });
+        return;
+      }
+      if (!checkGate(IDEA_DIR, 'done').pass) {
+        emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
+        return;
+      }
+    }
+    if (checkGate(IDEA_DIR, 'done').pass) {
+      emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
+      return;
+    }
+    const state = readTaskState(taskStateFile(IDEA_DIR));
+    emit('blocked', 'no executable next step found (trivial)', { task_count: Object.keys(state.tasks).length, complexity });
+    return;
+  }
+
+  // === STANDARD / COMPLEX PATH ===
   const asIsGate = checkGate(IDEA_DIR, 'as-is-complete');
   if (!asIsGate.pass) {
     emit('understand:explore', 'as-is documents are incomplete', { gate_reason: asIsGate.reason });
@@ -82,7 +142,6 @@ function main() {
     emit('understand:confirm', 'as-is structured confirmation is missing or invalid');
     return;
   }
-  const complexity = detectComplexity(IDEA_DIR);
   if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'ai-input-ready').pass) {
     emit('understand:generate-ai-input', 'ai-input documents have not been generated from confirmed as-is', { complexity });
     return;
@@ -91,7 +150,6 @@ function main() {
     emit('clarify:requirement', 'requirement clarification is incomplete', { complexity });
     return;
   }
-  // Plan: design → confirm
   if (!checkGate(IDEA_DIR, 'to-be-exists').pass) {
     emit('plan:design', 'implementation plan does not exist', { complexity });
     return;
@@ -115,7 +173,7 @@ function main() {
 
   const staleTasks = getStaleCodingTasks(IDEA_DIR);
   if (staleTasks.length > 0) {
-    emit('implement:code', 'stale coding tasks detected — may need rollback', { stale_tasks: staleTasks.map(t => t.taskId), complexity: detectComplexity(IDEA_DIR) });
+    emit('implement:code', 'stale coding tasks detected — may need rollback', { stale_tasks: staleTasks.map(t => t.taskId), complexity });
     return;
   }
 
@@ -143,9 +201,16 @@ function main() {
     return;
   }
 
-  if (allTasksApproved(IDEA_DIR) && !checkGate(IDEA_DIR, 'done').pass) {
-    emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
-    return;
+  if (allTasksApproved(IDEA_DIR)) {
+    const traceGate = checkGate(IDEA_DIR, 'traceability-complete');
+    if (!traceGate.pass && !traceGate.skipped) {
+      emit('blocked', 'traceability incomplete — not all requirements covered by approved tasks', { complexity, trace_reason: traceGate.reason });
+      return;
+    }
+    if (!checkGate(IDEA_DIR, 'done').pass) {
+      emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
+      return;
+    }
   }
 
   if (checkGate(IDEA_DIR, 'done').pass) {

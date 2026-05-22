@@ -56,6 +56,7 @@ digraph chisel_flow {
   u_confirm [label="understand:confirm"];
   ai_input [label="understand:generate-ai-input\n(skip if trivial)"];
   clarify [label="clarify:requirement"];
+  quickdev [label="quick-dev:init\n(trivial only)"];
   design [label="plan:design"];
   p_confirm [label="plan:confirm"];
   knowledge [label="knowledge:extract\n(skip if trivial)"];
@@ -63,17 +64,27 @@ digraph chisel_flow {
   tasks [label="tasks:init"];
   implement [label="implement:code"];
   review [label="review:cr\n(spec + D2-D7)"];
+  review_light [label="review:cr-light\n(spec only, trivial)"];
   repair [label="repair:code"];
   final [label="final:summary"];
   done [label="done"];
 
-  receive -> explore -> u_confirm -> ai_input -> clarify;
-  clarify -> design -> p_confirm -> knowledge;
+  receive -> explore [label="standard/complex"];
+  receive -> clarify [label="trivial"];
+  explore -> u_confirm -> ai_input -> clarify;
+  clarify -> quickdev [label="trivial"];
+  clarify -> design [label="standard/complex"];
+  quickdev -> implement;
+  design -> p_confirm -> knowledge;
   knowledge -> worktree -> tasks;
   tasks -> implement -> review;
+  implement -> review_light [label="trivial"];
   review -> repair [label="needs_rework"];
+  review_light -> repair [label="needs_rework"];
   repair -> review [label="re-review"];
+  repair -> review_light [label="re-review (trivial)"];
   review -> final [label="all approved"];
+  review_light -> final [label="all approved"];
   final -> done;
 }
 ```
@@ -103,6 +114,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-confirmed` |
 | `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
+| `quick-dev:init` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}`（trivial only：自动生成 task + worktree-decision + traceability-matrix） | `task-workflow-exists` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
 | `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-confirmed` |
 | `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行 | `knowledge-extracted` |
@@ -110,6 +122,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>`；`cr-complete` 检查 `dim-spec-cr.md` 与 D2-D7 维度 CR。spec fail 可只完成 spec CR 并进入 repair；spec pass 后才要求 D2-D7 全部完成并聚合。 | `cr-complete` |
+| `review:cr-light` | `/chisel-review <idea-name>`（trivial only：只运行 spec 维度，pass → approved，fail → needs_rework） | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
 | `final:summary` | Read `${REF}/phase-confirm-details.md`；按其 final:summary 详细行为执行 | `done` |
 | `blocked` | 停止，报告阻塞原因 | — |
@@ -117,15 +130,17 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references`
 > 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
-> 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `ai-input-ready` | `clarification-complete` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `cr-complete` | `rework-limit` | `all-approved` | `knowledge-candidates-exists` | `knowledge-extracted` | `done`。不要发明其他 gate 名称。
+> 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `ai-input-ready` | `clarification-complete` | `quick-dev-ready` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `knowledge-candidates-exists` | `knowledge-extracted` | `done`。不要发明其他 gate 名称。
 
 ### Complexity 分级
 
-`orchestration-status.mjs` 的 emit 输出包含 `complexity` 字段（`trivial` | `standard`）。当 `complexity = trivial` 时，跳过以下步骤：
-- `understand:generate-ai-input`
-- `knowledge:extract`
+`orchestration-status.mjs` 的 emit 输出包含 `complexity` 字段（`trivial` | `standard` | `complex`）。
 
-编排器在读取 `resume_step` 时同时检查 `complexity`，若为 `trivial` 且 `resume_step` 命中上述步骤，直接调用 `orchestration-status.mjs` 获取下一步。
+**trivial 快速通道**：当 `complexity = trivial` 时，整个流程缩短为：
+- `receive-requirement` → `clarify:requirement`（只需 2 维度） → `quick-dev:init` → `implement:code` → `review:cr-light`（spec-only） → `final:summary` → `done`
+- 跳过：`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`plan:design`、`plan:confirm`、`knowledge:extract`、`worktree:setup`、`tasks:init`、D2-D7 CR
+
+**standard/complex 正常流程**：走完整步骤，其中 `understand:generate-ai-input` 和 `knowledge:extract` 仅 standard/complex 触发。
 
 当同时存在待 CR、待返修和待编码任务时，优先清空 review / rework backlog，再进入新 coding。
 

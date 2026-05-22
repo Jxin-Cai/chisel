@@ -37,6 +37,14 @@
 - 逐项验证每个不变量是否被保持
 - 必须有实际验证证据（文件路径 + 行号或行为描述）
 
+### 6. 需求可追溯性
+
+- 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/traceability-check.mjs {idea_dir}`
+- 验证每个 task 的 `trace_refs` 在 `to-be/traceability-matrix.json` 中有映射
+- 验证每个 acceptance_criteria 至少被一个 traceability item 覆盖
+- 如果 traceability-matrix.json 不存在，此项跳过（不报 fail）
+- 结果记录在 CR 报告的 "## Traceability Coverage" 章节
+
 ## CR 产物格式
 
 ### Frontmatter

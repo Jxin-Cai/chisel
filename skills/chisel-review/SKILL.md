@@ -12,6 +12,14 @@ argument-hint: "<idea-name>"
 
 !`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
 
+## Trivial 快速路径（review:cr-light）
+
+如果当前需求复杂度为 `trivial`（检测方式：读取 `{IDEA_DIR}/requirement.md` 判断复杂度），则：
+- **只执行第一步（Spec 门槛）**
+- Spec pass → 直接 `--mark-cr-requirement approved`，流程结束
+- Spec fail → `--mark-cr-requirement needs_rework`，流程结束
+- **不进入第二步和第三步（D2-D7 并行审查）**
+
 ## 核心理念
 
 CR diff loop 是 chisel 的质量保障核心：审查 → 返修 → 再审查，直到通过。

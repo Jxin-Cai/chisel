@@ -45,6 +45,12 @@ steps:
     postcondition:
       check: clarification-complete
 
+  - id: quick-dev:init
+    # complexity-aware: 仅 trivial 模式触发，跳过 as-is/plan/worktree，自动从 clarification 生成单 task
+    description: 自动从 requirement-clarification.json 生成 task + worktree-decision + traceability-matrix（trivial 快速通道）
+    postcondition:
+      check: task-workflow-exists
+
   - id: plan:design
     description: planner 一次性产出 implementation-plan.md + tasks.json + traceability-matrix.json
     action:
@@ -88,6 +94,16 @@ steps:
 
   - id: review:cr
     description: spec + D2-D7 多维 CR；spec fail 直接返修，spec pass 后并行执行 D2-D7 并聚合返修项
+    action:
+      type: skill
+      name: chisel-review
+      args: "{idea-name}"
+    postcondition:
+      check: cr-complete
+
+  - id: review:cr-light
+    # complexity-aware: 仅 trivial 模式触发，只运行 spec 维度
+    description: Spec-only 轻量 CR（trivial 快速通道）；spec pass → approved，fail → needs_rework
     action:
       type: skill
       name: chisel-review

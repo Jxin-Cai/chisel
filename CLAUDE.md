@@ -19,6 +19,9 @@ This repository contains the `chisel` Claude Code plugin.
 - `scripts/repo-map.mjs` 产出语言统计和目录结构（无 LLM 依赖），explorer 探索前自动运行。
 - `scripts/debt-scan.mjs` 纯静态技术债务扫描器（无 LLM 依赖），explorer 探索前自动运行，产出 proposed 候选。
 - `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
+- `scripts/quick-dev-init.mjs` trivial 快速通道自动生成单 task + worktree-decision + traceability-matrix。
+- `scripts/traceability-check.mjs` 需求→task 可追溯性验证，final 阶段前确认所有 AC 被覆盖实现。
+- `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
 - `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案。
 - `agent-chisel-coder` 只按已确认 task 实现。
@@ -56,3 +59,24 @@ This repository contains the `chisel` Claude Code plugin.
 - 有重叠 task 串行执行；返修 task 始终串行。
 - `chisel-review` 在所有 task 编码完成后进行 7 维度独立 CR：spec 门槛（opus，合规检查）通过后，D2-D7 每个维度独立一次 opus 调用，全量审查后聚合结果。返修后从 spec 重新开始。
 - 需求完成后（`done` 阶段），如果在 worktree 中，提示用户合并分支到主干（PR 或直接 merge）。
+
+## Quick-dev 快速通道
+
+- 当 complexity=trivial（scope≤2 项、无新表/API）时自动激活。
+- 缩短路径：`receive → clarify(2 维度) → quick-dev:init → implement → review:cr-light(spec-only) → done`。
+- 跳过：as-is 探索/确认、ai-input、plan、knowledge、worktree 选择、D2-D7 CR。
+- `quick-dev-init.mjs` 从 requirement-clarification.json 自动生成单 task + worktree-decision(current-branch) + traceability-matrix。
+
+## 需求可追溯性
+
+- `to-be/traceability-matrix.json` 记录每个 AC 由哪些 task 覆盖。
+- `traceability-check.mjs` 验证覆盖链完整性：final 模式要求所有 covering tasks 为 approved。
+- `gate-check.mjs` 的 `traceability-complete` gate 在 final:summary 前阻断未覆盖情况。
+- 向后兼容：matrix 文件不存在时 gate 自动 pass。
+
+## 可视化仪表板
+
+- `/chisel-dashboard <idea-name>` 生成 `{idea-dir}/dashboard.html`。
+- 自包含 HTML，使用 Mermaid CDN + Chart.js CDN 渲染图表。
+- 含 As-Is 查看器（5 Tab：概览、核心走查、证据表、质量雷达图、覆盖矩阵）。
+- `workflow-state.yaml` 的 `step_history` 提供时间线数据。

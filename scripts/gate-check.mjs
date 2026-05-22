@@ -970,6 +970,22 @@ export function checkGate(ideaDir, gateId) {
     }
     case 'cr-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
+      const crComplexity = detectComplexity(ideaDir);
+      if (crComplexity === 'trivial') {
+        const hasAnyDimCr = REVIEW_DIMENSIONS.some(d => existsSync(dimensionCrPath(ideaDir, d)));
+        if (!hasAnyDimCr) return validateLegacyRequirementCr(ideaDir, gateId);
+        const spec = validateDimensionCrFile(ideaDir, 'spec');
+        if (!spec.valid) return result(gateId, false, spec.reason);
+        if (spec.fm.result === 'fail') {
+          const specAffected = affectedTasks(spec.fm);
+          if (specAffected.length === 0) return result(gateId, false, 'dim-spec fail must include affected_tasks');
+          const statusReason = validateAffectedTaskStatuses(ideaDir, specAffected, ['needs_rework', 'blocked']);
+          return statusReason ? result(gateId, false, statusReason) : result(gateId, true, '', { review_result: 'needs_rework', dimensions: ['spec'] });
+        }
+        return allTasksApproved(ideaDir)
+          ? result(gateId, true, '', { review_result: 'approved', dimensions: ['spec'] })
+          : result(gateId, false, 'spec passed but not all tasks are approved');
+      }
       return validateDimensionCrComplete(ideaDir, gateId);
     }
     case 'rework-limit': {
@@ -1024,9 +1040,42 @@ export function checkGate(ideaDir, gateId) {
       const reason = validateAiInput(ideaDir);
       return reason ? result(gateId, false, reason) : result(gateId, true);
     }
+    case 'traceability-complete': {
+      const matrixPath = join(ideaDir, 'to-be/traceability-matrix.json');
+      if (!existsSync(matrixPath)) return result(gateId, true, '', { skipped: true });
+      const parsed = readJsonFile(matrixPath);
+      if (parsed.error) return result(gateId, false, `traceability-matrix.json invalid JSON: ${parsed.error}`);
+      const items = parsed.value?.items;
+      if (!Array.isArray(items) || items.length === 0) return result(gateId, true, '', { skipped: true });
+      const state = readTaskState(taskStateFile(ideaDir));
+      for (const item of items) {
+        const coveredByTasks = item.covered_by_tasks || [];
+        if (coveredByTasks.length === 0) return result(gateId, false, `${item.id || 'unknown'} has no covering task`);
+        for (const taskId of coveredByTasks) {
+          const task = state.tasks[taskId];
+          if (!task) return result(gateId, false, `${item.id} references unknown task: ${taskId}`);
+          if (task.status !== 'approved') return result(gateId, false, `${item.id} not fully covered: ${taskId} is ${task.status}`);
+        }
+      }
+      return result(gateId, true);
+    }
+    case 'quick-dev-ready': {
+      const file = join(ideaDir, 'requirement-clarification.json');
+      if (!existsSync(file)) return result(gateId, false, 'requirement-clarification.json missing');
+      const parsed = readJsonFile(file);
+      if (parsed.error) return result(gateId, false, `invalid JSON: ${parsed.error}`);
+      const doc = parsed.value;
+      if (!doc?.dimensions?.functional_scope) return result(gateId, false, 'missing functional_scope dimension');
+      if (!Array.isArray(doc?.dimensions?.acceptance_criteria) || doc.dimensions.acceptance_criteria.length === 0)
+        return result(gateId, false, 'missing or empty acceptance_criteria');
+      return result(gateId, true);
+    }
     case 'done': {
       const reason = validateFinalSummary(ideaDir);
-      return reason ? result(gateId, false, reason) : result(gateId, true);
+      if (reason) return result(gateId, false, reason);
+      const traceGate = checkGate(ideaDir, 'traceability-complete');
+      if (!traceGate.pass && !traceGate.skipped) return result(gateId, false, `traceability incomplete: ${traceGate.reason}`);
+      return result(gateId, true);
     }
     default:
       return { pass: false, gate: gateId, reason: `unknown gate: ${gateId}` };

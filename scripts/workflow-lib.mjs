@@ -212,10 +212,12 @@ const STEP_TO_PHASE = {
   'plan:design': 'plan',
   'plan:confirm': 'plan',
   'worktree:setup': 'plan',
+  'quick-dev:init': 'tasks',
   'tasks:init': 'tasks',
   'implement:code': 'implement',
   'repair:code': 'implement',
   'review:cr': 'review',
+  'review:cr-light': 'review',
   'knowledge:extract': 'knowledge',
   'final:summary': 'final'
 };
@@ -230,6 +232,13 @@ export function updateWorkflowPhase(ideaDir, stepId) {
   const phase = STEP_TO_PHASE[stepId];
   if (phase) {
     text = text.replace(new RegExp(`^(  ${phase}:).*$`, 'm'), `$1 in_progress`);
+  }
+  // Append step_history entry
+  const historyEntry = `  - step: ${stepId}\n    entered_at: ${now}`;
+  if (text.includes('step_history:')) {
+    text = text.trimEnd() + '\n' + historyEntry + '\n';
+  } else {
+    text = text.trimEnd() + '\nstep_history:\n' + historyEntry + '\n';
   }
   atomicWriteFile(file, text);
 }
@@ -558,6 +567,18 @@ const ROLLBACK_STEPS = {
       'task-reports',
       'cr',
       '.knowledge-extracted',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'quick-dev:init': {
+    remove: [
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      'worktree-decision.json',
+      'to-be/traceability-matrix.json',
       'final-summary.md',
       '.done'
     ]
