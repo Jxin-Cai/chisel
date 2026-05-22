@@ -62,7 +62,12 @@ const CLASSIFICATION_RULES = [
 
 function listFiles(projectRoot) {
   try {
-    const output = execSync('git ls-files', { cwd: projectRoot, encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
+    const output = execSync('git ls-files', {
+      cwd: projectRoot,
+      encoding: 'utf8',
+      maxBuffer: 50 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     return output.split('\n').filter(Boolean);
   } catch {
     return listFilesWithFind(projectRoot);
