@@ -50,6 +50,7 @@ const IGNORE_DIRS = new Set([
   'vendor', 'venv', '.venv', 'env', '.env',
   'coverage', '.nyc_output', '.pytest_cache',
   'Pods', '.gradle', '.mvn',
+  '.chisel', '.claude',
 ]);
 
 const CLASSIFICATION_RULES = [

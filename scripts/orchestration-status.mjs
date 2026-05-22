@@ -64,8 +64,8 @@ function detectComplexity(ideaDir) {
 
 function isInWorktree() {
   try {
-    const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8' }).trim();
-    const commonDir = execSync('git rev-parse --git-common-dir', { encoding: 'utf8' }).trim();
+    const gitDir = execSync('git rev-parse --git-dir', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const commonDir = execSync('git rev-parse --git-common-dir', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     return gitDir !== commonDir;
   } catch { return false; }
 }

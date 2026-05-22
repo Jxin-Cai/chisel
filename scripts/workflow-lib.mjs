@@ -722,7 +722,7 @@ export function getStaleCodingTasks(ideaDir, thresholdMs = 30 * 60 * 1000) {
 
 export function resolveProjectName(projectRoot) {
   try {
-    const toplevel = execSync('git rev-parse --show-toplevel', { cwd: projectRoot, encoding: 'utf8' }).trim();
+    const toplevel = execSync('git rev-parse --show-toplevel', { cwd: projectRoot, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     return basename(toplevel);
   } catch {
     return basename(projectRoot);
