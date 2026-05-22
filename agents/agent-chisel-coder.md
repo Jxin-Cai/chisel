@@ -41,8 +41,14 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 3. **实现** — 修改代码，靠齐 as-is 风格
 4. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
 
-5. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`
-6. **Completion Status** — 在 report 末尾追加状态章节：
+5. **Diff 自检** — 运行 `git diff` 查看自己的全部变更，按以下清单快速检查：
+   - 是否引入了明显 bug（逻辑错误、空值处理、off-by-one）？
+   - task 文件中每条 Acceptance Criteria 是否都被覆盖？
+   - 是否越界修改了不该碰的文件？
+   发现问题则立即修复，不等 CR 阶段。这一步在现有 turn 内完成，不额外调用 agent。
+
+6. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`
+7. **Completion Status** — 在 report 末尾追加状态章节：
    ```markdown
    ## Completion Status
 
@@ -55,7 +61,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
    - DONE_WITH_CONCERNS：完成但对某些决策不确定（如风格不一致的现有代码、不清楚的业务逻辑）
    - NEEDS_CONTEXT：缺少关键信息无法继续，不写 report，不标状态
    - BLOCKED：遇到无法绕过的阻碍（如依赖缺失、权限不足）
-7. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：
+8. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：
    - DONE / DONE_WITH_CONCERNS → `--finish-task {task_id} coded`
    - BLOCKED → `--finish-task {task_id} failed`
    - NEEDS_CONTEXT → 不更新状态，直接结束并在输出中说明缺失信息

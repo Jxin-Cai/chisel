@@ -96,7 +96,7 @@ steps:
       check: task-report-exists
 
   - id: review:cr
-    description: spec + D2-D7 多维 CR；spec fail 直接返修，spec pass 后并行执行 D2-D7 并聚合返修项
+    description: spec 门槛 + D2-D8 条件激活多维 CR；spec fail 直接返修，spec pass 后按变更特征激活 D2-D8 子集并行审查，fail 项经验证子阶段确认后聚合返修项
     action:
       type: skill
       name: chisel-review

@@ -1,7 +1,8 @@
 ---
 name: chisel
-description: 当用户要在已有代码仓上新增功能、修改行为、扩展接口，且需要先理解现有逻辑再动手时触发。即使用户没说"遗留"，只要涉及对现有系统做功能增强就应匹配。
+description: 遗留系统功能增强主编排器。在已有代码仓上新增功能、修改行为、扩展接口，先理解现有逻辑再动手。
 argument-hint: "<需求描述或需求文件路径>"
+disable-model-invocation: true
 ---
 
 # Legacy Feature Orchestrator

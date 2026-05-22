@@ -24,7 +24,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 |------|------|
 | `idea_dir` | 需求工作目录 |
 | `task_ids` | 待审查的 task ID 列表 |
-| `dimension` | 本次审查维度（`spec`、`d2`、`d3`、`d4`、`d5`、`d6`、`d7`） |
+| `dimension` | 本次审查维度（`spec`、`d2`、`d3`、`d4`、`d5`、`d6`、`d7`、`d8`） |
 | `rework_count` | 当前返修轮次 |
 | `base_ref` | diff 基准 commit（功能分叉点），为空则降级到 git log |
 
@@ -77,6 +77,31 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-review/references/dim-{dimension}.md`
 ### 3. 按维度定义执行审查
 
 按维度定义文件中的检查清单逐项检查，给出 PASS/FAIL/N/A 结论。
+
+#### 置信度评分
+
+对每个发现的问题，评估置信度（0-100）：
+
+| 分值 | 含义 |
+|------|------|
+| 0-25 | 可能是假阳性，无法确认 |
+| 25-59 | 有嫌疑但证据不充分，或属于风格偏好 |
+| 60-79 | 确实是问题，但严重度低或属于改进建议 |
+| 80-100 | 已验证的真实问题，有代码证据支持 |
+
+- **≥80** → 进入 `## Rework Items`，触发返修
+- **60-79** → 进入 `## Observations (non-blocking)`，仅供参考不触发返修
+- **<60** → 不报告
+
+frontmatter `result` 判定：存在任何 ≥80 置信度的 fail 项时为 `fail`，否则为 `pass`。
+
+#### 不要标记（全维度通用）
+
+- 变更前就已存在的问题（pre-existing）
+- Linter/formatter 能自动捕获的问题
+- 纯风格偏好且项目中无明确约定
+- 基于假设的"可能会出问题"但无实际证据
+- 超出当前需求范围的改进建议
 
 ### 4. 返修验证（rework_count > 0 时）
 
