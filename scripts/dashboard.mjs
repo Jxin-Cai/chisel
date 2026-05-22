@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { execSync } from 'node:child_process';
+import { join, basename, resolve } from 'node:path';
 import { atomicWriteFile, readTaskState, taskStateFile, readFrontmatter } from './workflow-lib.mjs';
 
 const IDEA_DIR = process.argv[2];
@@ -217,6 +218,7 @@ const html = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="30">
 <title>Chisel Dashboard — ${escHtml(ideaName)}</title>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"><\/script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"><\/script>
@@ -460,4 +462,15 @@ function renderCoverageMatrix(matrix) {
 
 const outPath = join(IDEA_DIR, 'dashboard.html');
 atomicWriteFile(outPath, html);
-console.log(JSON.stringify({ generated: true, path: outPath }));
+
+// Auto-open in browser
+const absPath = resolve(outPath);
+const noOpen = process.argv.includes('--no-open');
+if (!noOpen) {
+  try {
+    const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+    execSync(`${cmd} "${absPath}"`, { stdio: 'ignore' });
+  } catch { /* ignore open failure */ }
+}
+
+console.log(JSON.stringify({ generated: true, path: absPath }));

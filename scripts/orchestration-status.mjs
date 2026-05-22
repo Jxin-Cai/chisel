@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   allTasksApproved,
   getBlockedReworkTasks,
@@ -34,6 +35,11 @@ function emit(resumeStep, reason, phaseDetail = {}) {
   }
   if (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)) {
     updateWorkflowPhase(IDEA_DIR, resumeStep);
+    // Silently regenerate dashboard so the browser auto-refresh picks up new state
+    try {
+      const __dirname = dirname(fileURLToPath(import.meta.url));
+      execSync(`node "${join(__dirname, 'dashboard.mjs')}" "${IDEA_DIR}" --no-open`, { stdio: 'ignore', timeout: 5000 });
+    } catch { /* non-critical */ }
   }
 }
 
