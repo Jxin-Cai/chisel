@@ -2,8 +2,7 @@
 name: agent-chisel-reviewer
 description: 通用 CR agent，按指定维度审查代码变更
 model: opus
-effort: high
-maxTurns: 25
+maxTurns: 15
 tools: Read, Write, Glob, Grep, Bash
 skills:
   - chisel-agent-rules
@@ -47,6 +46,17 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-review/references/dim-{dimension}.md`
 
 ### 2. 获取功能 diff
 
+**优先从预计算上下文读取（减少重复计算）：**
+
+1. 检查 `{idea_dir}/cr/cr-context.json` 是否存在
+2. 如果存在 → Read 该文件，从中获取：
+   - `tasks[task_id].task_content`（task 文件内容）
+   - `tasks[task_id].report_content`（task report 内容）
+   - `tasks[task_id].scope_check`（scope-check 结果，直接用于 Scope Check Proof）
+   - `unified_diff`（统一 diff）
+   - `wiki_query`（wiki 查询结果，直接用于 Wiki Proof）
+3. 如果不存在 → 降级到手动获取（兼容旧流程）：
+
 对每个 task_id：
 
 1. Read task 文件 `{idea_dir}/tasks/{task_id}.md`（获取需求约束：AC、invariants、forbidden 等）
@@ -80,7 +90,8 @@ Read 上次本维度的 CR 文件 `{idea_dir}/cr/dim-{dimension}-cr.md`，对照
 
 ## Wiki / Scope 协议
 
-按 agent-shared-rules §1 执行 wiki 查询，按 §3 独立复跑 scope-check 并记录 proof。
+如果已从 `cr-context.json` 获取了 scope-check 和 wiki 查询结果，直接使用预计算数据填充 proof 章节，无需重复运行命令。
+如果 `cr-context.json` 不存在，按 agent-shared-rules §1 执行 wiki 查询，按 §3 独立复跑 scope-check 并记录 proof。
 
 ## 限制
 

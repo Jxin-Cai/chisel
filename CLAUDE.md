@@ -22,11 +22,12 @@ This repository contains the `chisel` Claude Code plugin.
 - `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
 - `scripts/quick-dev-init.mjs` trivial 快速通道自动生成单 task + worktree-decision + traceability-matrix。
 - `scripts/traceability-check.mjs` 需求→task 可追溯性验证，final 阶段前确认所有 AC 被覆盖实现。
+- `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check/wiki 数据写入 `cr-context.json`，D2-D8 agent 共用。
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
 - `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案。
 - `agent-chisel-coder` 只按已确认 task 实现。
-- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），每次加载一个维度定义文件（dim-spec/dim-d2~d8）执行单维度深度审查。8 个维度 8 次独立调用。
+- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d8）执行单维度深度审查。D2-D8 分两批（4+3）并行调用，避免 7 agent 并发 stall。
 
 ## As-Is 分层结构
 
