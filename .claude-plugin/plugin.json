@@ -1,7 +1,7 @@
 {
   "name": "chisel",
   "description": "Legacy system feature enhancement workflow for Claude Code",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "author": {
     "name": "jxin",
     "email": "105760730@qq.com"
