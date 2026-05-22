@@ -37,11 +37,12 @@ This repository contains the `chisel` Claude Code plugin.
 
 ## 知识系统
 
-- 实时捕获：对话中识别到禁区/包袱/坏味道/术语时即时写入 `knowledge-candidates/`。
+- 实时捕获：对话中用户澄清的代码之外上下文（历史背景/业务术语映射/禁区原因/约束决策）即时写入 `knowledge-candidates/`。
+- 不收录代码可推导内容：坏味道、静态分析信号属于 as-is 产物，不进入知识候选池。
 - Wiki 组织：`.chisel/wiki/{project-name}/` 存储长期领域知识（project-name = git 仓库名），每个文件含 `## 关联关系` 章节。
 - 自动注入：SessionStart hook 检测 wiki 存在时写入 `.claude/settings.local.json` rule。
 - 知识流：候选 → 用户确认 → wiki-manage.mjs 合入 → rule 激活。
-- 自动种子检测：debt-scan.mjs 在 repo-map 之后运行，基于文件指标和模式匹配生成初始候选（source_step: "debt-scan"），explorer 在探索中验证并补充业务语境。
+- debt-scan.mjs 产出写入 `as-is/debt-signals/` 仅作探索参考，不进入知识候选池。
 
 ## 关键约束
 
@@ -85,7 +86,9 @@ This repository contains the `chisel` Claude Code plugin.
 
 ## 可视化仪表板
 
-- `/chisel-dashboard <idea-name>` 生成 `{idea-dir}/dashboard.html`。
+- `/chisel-dashboard <idea-name>` 手动生成 `{idea-dir}/dashboard.html`。
+- as-is 完成后自动启动仪表盘并打开浏览器，后续步骤静默更新、浏览器 30s 自动刷新。
 - 自包含 HTML，使用 Mermaid CDN + Chart.js CDN 渲染图表。
 - 含 As-Is 查看器（5 Tab：概览、核心走查、证据表、质量雷达图、覆盖矩阵）。
+- 含全链路改造视图：从 `impact-risk-report.json` 的 `flow_graph` 渲染带颜色标记的 Mermaid 流程图（灰=保留/蓝=改造/绿=新增/红=删除）。
 - `workflow-state.yaml` 的 `step_history` 提供时间线数据。

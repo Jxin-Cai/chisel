@@ -414,11 +414,15 @@ ${impactRisk ? `
   </div>
   ${impactRisk.summary?.highest_risk ? `<p style="color:var(--warn);font-size:0.85rem;margin-bottom:12px">⚠ ${escHtml(impactRisk.summary.highest_risk)}</p>` : ''}
   <div class="tabs" id="riskTabs">
-    <button class="tab active" data-tab="risk-cps">改造点</button>
+    <button class="tab active" data-tab="risk-flow">全链路图</button>
+    <button class="tab" data-tab="risk-cps">改造点</button>
     <button class="tab" data-tab="risk-matrix">风险矩阵</button>
     <button class="tab" data-tab="risk-reuse">复用节点</button>
   </div>
-  <div class="tab-content active" id="risk-cps">
+  <div class="tab-content active" id="risk-flow">
+    ${impactRisk.flow_graph ? renderFlowGraph(impactRisk.flow_graph) : '<p style="color:var(--text2)">暂无全链路图数据（需 planner 产出 flow_graph）</p>'}
+  </div>
+  <div class="tab-content" id="risk-cps">
     <table>
       <tr><th>ID</th><th>节点</th><th>决策</th><th>影响文件</th><th>风险</th></tr>
       ${(impactRisk.change_points || []).map(cp => `
@@ -585,7 +589,7 @@ ${qualityScore ? `
   const dims=Object.keys(qs.dimensions||qs.scores||{});
   const scores=Object.values(qs.dimensions||qs.scores||{}).map(v=>typeof v==='number'?v:(v?.score||0));
   const ctx=document.getElementById('qualityRadar');
-  if(ctx&&dims.length>0){new Chart(ctx,{type:'radar',data:{labels:dims,datasets:[{label:'质量',data:scores,backgroundColor:'rgba(34,197,94,0.15)',borderColor:'#22c55e',pointBackgroundColor:'#22c55e',borderWidth:1.5}]},options:{scales:{r:{min:0,max:100,ticks:{stepSize:20,color:'#7b8794',backdropColor:'transparent'},grid:{color:'rgba(255,255,255,0.06)'},pointLabels:{color:'#e8ecf1',font:{size:11,family:'Inter'}}}},plugins:{legend:{display:false}}}});}
+  if(ctx&&dims.length>0){new Chart(ctx,{type:'radar',data:{labels:dims,datasets:[{label:'质量',data:scores,backgroundColor:'rgba(34,197,94,0.15)',borderColor:'#22c55e',pointBackgroundColor:'#22c55e',borderWidth:1.5}]},options:{scales:{r:{min:0,max:1,ticks:{stepSize:0.2,color:'#7b8794',backdropColor:'transparent'},grid:{color:'rgba(255,255,255,0.06)'},pointLabels:{color:'#e8ecf1',font:{size:11,family:'Inter'}}}},plugins:{legend:{display:false}}}});}
 })();` : ''}
 <\/script>
 </body>
@@ -607,9 +611,37 @@ function renderEvidenceTable(ledger) {
 
 function renderQualityDetails(qs) {
   const dims = qs.dimensions || qs.scores || {};
-  const weakItems = Object.entries(dims).filter(([, v]) => (typeof v === 'number' ? v : v?.score || 0) < 60);
+  const weakItems = Object.entries(dims).filter(([, v]) => (typeof v === 'number' ? v : v?.score || 0) < 0.6);
   if (weakItems.length === 0) return '<p style="margin-top:12px;color:var(--success)">所有维度评分良好</p>';
-  return `<div style="margin-top:12px"><strong style="color:var(--warn)">弱项：</strong><ul>${weakItems.map(([k, v]) => `<li>${escHtml(k)}: ${typeof v === 'number' ? v : v?.score || 0}/100</li>`).join('')}</ul></div>`;
+  return `<div style="margin-top:12px"><strong style="color:var(--warn)">弱项：</strong><ul>${weakItems.map(([k, v]) => {
+    const raw = typeof v === 'number' ? v : v?.score || 0;
+    return '<li>' + escHtml(k) + ': ' + (raw * 100).toFixed(0) + '%</li>';
+  }).join('')}</ul></div>`;
+}
+
+function renderFlowGraph(flowGraph) {
+  if (!flowGraph || !flowGraph.nodes || flowGraph.nodes.length === 0) return '';
+  const DECISION_COLORS = { '保留': '#4b5563', '改造': '#2563eb', '新增': '#16a34a', '删除': '#dc2626' };
+  const DECISION_LABELS = { '保留': 'Keep', '改造': 'Modify', '新增': 'Add', '删除': 'Remove' };
+  let mermaid = 'flowchart TD\n';
+  for (const n of flowGraph.nodes) {
+    const safeLabel = String(n.label || n.id).replace(/"/g, "'");
+    const cpTag = n.cp_ref && n.cp_ref !== 'null' ? ` [${n.cp_ref}]` : '';
+    mermaid += `  ${n.id}["${safeLabel}${cpTag}"]\n`;
+  }
+  for (const e of (flowGraph.edges || [])) {
+    const label = e.label ? `-- "${String(e.label).replace(/"/g, "'")}" -->` : '-->';
+    mermaid += `  ${e.from} ${label} ${e.to}\n`;
+  }
+  for (const n of flowGraph.nodes) {
+    const color = DECISION_COLORS[n.decision] || '#4b5563';
+    const textColor = n.decision === '保留' ? '#9ca3af' : '#ffffff';
+    mermaid += `  style ${n.id} fill:${color},stroke:${color},color:${textColor}\n`;
+  }
+  const legendHtml = Object.entries(DECISION_COLORS).map(([k, c]) =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:16px"><span style="width:12px;height:12px;border-radius:3px;background:${c};display:inline-block"></span><span style="font-size:0.78rem;color:var(--text2)">${k} (${DECISION_LABELS[k]})</span></span>`
+  ).join('');
+  return `<div style="margin-bottom:10px">${legendHtml}</div><pre class="mermaid">${escHtml(mermaid)}</pre>`;
 }
 
 function renderCoverageMatrix(matrix) {

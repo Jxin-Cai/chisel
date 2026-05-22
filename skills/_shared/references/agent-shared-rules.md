@@ -14,7 +14,15 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "<task goal/
 
 ## 2. 候选创建协议
 
-发现禁区/包袱/坏味道/术语时写 `{idea_dir}/knowledge-candidates/{prefix}-*.json`（fz/wbi/dnr/term）。
+在用户对话中识别到代码无法推导的上下文时（禁区/包袱/术语映射/历史决策），写 `{idea_dir}/knowledge-candidates/{prefix}-*.json`（fz/wbi/dnr/term）。
+
+仅在以下场景创建候选：
+- 用户澄清了某个设计的历史原因（代码看不出为什么这样做）
+- 用户解释了业务术语与代码概念的映射关系
+- 用户声明某区域不能动且给出了代码之外的原因
+- 需求文档中明确了某个约束或决策
+
+不要从代码静态分析信号创建候选——坏味道、指标异常等属于 as-is 分析产物，不是知识。
 
 必须满足：`status=proposed`、`confirmed=false`、填写 `source_step`、`quality_score`（optional，取值 0–1）、非空 `keywords`、结构化 `evidence`（含 `file`/`line_start`）、按 category 填齐 `content` 必填键。格式见 `knowledge-candidates-template.md`。
 

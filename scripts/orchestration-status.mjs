@@ -23,6 +23,14 @@ if (!IDEA_DIR) {
   process.exit(1);
 }
 
+function readPreviousStep(ideaDir) {
+  const p = join(ideaDir, 'workflow-state.yaml');
+  if (!existsSync(p)) return null;
+  const text = readFileSync(p, 'utf8');
+  const m = text.match(/^current_step:\s*(.+)$/m);
+  return m ? m[1].trim() : null;
+}
+
 function emit(resumeStep, reason, phaseDetail = {}) {
   const complexity = phaseDetail.complexity || (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? detectComplexity(IDEA_DIR) : 'standard');
   console.log(`resume_step: ${resumeStep}`);
@@ -34,11 +42,14 @@ function emit(resumeStep, reason, phaseDetail = {}) {
     for (const [key, value] of entries) console.log(`  ${key}: ${Array.isArray(value) ? value.join(',') : value}`);
   }
   if (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)) {
+    const prevStep = readPreviousStep(IDEA_DIR);
     updateWorkflowPhase(IDEA_DIR, resumeStep);
-    // Silently regenerate dashboard so the browser auto-refresh picks up new state
+    const DASHBOARD_AUTO_OPEN_STEPS = ['understand:confirm', 'clarify:requirement'];
+    const shouldOpen = DASHBOARD_AUTO_OPEN_STEPS.includes(resumeStep) && prevStep !== resumeStep;
     try {
       const __dirname = dirname(fileURLToPath(import.meta.url));
-      execSync(`node "${join(__dirname, 'dashboard.mjs')}" "${IDEA_DIR}" --no-open`, { stdio: 'ignore', timeout: 5000 });
+      const openFlag = shouldOpen ? '' : ' --no-open';
+      execSync(`node "${join(__dirname, 'dashboard.mjs')}" "${IDEA_DIR}"${openFlag}`, { stdio: 'ignore', timeout: 5000 });
     } catch { /* non-critical */ }
   }
 }

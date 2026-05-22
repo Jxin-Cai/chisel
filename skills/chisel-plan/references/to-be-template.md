@@ -143,3 +143,5 @@
 - `task_complexity`："trivial" | "standard" | "complex"（可选，默认 "standard"）— 决定 coder agent 模型选择：trivial→haiku, standard→sonnet, complex→opus。
 
 同时写入 `to-be/impact-risk-report.json`（详见独立 schema 定义）。
+
+> **flow_graph 必填说明**：impact-risk-report.json 的 `flow_graph` 字段描述功能全链路，nodes 包含链路上所有节点（保留/改造/新增/删除），edges 按调用/数据流方向连接。dashboard 据此自动渲染带颜色标记的全链路改造视图：灰色=保留、蓝色=改造、绿色=新增、红色=删除。

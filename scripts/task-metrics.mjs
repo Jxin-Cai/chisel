@@ -21,7 +21,7 @@ function parseNumstat(output) {
 }
 
 function gitNames(args) {
-  return execFileSync('git', args, { encoding: 'utf8' }).split('\n').filter(Boolean);
+  return execFileSync('git', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean);
 }
 
 function matchesScope(file, patterns) {
