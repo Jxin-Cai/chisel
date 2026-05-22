@@ -63,7 +63,7 @@ digraph chisel_flow {
   worktree [label="worktree:setup"];
   tasks [label="tasks:init"];
   implement [label="implement:code"];
-  review [label="review:cr\n(spec + D2-D7)"];
+  review [label="review:cr\n(spec + D2-D8)"];
   review_light [label="review:cr-light\n(spec only, trivial)"];
   repair [label="repair:code"];
   final [label="final:summary"];
@@ -116,12 +116,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
 | `quick-dev:init` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}`（trivial only：自动生成 task + worktree-decision + traceability-matrix） | `task-workflow-exists` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
-| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-confirmed` |
-| `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行 | `knowledge-extracted` |
-| `worktree:setup` | 使用 `AskUserQuestion` 询问是否创建隔离 worktree；yes → `EnterWorktree`（从 main 分支创建）；no → 当前分支开发。运行 `git rev-parse HEAD` 记录当前 commit 作为 `base_commit`。将决策写入 `{IDEA_DIR}/worktree-decision.json`（含 `base_commit` 字段，CR 阶段用它做 diff 基准） | `worktree-decided` |
+| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行。确认完成后，如 complexity≠trivial，立即启动 knowledge:extract 作为后台并行任务（使用 Agent run_in_background:true 调用 phase-knowledge-extract.md 流程），同时继续进入下一步（不等待 knowledge 完成） | `to-be-confirmed` |
+| `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行（通常已由 plan:confirm 后并行启动；若到 final:summary 前未完成则此处同步执行） | `knowledge-extracted` |
+| `worktree:setup` | 多仓 worktree 设置：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --detect <workspace-root>` 检测工作空间下所有 Git 仓库；使用 `AskUserQuestion` 让用户确认涉及的仓库列表 + 是否 worktree 隔离；yes → 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --create <idea-name> --repos <repo1,repo2,...>` 在每个仓库创建同名分支 worktree；no → 当前分支开发。将决策写入 `{IDEA_DIR}/worktree-decision.json`（v2 含 `repos` 数组和各仓 `base_commit`，CR 阶段用它做 diff 基准）。单仓场景退化为 v1 schema + `EnterWorktree` | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
-| `review:cr` | `/chisel-review <idea-name>`；`cr-complete` 检查 `dim-spec-cr.md` 与 D2-D7 维度 CR。spec fail 可只完成 spec CR 并进入 repair；spec pass 后才要求 D2-D7 全部完成并聚合。 | `cr-complete` |
+| `review:cr` | `/chisel-review <idea-name>`；`cr-complete` 检查 `dim-spec-cr.md` 与 D2-D8 维度 CR。spec fail 可只完成 spec CR 并进入 repair；spec pass 后才要求 D2-D8 全部完成并聚合。 | `cr-complete` |
 | `review:cr-light` | `/chisel-review <idea-name>`（trivial only：只运行 spec 维度，pass → approved，fail → needs_rework） | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
 | `final:summary` | Read `${REF}/phase-confirm-details.md`；按其 final:summary 详细行为执行 | `done` |
@@ -138,7 +138,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 **trivial 快速通道**：当 `complexity = trivial` 时，整个流程缩短为：
 - `receive-requirement` → `clarify:requirement`（只需 2 维度） → `quick-dev:init` → `implement:code` → `review:cr-light`（spec-only） → `final:summary` → `done`
-- 跳过：`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`plan:design`、`plan:confirm`、`knowledge:extract`、`worktree:setup`、`tasks:init`、D2-D7 CR
+- 跳过：`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`plan:design`、`plan:confirm`、`knowledge:extract`、`worktree:setup`、`tasks:init`、D2-D8 CR
 
 **standard/complex 正常流程**：走完整步骤，其中 `understand:generate-ai-input` 和 `knowledge:extract` 仅 standard/complex 触发。
 

@@ -38,8 +38,10 @@ phases:
 
   - id: knowledge-extract
     order: 4
-    description: 从方案确认后的产物中提取长期知识候选
+    description: 从方案确认后的产物中提取长期知识候选（并行旁支，不阻塞主链路）
     requires: [plan]
+    parallel: true
+    sync_before: final
     outputs:
       - knowledge-candidates/
 

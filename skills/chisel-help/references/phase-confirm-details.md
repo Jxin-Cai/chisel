@@ -91,6 +91,9 @@
 
 ### 1. 环境检测
 
+读取 `{IDEA_DIR}/worktree-decision.json` 判断多仓 vs 单仓：
+
+**单仓模式**（schema_version=1 或无 repos 字段）：
 ```bash
 GIT_DIR=$(git rev-parse --git-dir)
 GIT_COMMON=$(git rev-parse --git-common-dir)
@@ -100,13 +103,25 @@ BRANCH=$(git branch --show-current)
 - `GIT_DIR ≠ GIT_COMMON` → 在 worktree 中（完整 4 选项）
 - `GIT_DIR = GIT_COMMON` → 在主仓库中（仅选项 1/3）
 
+**多仓模式**（schema_version=2，repos 数组非空）：
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --status <idea-name> --repos <repo1,repo2,...>
+```
+
 ### 2. 展示变更概要
 
+**单仓**：
 ```bash
 git log --oneline main..HEAD
 ```
 
-告知用户："需求 `{idea-name}` 已完成，当前在分支 `{branch}` 中。"
+**多仓**：对每个仓库分别展示：
+```bash
+# 在各 worktree 目录中
+git -C <worktree-path> log --oneline <default-branch>..HEAD
+```
+
+告知用户："需求 `{idea-name}` 已完成，涉及 N 个仓库。"
 
 ### 3. 结构化选项菜单
 
@@ -130,10 +145,17 @@ git log --oneline main..HEAD
 
 ### 4. 执行用户选择
 
+**单仓**：
 - **创建 PR**：`git push -u origin {branch}`，然后用 `gh pr create` 创建 PR，展示 PR URL
 - **直接合并**：提醒用户先 `ExitWorktree` 回到主分支，再 `git merge {branch}`，合并后清理 worktree
 - **保留分支**：仅提示用户分支名和 worktree 路径，告知后续可手动处理
 - **放弃变更**：先展示将被删除的内容（分支名、commit 列表 `git log --oneline main..HEAD`），要求用户明确输入"确认放弃"后才执行 `ExitWorktree(action: "remove", discard_changes: true)`。未收到确认文字前不得执行删除。
+
+**多仓**：
+- **创建 PR**：对每个仓库的 worktree 分支执行 `git -C <worktree-path> push -u origin {branch}`，然后在每个仓库创建 PR（`gh pr create`），汇总展示所有 PR URL
+- **直接合并**：对每个仓库依次回到主分支 merge，完成后统一清理 worktree（`node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --cleanup <idea-name> --repos <...>`）
+- **保留分支**：提示每个仓库的分支名和 worktree 路径
+- **放弃变更**：展示所有仓库将被删除的内容，确认后执行 cleanup
 
 ---
 

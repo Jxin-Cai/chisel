@@ -164,10 +164,8 @@ function main() {
     emit('plan:confirm', 'plan confirmation is missing', { complexity });
     return;
   }
-  if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'knowledge-extracted').pass) {
-    emit('knowledge:extract', 'plan confirmed, knowledge candidate extraction is pending', { complexity });
-    return;
-  }
+  // knowledge:extract is now a parallel side-branch, not blocking the main path.
+  // It runs concurrently after plan:confirm and is checked before final:summary.
   if (!checkGate(IDEA_DIR, 'worktree-decided').pass) {
     emit('worktree:setup', 'worktree decision has not been made', { complexity });
     return;
@@ -211,6 +209,11 @@ function main() {
     const traceGate = checkGate(IDEA_DIR, 'traceability-complete');
     if (!traceGate.pass && !traceGate.skipped) {
       emit('blocked', 'traceability incomplete — not all requirements covered by approved tasks', { complexity, trace_reason: traceGate.reason });
+      return;
+    }
+    // Knowledge extraction runs in parallel; sync here before final summary
+    if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'knowledge-extracted').pass) {
+      emit('knowledge:extract', 'all tasks approved but knowledge extraction not yet complete — must finish before final summary', { complexity });
       return;
     }
     if (!checkGate(IDEA_DIR, 'done').pass) {

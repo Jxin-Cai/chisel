@@ -10,6 +10,15 @@
 
 **如果 `decision` 为 `"current-branch"`，直接降级为串行执行，不使用本文件的并行流程。**
 
+## 多仓环境说明
+
+当 `worktree-decision.json` schema_version=2 且 `repos` 数组非空时，表示工作空间包含多个独立 Git 仓库。
+
+- 每个 task 的 `expected_files` 和 `allowed_files` 中的路径可能跨多个仓库
+- 在派发 Agent 编码时，需要根据 task 涉及的文件路径确定其应在哪个仓库的 worktree 中工作
+- Agent 的 cwd 应设置为对应仓库的 worktree 路径（从 `repos[].worktree_path` 读取）
+- 如果一个 task 跨多个仓库，必须串行执行（在各仓库中依次完成）
+
 ## 流程
 
 ### 1. 文件与影响面冲突预检

@@ -6,7 +6,7 @@ import { readFrontmatter } from './workflow-lib.mjs';
 const VALID_RESULTS = ['approved', 'needs_rework', 'blocked'];
 const VALID_SPEC_RESULTS = ['pass', 'fail'];
 const VALID_DIM_RESULTS = ['pass', 'fail'];
-const VALID_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7'];
+const VALID_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8'];
 
 function parseCrResult(crFilePath) {
   if (!existsSync(crFilePath)) return { error: `file not found: ${crFilePath}` };
@@ -104,7 +104,7 @@ function main() {
 
   if (type === 'requirement') {
     if (!ideaDir) {
-      process.stderr.write('用法: cr-parse.mjs <idea-dir> --type requirement（legacy compatibility；新流程使用 --dim spec|d2|...|d7）\n');
+      process.stderr.write('用法: cr-parse.mjs <idea-dir> --type requirement（legacy compatibility；新流程使用 --dim spec|d2|...|d8）\n');
       process.exit(1);
     }
     const crFile = join(ideaDir, 'cr/requirement-cr.md');
@@ -119,7 +119,7 @@ function main() {
   }
 
   if (!ideaDir || !taskId) {
-    process.stderr.write('用法: cr-parse.mjs <idea-dir> --dim <spec|d2|d3|d4|d5|d6|d7>；legacy: cr-parse.mjs <idea-dir> <task-id> [--type spec|cr|requirement]\n');
+    process.stderr.write('用法: cr-parse.mjs <idea-dir> --dim <spec|d2|d3|d4|d5|d6|d7|d8>；legacy: cr-parse.mjs <idea-dir> <task-id> [--type spec|cr|requirement]\n');
     process.exit(1);
   }
 

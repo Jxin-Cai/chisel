@@ -14,6 +14,7 @@ This repository contains the `chisel` Claude Code plugin.
 - `scripts/workflow-status.mjs` 和 `scripts/workflow-lib.mjs` 管理 task 状态机。
 - `scripts/gate-check.mjs` 管理每步 postcondition。
 - `scripts/scope-check.mjs` 检查变更文件是否越界或触碰禁区。
+- `scripts/multi-repo-worktree.mjs` 多仓 worktree 检测/创建/状态/清理（支持非 git 工作空间下的多 git 仓库场景）。
 - `scripts/wiki-manage.mjs` wiki 初始化、候选合入、关联关系管理。
 - `scripts/wiki-rule-inject.mjs` 自动向业务项目注入 wiki 加载 rule。
 - `scripts/repo-map.mjs` 产出语言统计和目录结构（无 LLM 依赖），explorer 探索前自动运行。
@@ -25,7 +26,7 @@ This repository contains the `chisel` Claude Code plugin.
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
 - `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案。
 - `agent-chisel-coder` 只按已确认 task 实现。
-- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），每次加载一个维度定义文件（dim-spec/dim-d2~d7）执行单维度深度审查。7 个维度 7 次独立调用。
+- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），每次加载一个维度定义文件（dim-spec/dim-d2~d8）执行单维度深度审查。8 个维度 8 次独立调用。
 
 ## As-Is 分层结构
 
@@ -52,19 +53,27 @@ This repository contains the `chisel` Claude Code plugin.
 
 ## 并行开发
 
-- Worktree 粒度为 per-requirement：一个需求对应一个 worktree（用户在 `worktree:setup` 选择），内部 task 串行/并行执行。
-- Worktree 决策在方案确认后（`plan:confirm` 之后、`tasks:init` 之前）由用户选择，从 main 分支创建 worktree 或在当前分支开发。
+- Worktree 粒度为 per-requirement：一个需求对应一组 worktree（用户在 `worktree:setup` 选择），内部 task 串行/并行执行。
+- **多仓支持**：工作空间可能是非 git 的目录，下包含多个独立 Git 仓库。一个需求可能跨多个仓库改动。`worktree:setup` 阶段通过 `multi-repo-worktree.mjs --detect` 扫描仓库，在每个涉及的仓库中创建同名分支 worktree（`worktree-decision.json` schema_version=2）。
+- 单仓场景退化为 schema_version=1，行为不变。
+- Worktree 决策在方案确认后（`plan:confirm` 之后、`tasks:init` 之前）由用户选择。
 - 用户选 `current-branch` 时，所有 task 串行执行，**不使用 Agent worktree 隔离**。
 - 用户选 `worktree` 时，`getNextTasks()` 返回多个 task 且无文件重叠时，使用 `Agent(isolation: "worktree")` 并行编码（这是 Agent 工具的临时隔离，task 级，用完即弃），合并后统一更新状态。
 - 有重叠 task 串行执行；返修 task 始终串行。
-- `chisel-review` 在所有 task 编码完成后进行 7 维度独立 CR：spec 门槛（opus，合规检查）通过后，D2-D7 每个维度独立一次 opus 调用，全量审查后聚合结果。返修后从 spec 重新开始。
-- 需求完成后（`done` 阶段），如果在 worktree 中，提示用户合并分支到主干（PR 或直接 merge）。
+- `chisel-review` 在所有 task 编码完成后进行 8 维度独立 CR：spec 门槛（opus，合规检查）通过后，D2-D8 每个维度独立一次 opus 调用，全量审查后聚合结果。返修后从 spec 重新开始。
+- 需求完成后（`done` 阶段），多仓场景对每个仓库分别创建 PR 或 merge。
+
+## 知识提取并行化
+
+- `knowledge:extract` 在 `plan:confirm` 后作为并行旁支启动（后台 Agent），不阻塞 `worktree:setup` 和后续 implement 主链路。
+- 在 `final:summary` 前同步：如果 knowledge 提取尚未完成则此时等待/执行。
+- trivial 模式跳过 knowledge 提取。
 
 ## Quick-dev 快速通道
 
 - 当 complexity=trivial（scope≤2 项、无新表/API）时自动激活。
 - 缩短路径：`receive → clarify(2 维度) → quick-dev:init → implement → review:cr-light(spec-only) → done`。
-- 跳过：as-is 探索/确认、ai-input、plan、knowledge、worktree 选择、D2-D7 CR。
+- 跳过：as-is 探索/确认、ai-input、plan、knowledge、worktree 选择、D2-D8 CR。
 - `quick-dev-init.mjs` 从 requirement-clarification.json 自动生成单 task + worktree-decision(current-branch) + traceability-matrix。
 
 ## 需求可追溯性

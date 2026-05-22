@@ -69,12 +69,15 @@ steps:
 
   - id: knowledge:extract
     # complexity-aware: trivial 模式跳过此步
-    description: 从本次迭代产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule
+    # parallel: plan:confirm 后并行启动，不阻塞主链路，final:summary 前必须完成
+    description: 从方案确认后的产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule。并行于 worktree:setup/tasks:init/implement，在 final:summary 前同步
+    parallel_with: [worktree:setup, tasks:init, implement:code, review:cr]
+    sync_before: final:summary
     postcondition:
       check: knowledge-extracted
 
   - id: worktree:setup
-    description: 询问用户是否创建隔离 worktree；yes → 从 main 创建 worktree；no → 在当前分支开发
+    description: 检测工作空间下的 Git 仓库；询问用户是否创建隔离 worktree；yes → 在每个涉及的仓库创建同名分支 worktree；no → 在当前分支开发。支持多仓（schema_version=2）和单仓（schema_version=1）
     postcondition:
       check: worktree-decided
 

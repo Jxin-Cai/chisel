@@ -375,8 +375,8 @@ function validateCrFile(crPath, status, behaviorInvariants = []) {
   return '';
 }
 
-const REVIEW_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7'];
-const QUALITY_REVIEW_DIMENSIONS = ['d2', 'd3', 'd4', 'd5', 'd6', 'd7'];
+const REVIEW_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8'];
+const QUALITY_REVIEW_DIMENSIONS = ['d2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8'];
 
 function dimensionCrPath(ideaDir, dimension) {
   return join(ideaDir, `cr/dim-${dimension}-cr.md`);
@@ -1037,9 +1037,17 @@ export function checkGate(ideaDir, gateId) {
       const parsed = readJsonFile(file);
       if (parsed.error) return result(gateId, false, `worktree-decision.json invalid JSON: ${parsed.error}`);
       const doc = parsed.value;
-      if (doc?.schema_version !== 1) return result(gateId, false, 'worktree-decision.json schema_version must be 1');
+      if (![1, 2].includes(doc?.schema_version)) return result(gateId, false, 'worktree-decision.json schema_version must be 1 or 2');
       if (!['worktree', 'current-branch'].includes(doc.decision)) return result(gateId, false, 'decision must be worktree or current-branch');
       if (!doc.decided_at) return result(gateId, false, 'missing decided_at');
+      if (doc.schema_version === 2) {
+        if (!doc.branch_name || typeof doc.branch_name !== 'string') return result(gateId, false, 'v2 schema requires branch_name');
+        if (!Array.isArray(doc.repos) || doc.repos.length === 0) return result(gateId, false, 'v2 schema requires non-empty repos array');
+        for (const [index, repo] of doc.repos.entries()) {
+          if (!repo?.path || typeof repo.path !== 'string') return result(gateId, false, `repos[${index}] missing path`);
+          if (!repo.base_commit || typeof repo.base_commit !== 'string') return result(gateId, false, `repos[${index}] missing base_commit`);
+        }
+      }
       return result(gateId, true);
     }
     case 'ai-input-ready': {
