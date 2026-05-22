@@ -927,6 +927,8 @@ export function checkGate(ideaDir, gateId) {
       if (!hasRequiredLines(planFile, requiredSections))
         return result(gateId, false, 'to-be implementation plan is missing required sections (目标行为, 非目标行为, 允许修改范围, 禁止修改范围, Task 拆分建议)');
       const planText = readFileSync(planFile, 'utf8');
+      if (!planText.includes('## 改造点映射'))
+        return result(gateId, false, 'to-be implementation plan is missing required section: 改造点映射');
       const taskSection = planText.split('## Task 拆分建议')[1] || '';
       if (taskSection.includes('task_id') || taskSection.includes('### task-')) {
         if (!taskSection.includes('Acceptance Criteria') && !taskSection.includes('验收标准'))
@@ -934,6 +936,10 @@ export function checkGate(ideaDir, gateId) {
       }
       const tasksReason = validateTasksJsonAgainstTraceability(ideaDir);
       if (tasksReason) return result(gateId, false, tasksReason);
+      // Non-trivial requires impact-risk-report.json
+      const toBeComplexity = detectComplexity(ideaDir);
+      if (toBeComplexity !== 'trivial' && !has(ideaDir, 'to-be/impact-risk-report.json'))
+        return result(gateId, false, 'to-be/impact-risk-report.json missing (required for standard/complex)');
       return result(gateId, true);
     }
     case 'to-be-confirmed': {

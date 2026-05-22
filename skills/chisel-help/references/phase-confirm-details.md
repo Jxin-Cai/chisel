@@ -18,7 +18,19 @@
 
 ## plan:confirm 详细行为
 
-展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、目标行为、非目标行为、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
+展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、目标行为、非目标行为、**改造点映射**（保留/改造/新增/删除决策表）、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
+
+### 风险报告展示
+
+如果 `{IDEA_DIR}/to-be/impact-risk-report.json` 存在，必须向用户展示：
+
+1. **影响概览**：改造点数、影响文件数、影响符号数、总风险等级
+2. **风险矩阵**：每个 RISK 条目的类别、描述、严重度、可能性、缓解方式
+3. **最高风险项**：`summary.highest_risk` 高亮展示
+
+用户必须在看过风险报告后才能确认。
+
+### 确认凭据
 
 确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，必须严格包含以下结构（gate-check 会逐字段校验）：
 
@@ -29,13 +41,15 @@
   "status": "confirmed",
   "confirmed_at": "<ISO 8601>",
   "confirmed_by": "user",
-  "source_files": ["to-be/implementation-plan.md", "to-be/tasks.json", "to-be/traceability-matrix.json"],
+  "source_files": ["to-be/implementation-plan.md", "to-be/tasks.json", "to-be/traceability-matrix.json", "to-be/impact-risk-report.json"],
   "task_acknowledgement": {
     "task_ids": ["task-001", "task-002"],
     "dependencies_reviewed": true
   },
   "risk_acknowledgement": {
-    "reviewed": true
+    "reviewed": true,
+    "risk_level": "medium",
+    "risk_count": 3
   }
 }
 ```
@@ -43,6 +57,8 @@
 - `task_acknowledgement.task_ids` 必须列出 `to-be/tasks.json` 中所有 task_id
 - `task_acknowledgement.dependencies_reviewed` 必须为 `true`
 - `risk_acknowledgement.reviewed` 必须为 `true`
+- `risk_acknowledgement.risk_level` 应填 impact-risk-report.json 的 `summary.risk_level`
+- `risk_acknowledgement.risk_count` 应填 `risk_matrix` 数组长度
 - 任何字段缺失或值错误都会导致 `to-be-confirmed` gate 失败
 
 新流程不得只创建 `.to-be-confirmed` marker；该 marker 仅用于历史运行目录兼容。

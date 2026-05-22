@@ -28,9 +28,10 @@ argument-hint: "<idea-name>"
 
 <HARD-GATE>
 一次性产出完整方案，包含：
-- `to-be/implementation-plan.md` — 实现策略 + Task 拆分建议
-- `to-be/tasks.json` — task 拆分结果
+- `to-be/implementation-plan.md` — 实现策略 + 改造点映射 + Task 拆分建议
+- `to-be/tasks.json` — task 拆分结果（每个 task 含 `change_point_refs`）
 - `to-be/traceability-matrix.json` — 需求到 task 的可追溯矩阵
+- `to-be/impact-risk-report.json` — 影响范围与风险评估报告（独立结构化 JSON）
 
 不要创建 `confirmations/strategy.json`。
 不要创建 `confirmations/to-be.json`；to-be 确认凭据只能由主编排器在用户明确确认后写入。
@@ -43,4 +44,6 @@ argument-hint: "<idea-name>"
 | "task 拆分太细浪费时间" | 粗粒度 task 导致 CR 困难和返修 |
 | "先写代码再补方案" | 没有方案的代码无法 CR |
 | "有几个设计点不确定，先提出来问用户" | 必须在本次调用写完全部产物，不确定点写入风险清单 |
+| "改造点映射太繁琐，直接写方案详情" | 改造点映射是 as-is→to-be 的桥梁，必须先映射再展开 |
+| "影响风险报告与方案重复" | 报告是独立结构化数据，供 dashboard 和 confirm 使用 |
 </HARD-GATE>

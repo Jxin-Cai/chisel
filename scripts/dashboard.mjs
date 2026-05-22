@@ -175,6 +175,7 @@ const workflowState = readWorkflowState();
 const taskState = readTaskState(taskStateFile(IDEA_DIR));
 const crResults = collectCrResults();
 const traceability = collectTraceability();
+const impactRisk = readJson('to-be/impact-risk-report.json');
 const requirement = readMd('requirement.md');
 const overview = readMd('as-is/overview.md');
 const coreWalkthrough = readMd('as-is/core-walkthrough.md');
@@ -346,6 +347,75 @@ ${traceability ? `
       <td><span class="status s-${item.coverage === 'complete' ? 'approved' : item.coverage === 'missing' ? 'failed' : 'coding'}">${escHtml(item.coverage)}</span></td>
     </tr>`).join('')}
   </table>
+</div>` : ''}
+
+<!-- Impact & Risk -->
+${impactRisk ? `
+<div class="card" style="margin-bottom:16px">
+  <h2>影响范围与风险评估</h2>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">
+    <div style="background:var(--surface2);padding:12px 20px;border-radius:8px;text-align:center">
+      <div style="font-size:1.5rem;font-weight:700">${impactRisk.summary?.total_change_points || 0}</div>
+      <div style="font-size:0.75rem;color:var(--text2)">改造点</div>
+    </div>
+    <div style="background:var(--surface2);padding:12px 20px;border-radius:8px;text-align:center">
+      <div style="font-size:1.5rem;font-weight:700">${impactRisk.summary?.total_affected_files || 0}</div>
+      <div style="font-size:0.75rem;color:var(--text2)">影响文件</div>
+    </div>
+    <div style="background:var(--surface2);padding:12px 20px;border-radius:8px;text-align:center">
+      <div style="font-size:1.5rem;font-weight:700">${impactRisk.summary?.total_affected_symbols || 0}</div>
+      <div style="font-size:0.75rem;color:var(--text2)">影响符号</div>
+    </div>
+    <div style="background:var(--surface2);padding:12px 20px;border-radius:8px;text-align:center">
+      <span class="badge badge-${impactRisk.summary?.risk_level === 'high' ? 'complex' : impactRisk.summary?.risk_level === 'medium' ? 'standard' : 'trivial'}" style="font-size:0.9rem">${escHtml(impactRisk.summary?.risk_level || 'low')}</span>
+      <div style="font-size:0.75rem;color:var(--text2);margin-top:4px">总风险</div>
+    </div>
+  </div>
+  ${impactRisk.summary?.highest_risk ? `<p style="color:var(--warn);font-size:0.85rem;margin-bottom:12px">⚠ ${escHtml(impactRisk.summary.highest_risk)}</p>` : ''}
+  <div class="tabs" id="riskTabs">
+    <button class="tab active" data-tab="risk-cps">改造点</button>
+    <button class="tab" data-tab="risk-matrix">风险矩阵</button>
+    <button class="tab" data-tab="risk-reuse">复用节点</button>
+  </div>
+  <div class="tab-content active" id="risk-cps">
+    <table>
+      <tr><th>ID</th><th>节点</th><th>决策</th><th>影响文件</th><th>风险</th></tr>
+      ${(impactRisk.change_points || []).map(cp => `
+      <tr>
+        <td><strong>${escHtml(cp.id)}</strong></td>
+        <td>${escHtml(cp.node)}</td>
+        <td><span class="status s-${cp.decision === '改造' ? 'coding' : cp.decision === '新增' ? 'approved' : 'failed'}">${escHtml(cp.decision)}</span></td>
+        <td style="font-size:0.8rem">${escHtml((cp.affected_files || []).join(', '))}</td>
+        <td><span class="status s-${cp.risk_level === 'high' ? 'failed' : cp.risk_level === 'medium' ? 'needs_rework' : 'approved'}">${escHtml(cp.risk_level || 'low')}</span></td>
+      </tr>`).join('')}
+    </table>
+  </div>
+  <div class="tab-content" id="risk-matrix">
+    <table>
+      <tr><th>ID</th><th>类别</th><th>描述</th><th>严重度</th><th>可能性</th><th>关联 CP</th><th>缓解</th></tr>
+      ${(impactRisk.risk_matrix || []).map(r => `
+      <tr>
+        <td>${escHtml(r.id)}</td>
+        <td>${escHtml(r.category)}</td>
+        <td style="font-size:0.85rem">${escHtml(r.description)}</td>
+        <td><span class="status s-${r.severity === 'high' ? 'failed' : r.severity === 'medium' ? 'needs_rework' : 'approved'}">${escHtml(r.severity)}</span></td>
+        <td>${escHtml(r.likelihood)}</td>
+        <td style="font-size:0.8rem">${escHtml((r.affected_cps || []).join(', '))}</td>
+        <td style="font-size:0.8rem">${escHtml(r.mitigation)}</td>
+      </tr>`).join('')}
+    </table>
+  </div>
+  <div class="tab-content" id="risk-reuse">
+    <table>
+      <tr><th>节点</th><th>保留原因</th><th>置信度</th></tr>
+      ${(impactRisk.reuse_nodes || []).map(n => `
+      <tr>
+        <td>${escHtml(n.node)}</td>
+        <td style="font-size:0.85rem">${escHtml(n.reason)}</td>
+        <td><span class="status s-${n.confidence === 'high' ? 'approved' : n.confidence === 'medium' ? 'coding' : 'pending'}">${escHtml(n.confidence)}</span></td>
+      </tr>`).join('')}
+    </table>
+  </div>
 </div>` : ''}
 
 <!-- As-Is Viewer -->
