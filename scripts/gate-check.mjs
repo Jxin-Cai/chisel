@@ -732,6 +732,69 @@ function validateTasksJsonAgainstTraceability(ideaDir) {
   return validateTraceabilityMatrix(ideaDir, { requireTaskRefs: true, taskIdsOverride: taskIds, traceRefsOverride: traceRefs });
 }
 
+const VALID_CP_DECISIONS = new Set(['改造', '新增', '删除']);
+const VALID_FLOW_DECISIONS = new Set(['保留', '改造', '新增', '删除']);
+const VALID_RISK_CATEGORIES = new Set(['并发安全', '数据一致性', '接口兼容', '回滚困难', '性能退化', '其他']);
+const VALID_LEVELS = new Set(['low', 'medium', 'high']);
+
+function validateImpactRiskReport(ideaDir) {
+  const file = join(ideaDir, 'to-be/impact-risk-report.json');
+  if (!existsSync(file)) return 'to-be/impact-risk-report.json missing';
+  const parsed = readJsonFile(file);
+  if (parsed.error) return `to-be/impact-risk-report.json invalid JSON: ${parsed.error}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1) return 'impact-risk-report.json schema_version must be 1';
+  if (!doc.generated_at || typeof doc.generated_at !== 'string') return 'impact-risk-report.json missing generated_at';
+  if (!doc.summary || typeof doc.summary !== 'object') return 'impact-risk-report.json missing summary';
+  if (!VALID_LEVELS.has(doc.summary.risk_level)) return 'impact-risk-report.json summary.risk_level must be low/medium/high';
+  if (!Array.isArray(doc.change_points)) return 'impact-risk-report.json change_points must be an array';
+  if (!Array.isArray(doc.risk_matrix)) return 'impact-risk-report.json risk_matrix must be an array';
+  if (!Array.isArray(doc.reuse_nodes)) return 'impact-risk-report.json reuse_nodes must be an array';
+  if (!doc.flow_graph || typeof doc.flow_graph !== 'object') return 'impact-risk-report.json missing flow_graph';
+
+  const cpIds = new Set();
+  for (const [index, cp] of doc.change_points.entries()) {
+    const label = cp?.id || `change_points[${index}]`;
+    if (!cp?.id || !/^CP-\d+$/.test(cp.id)) return `${label} id must match CP-N format`;
+    if (cpIds.has(cp.id)) return `${cp.id} is duplicated in change_points`;
+    cpIds.add(cp.id);
+    if (!VALID_CP_DECISIONS.has(cp.decision)) return `${label} decision must be 改造/新增/删除`;
+    if (!VALID_LEVELS.has(cp.risk_level)) return `${label} risk_level must be low/medium/high`;
+  }
+
+  for (const [index, risk] of doc.risk_matrix.entries()) {
+    const label = risk?.id || `risk_matrix[${index}]`;
+    if (!risk?.id) return `${label} missing id`;
+    if (!VALID_RISK_CATEGORIES.has(risk.category)) return `${label} category must be one of: 并发安全/数据一致性/接口兼容/回滚困难/性能退化/其他`;
+    if (!VALID_LEVELS.has(risk.severity)) return `${label} severity must be low/medium/high`;
+    if (!VALID_LEVELS.has(risk.likelihood)) return `${label} likelihood must be low/medium/high`;
+    const unknownCps = (risk.affected_cps || []).filter(ref => !cpIds.has(ref));
+    if (unknownCps.length > 0) return `${label} references unknown change_points: ${unknownCps.join(', ')}`;
+  }
+
+  const fg = doc.flow_graph;
+  if (!Array.isArray(fg.nodes)) return 'impact-risk-report.json flow_graph.nodes must be an array';
+  if (!Array.isArray(fg.edges)) return 'impact-risk-report.json flow_graph.edges must be an array';
+  const nodeIds = new Set();
+  for (const [index, node] of fg.nodes.entries()) {
+    const label = `flow_graph.nodes[${index}]`;
+    if (!node?.id) return `${label} missing id`;
+    if (nodeIds.has(node.id)) return `${label} id '${node.id}' is duplicated`;
+    nodeIds.add(node.id);
+    if (!VALID_FLOW_DECISIONS.has(node.decision)) return `${label} decision must be 保留/改造/新增/删除`;
+    if (node.decision !== '保留') {
+      if (!node.cp_ref || !cpIds.has(node.cp_ref)) return `${label} non-reserved node must have valid cp_ref referencing a change_point`;
+    }
+  }
+  for (const [index, edge] of fg.edges.entries()) {
+    const label = `flow_graph.edges[${index}]`;
+    if (!edge?.from || !nodeIds.has(edge.from)) return `${label} from references unknown node: ${edge.from}`;
+    if (!edge?.to || !nodeIds.has(edge.to)) return `${label} to references unknown node: ${edge.to}`;
+  }
+
+  return '';
+}
+
 function validateAsIsConfirmation(ideaDir) {
   const file = join(ideaDir, 'confirmations/as-is.json');
   if (!existsSync(file)) return 'confirmations/as-is.json missing';
@@ -769,7 +832,7 @@ function validateToBeConfirmation(ideaDir) {
   if (!doc.confirmed_at || typeof doc.confirmed_at !== 'string') return 'confirmations/to-be.json missing confirmed_at';
   if (!doc.confirmed_by || typeof doc.confirmed_by !== 'string') return 'confirmations/to-be.json missing confirmed_by';
   if (!Array.isArray(doc.source_files)) return 'confirmations/to-be.json source_files must be an array';
-  for (const source of ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json']) {
+  for (const source of ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json']) {
     if (!doc.source_files.includes(source)) return `confirmations/to-be.json source_files missing ${source}`;
   }
   const parsedTasks = readJsonFile(join(ideaDir, 'to-be/tasks.json'));
@@ -936,10 +999,11 @@ export function checkGate(ideaDir, gateId) {
       }
       const tasksReason = validateTasksJsonAgainstTraceability(ideaDir);
       if (tasksReason) return result(gateId, false, tasksReason);
-      // Non-trivial requires impact-risk-report.json
       const toBeComplexity = detectComplexity(ideaDir);
-      if (toBeComplexity !== 'trivial' && !has(ideaDir, 'to-be/impact-risk-report.json'))
-        return result(gateId, false, 'to-be/impact-risk-report.json missing (required for standard/complex)');
+      if (toBeComplexity !== 'trivial') {
+        const irReason = validateImpactRiskReport(ideaDir);
+        if (irReason) return result(gateId, false, irReason);
+      }
       return result(gateId, true);
     }
     case 'to-be-confirmed': {

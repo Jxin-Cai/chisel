@@ -4,28 +4,22 @@ import { execSync } from 'node:child_process';
 import { join, basename, resolve } from 'node:path';
 import { atomicWriteFile, readTaskState, taskStateFile, readFrontmatter } from './workflow-lib.mjs';
 
-const IDEA_DIR = process.argv[2];
-if (!IDEA_DIR || !existsSync(IDEA_DIR)) {
-  process.stderr.write('用法: node dashboard.mjs <idea-dir>\n');
-  process.exit(1);
-}
-
 // --- Data collection ---
 
-function readJson(rel) {
-  const p = join(IDEA_DIR, rel);
+function readJson(ideaDir, rel) {
+  const p = join(ideaDir, rel);
   if (!existsSync(p)) return null;
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 }
 
-function readMd(rel) {
-  const p = join(IDEA_DIR, rel);
+function readMd(ideaDir, rel) {
+  const p = join(ideaDir, rel);
   if (!existsSync(p)) return null;
   return readFileSync(p, 'utf8');
 }
 
-function readWorkflowState() {
-  const p = join(IDEA_DIR, 'workflow-state.yaml');
+function readWorkflowState(ideaDir) {
+  const p = join(ideaDir, 'workflow-state.yaml');
   if (!existsSync(p)) return null;
   const text = readFileSync(p, 'utf8');
   const result = {};
@@ -67,21 +61,42 @@ function readWorkflowState() {
   return result;
 }
 
-function collectCrResults() {
-  const crDir = join(IDEA_DIR, 'cr');
+function parseTableSection(text, heading) {
+  const pattern = new RegExp(`^##\\s+${heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^\\n]*\\n`, 'm');
+  const match = text.match(pattern);
+  if (!match) return [];
+  const start = match.index + match[0].length;
+  const rest = text.slice(start);
+  const endMatch = rest.match(/^##\s/m);
+  const section = endMatch ? rest.slice(0, endMatch.index) : rest;
+  const lines = section.split('\n').filter(l => /^\|/.test(l) && /\|$/.test(l.trim()));
+  if (lines.length < 2) return [];
+  const headers = lines[0].split('|').slice(1, -1).map(c => c.trim().toLowerCase());
+  return lines.slice(2).map(line => {
+    const cells = line.split('|').slice(1, -1).map(c => c.trim());
+    const row = {};
+    headers.forEach((h, i) => { row[h] = cells[i] || ''; });
+    return row;
+  });
+}
+
+function collectCrResults(ideaDir) {
+  const crDir = join(ideaDir, 'cr');
   if (!existsSync(crDir)) return [];
   const files = readdirSync(crDir).filter(f => /^dim-.*-cr\.md$/.test(f));
   return files.map(f => {
     const text = readFileSync(join(crDir, f), 'utf8');
     const fm = readFrontmatter(text);
-    return { file: f, dimension: fm.dimension || f.replace('dim-', '').replace('-cr.md', ''), result: fm.result || 'unknown', ...fm };
+    const reworkItems = parseTableSection(text, 'Rework Items');
+    const observations = parseTableSection(text, 'Observations (non-blocking)');
+    return { file: f, dimension: fm.dimension || f.replace('dim-', '').replace('-cr.md', ''), result: fm.result || 'unknown', reworkItems, observations, ...fm };
   });
 }
 
-function collectTraceability() {
-  const matrix = readJson('to-be/traceability-matrix.json');
+function collectTraceability(ideaDir) {
+  const matrix = readJson(ideaDir, 'to-be/traceability-matrix.json');
   if (!matrix) return null;
-  const state = readTaskState(taskStateFile(IDEA_DIR));
+  const state = readTaskState(taskStateFile(ideaDir));
   const items = (matrix.items || matrix || []).map(item => {
     const tasks = item.covered_by_tasks || [];
     const statuses = tasks.map(t => state.tasks[t]?.status || 'unknown');
@@ -169,29 +184,40 @@ function escHtml(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// --- Collect all data ---
+// --- Utility functions (exported for testing) ---
 
-const workflowState = readWorkflowState();
-const taskState = readTaskState(taskStateFile(IDEA_DIR));
-const crResults = collectCrResults();
-const traceability = collectTraceability();
-const impactRisk = readJson('to-be/impact-risk-report.json');
-const requirement = readMd('requirement.md');
-const overview = readMd('as-is/overview.md');
-const coreWalkthrough = readMd('as-is/core-walkthrough.md');
-const evidenceLedger = readJson('as-is/evidence-ledger.json');
-const qualityScore = readJson('as-is/quality-score.json');
-const coverageMatrix = readJson('as-is/coverage-matrix.json');
-const ideaName = basename(IDEA_DIR);
-
-// Detect complexity
-function detectComplexity() {
-  if (!requirement) return 'standard';
-  const m = requirement.match(/^##\s*复杂度[：:]\s*(trivial|standard|complex)\s*$/m);
+function detectComplexity(ideaDir) {
+  const req = readMd(ideaDir, 'requirement.md');
+  if (!req) return 'standard';
+  const m = req.match(/^##\s*复杂度[：:]\s*(trivial|standard|complex)\s*$/m);
   if (m) return m[1];
   return 'standard';
 }
-const complexity = detectComplexity();
+
+// --- Main execution ---
+
+function main() {
+const IDEA_DIR = process.argv[2];
+if (!IDEA_DIR || !existsSync(IDEA_DIR)) {
+  console.error('Usage: dashboard.mjs <idea-dir> [--no-open]');
+  process.exit(1);
+}
+
+const workflowState = readWorkflowState(IDEA_DIR);
+const taskState = readTaskState(taskStateFile(IDEA_DIR));
+const crResults = collectCrResults(IDEA_DIR);
+const traceability = collectTraceability(IDEA_DIR);
+const impactRisk = readJson(IDEA_DIR, 'to-be/impact-risk-report.json');
+const requirement = readMd(IDEA_DIR, 'requirement.md');
+const overview = readMd(IDEA_DIR, 'as-is/overview.md');
+const coreWalkthrough = readMd(IDEA_DIR, 'as-is/core-walkthrough.md');
+const evidenceLedger = readJson(IDEA_DIR, 'as-is/evidence-ledger.json');
+const qualityScore = readJson(IDEA_DIR, 'as-is/quality-score.json');
+const coverageMatrix = readJson(IDEA_DIR, 'as-is/coverage-matrix.json');
+const implementationPlan = readMd(IDEA_DIR, 'to-be/implementation-plan.md');
+const tasksJson = readJson(IDEA_DIR, 'to-be/tasks.json');
+const ideaName = basename(IDEA_DIR);
+const complexity = detectComplexity(IDEA_DIR);
 
 // --- Generate HTML ---
 
@@ -363,13 +389,123 @@ canvas{max-height:260px}
 <div class="card">
   <h2>CR 维度结果</h2>
   ${crResults.length > 0 ? `
-  <canvas id="crRadar"></canvas>
-  <table style="margin-top:12px">
-    <tr><th>维度</th><th>结果</th></tr>
-    ${crResults.map(r => `<tr><td>${escHtml(r.dimension)}</td><td><span class="status s-${r.result}">${escHtml(r.result)}</span></td></tr>`).join('')}
-  </table>` : '<p style="color:var(--text2)">暂无 CR 结果</p>'}
+  <canvas id="crRadar" style="max-height:240px"></canvas>
+  ${(() => {
+    const totalFindings = crResults.reduce((s, r) => s + (r.reworkItems?.length || 0), 0);
+    const totalObs = crResults.reduce((s, r) => s + (r.observations?.length || 0), 0);
+    const highSev = crResults.reduce((s, r) => s + (r.reworkItems || []).filter(i => (i['严重度'] || i.severity || '').toLowerCase().includes('high')).length, 0);
+    const allConf = crResults.flatMap(r => (r.reworkItems || []).map(i => parseInt(i['置信度'] || i.confidence || '0', 10)).filter(n => n > 0));
+    const avgConf = allConf.length > 0 ? Math.round(allConf.reduce((a, b) => a + b, 0) / allConf.length) : 0;
+    return `<div style="display:flex;gap:12px;flex-wrap:wrap;margin:12px 0">
+      <div style="background:var(--surface2);padding:8px 16px;border-radius:8px;text-align:center;flex:1;min-width:80px">
+        <div style="font-size:1.3rem;font-weight:700;color:${totalFindings > 0 ? 'var(--danger)' : 'var(--success)'}">${totalFindings}</div>
+        <div style="font-size:0.68rem;color:var(--text2)">Rework Items</div>
+      </div>
+      <div style="background:var(--surface2);padding:8px 16px;border-radius:8px;text-align:center;flex:1;min-width:80px">
+        <div style="font-size:1.3rem;font-weight:700;color:${highSev > 0 ? 'var(--danger)' : 'var(--text)'}">${highSev}</div>
+        <div style="font-size:0.68rem;color:var(--text2)">High 严重度</div>
+      </div>
+      <div style="background:var(--surface2);padding:8px 16px;border-radius:8px;text-align:center;flex:1;min-width:80px">
+        <div style="font-size:1.3rem;font-weight:700">${avgConf || '—'}</div>
+        <div style="font-size:0.68rem;color:var(--text2)">平均置信度</div>
+      </div>
+      <div style="background:var(--surface2);padding:8px 16px;border-radius:8px;text-align:center;flex:1;min-width:80px">
+        <div style="font-size:1.3rem;font-weight:700;color:var(--text2)">${totalObs}</div>
+        <div style="font-size:0.68rem;color:var(--text2)">Observations</div>
+      </div>
+    </div>`;
+  })()}
+  <div class="tabs" data-group="cr-detail">
+    <button class="tab active" onclick="switchTab(this,'cr-detail','cr-summary')">总览</button>
+    <button class="tab" onclick="switchTab(this,'cr-detail','cr-rework')">Rework Items</button>
+    <button class="tab" onclick="switchTab(this,'cr-detail','cr-obs')">Observations</button>
+  </div>
+  <div class="tab-content active" id="cr-summary">
+    <table>
+      <tr><th>维度</th><th>结果</th><th>Rework</th><th>Obs</th></tr>
+      ${crResults.map(r => `<tr><td>${escHtml(r.dimension)}</td><td><span class="status s-${r.result}">${escHtml(r.result)}</span></td><td>${r.reworkItems?.length || 0}</td><td>${r.observations?.length || 0}</td></tr>`).join('')}
+    </table>
+  </div>
+  <div class="tab-content" id="cr-rework">
+    ${(() => {
+      const allRework = crResults.flatMap(r => (r.reworkItems || []).map(i => ({ ...i, dim: r.dimension })));
+      if (allRework.length === 0) return '<p style="color:var(--text2)">无 Rework Items</p>';
+      return `<table><tr><th>ID</th><th>维度</th><th>问题</th><th>严重度</th><th>置信度</th><th>Task</th></tr>
+        ${allRework.map(i => `<tr><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.id || i.ID || '')}</td><td>${escHtml(i.dim)}</td><td style="font-size:0.8rem;max-width:300px">${escHtml((i['问题描述'] || i.description || '').slice(0, 100))}</td><td><span class="status s-${(i['严重度'] || i.severity || '') === 'high' ? 'fail' : 'coding'}">${escHtml(i['严重度'] || i.severity || '')}</span></td><td>${escHtml(i['置信度'] || i.confidence || '')}</td><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.affected_task_id || i['affected_task_id'] || '')}</td></tr>`).join('')}
+      </table>`;
+    })()}
+  </div>
+  <div class="tab-content" id="cr-obs">
+    ${(() => {
+      const allObs = crResults.flatMap(r => (r.observations || []).map(i => ({ ...i, dim: r.dimension })));
+      if (allObs.length === 0) return '<p style="color:var(--text2)">无 Observations</p>';
+      return `<table><tr><th>ID</th><th>维度</th><th>描述</th><th>置信度</th><th>Task</th></tr>
+        ${allObs.map(i => `<tr><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.id || i.ID || '')}</td><td>${escHtml(i.dim)}</td><td style="font-size:0.8rem;max-width:400px">${escHtml((i['描述'] || i.description || '').slice(0, 120))}</td><td>${escHtml(i['置信度'] || i.confidence || '')}</td><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.affected_task_id || i['affected_task_id'] || '')}</td></tr>`).join('')}
+      </table>`;
+    })()}
+  </div>` : '<p style="color:var(--text2)">暂无 CR 结果</p>'}
 </div>
 </div>
+
+<!-- To-Be 方案视图 -->
+${(implementationPlan || tasksJson) ? `
+<div class="card" style="margin-bottom:16px">
+  <h2>To-Be 方案</h2>
+  <div class="tabs" data-group="tobe">
+    <button class="tab active" onclick="switchTab(this,'tobe','tobe-overview')">方案概览</button>
+    ${implementationPlan && implementationPlan.includes('## 改造点') ? `<button class="tab" onclick="switchTab(this,'tobe','tobe-cp')">改造点映射</button>` : ''}
+    ${tasksJson ? `<button class="tab" onclick="switchTab(this,'tobe','tobe-tasks')">Task 拆分</button>` : ''}
+    ${(traceability && tasksJson) ? `<button class="tab" onclick="switchTab(this,'tobe','tobe-matrix')">覆盖矩阵</button>` : ''}
+  </div>
+  <div class="tab-content active" id="tobe-overview">
+    ${(() => {
+      if (!implementationPlan) return '<p style="color:var(--text2)">无 implementation-plan.md</p>';
+      const sections = ['目标行为', '非目标行为', '方案总览', '回滚方案'];
+      let html = '';
+      for (const sec of sections) {
+        const re = new RegExp('##\\\\s+' + sec + '[^\\n]*\\n([\\\\s\\\\S]*?)(?=\\n##\\\\s|$)');
+        const m = implementationPlan.match(new RegExp('##\\s+' + sec + '[^\\n]*\\n([\\s\\S]*?)(?=\\n## |$)'));
+        if (m) html += '<h3>' + sec + '</h3>' + mdToHtml(m[1].trim());
+      }
+      return html || mdToHtml(implementationPlan.slice(0, 2000));
+    })()}
+  </div>
+  ${implementationPlan && implementationPlan.includes('## 改造点') ? `<div class="tab-content" id="tobe-cp">
+    ${(() => {
+      const m = implementationPlan.match(/## 改造点[^\n]*\n([\s\S]*?)(?=\n## |$)/);
+      return m ? mdToHtml(m[1].trim()) : '<p style="color:var(--text2)">无改造点章节</p>';
+    })()}
+  </div>` : ''}
+  ${tasksJson ? `<div class="tab-content" id="tobe-tasks">
+    <table>
+      <tr><th>ID</th><th>标题</th><th>CP Refs</th><th>风险</th><th>AC 数</th></tr>
+      ${(tasksJson.tasks || tasksJson || []).map(t => `<tr>
+        <td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(t.id || '')}</td>
+        <td style="font-size:0.8rem">${escHtml(String(t.title || '').slice(0, 60))}</td>
+        <td style="font-size:0.75rem">${escHtml((t.change_point_refs || t.cp_refs || []).join(', '))}</td>
+        <td><span class="status s-${(t.risk || '') === 'high' ? 'fail' : (t.risk || '') === 'medium' ? 'coding' : 'approved'}">${escHtml(t.risk || 'low')}</span></td>
+        <td>${(t.acceptance_criteria || t.ac || []).length}</td>
+      </tr>`).join('')}
+    </table>
+  </div>` : ''}
+  ${(traceability && tasksJson) ? `<div class="tab-content" id="tobe-matrix">
+    <table>
+      <tr><th>需求 AC</th><th>覆盖 Task</th><th>关联 CP</th></tr>
+      ${(traceability.items || []).map(item => {
+        const tasks = item.covered_by_tasks || [];
+        const cps = tasks.flatMap(tid => {
+          const t = (tasksJson.tasks || tasksJson || []).find(x => x.id === tid);
+          return t ? (t.change_point_refs || t.cp_refs || []) : [];
+        });
+        return `<tr>
+          <td style="font-size:0.8rem">${escHtml(String(item.description || item.requirement || item.id || '').slice(0, 60))}</td>
+          <td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(tasks.join(', '))}</td>
+          <td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml([...new Set(cps)].join(', '))}</td>
+        </tr>`;
+      }).join('')}
+    </table>
+  </div>` : ''}
+</div>` : ''}
 
 <!-- Traceability -->
 ${traceability ? `
@@ -577,7 +713,7 @@ window.addEventListener('beforeunload',()=>{
 ${crResults.length > 0 ? `
 (function(){
   const dims=${JSON.stringify(crResults.map(r => r.dimension))};
-  const scores=${JSON.stringify(crResults.map(r => r.result === 'pass' ? 1 : 0))};
+  const scores=${JSON.stringify(crResults.map(r => { const n = (r.reworkItems?.length || 0); return n === 0 ? 1.0 : n === 1 ? 0.7 : n === 2 ? 0.4 : 0.1; }))};
   const ctx=document.getElementById('crRadar');
   if(ctx){new Chart(ctx,{type:'radar',data:{labels:dims,datasets:[{label:'CR',data:scores,backgroundColor:'rgba(59,130,246,0.15)',borderColor:'#3b82f6',pointBackgroundColor:'#3b82f6',borderWidth:1.5}]},options:{scales:{r:{min:0,max:1,ticks:{stepSize:1,display:false},grid:{color:'rgba(255,255,255,0.06)'},pointLabels:{color:'#e8ecf1',font:{size:11,family:'Inter'}}}},plugins:{legend:{display:false}}}});}
 })();` : ''}
@@ -677,3 +813,10 @@ if (!noOpen) {
 }
 
 console.log(JSON.stringify({ generated: true, path: absPath }));
+} // end main
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main();
+}
+
+export { collectCrResults, collectTraceability, detectComplexity, parseTableSection };
