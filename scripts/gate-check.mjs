@@ -835,6 +835,9 @@ function validateToBeConfirmation(ideaDir) {
   for (const source of ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json']) {
     if (!doc.source_files.includes(source)) return `confirmations/to-be.json source_files missing ${source}`;
   }
+  const planContent = readText(join(ideaDir, 'to-be/implementation-plan.md'));
+  if (!planContent.includes('## 变更完整性自检结果')) return 'to-be/implementation-plan.md missing "## 变更完整性自检结果" section (planner self-review required)';
+  if (!planContent.includes('### 伴生变更推断')) return 'to-be/implementation-plan.md missing "### 伴生变更推断" section';
   const parsedTasks = readJsonFile(join(ideaDir, 'to-be/tasks.json'));
   if (parsedTasks.error) return `to-be/tasks.json invalid JSON: ${parsedTasks.error}`;
   let tasks;

@@ -145,3 +145,26 @@
 同时写入 `to-be/impact-risk-report.json`（详见独立 schema 定义）。
 
 > **flow_graph 必填说明**：impact-risk-report.json 的 `flow_graph` 字段描述功能全链路，nodes 包含链路上所有节点（保留/改造/新增/删除），edges 按调用/数据流方向连接。dashboard 据此自动渲染带颜色标记的全链路改造视图：灰色=保留、蓝色=改造、绿色=新增、红色=删除。
+
+## 变更完整性自检结果
+
+> Planner 必须填写此章节，证明已执行伴生变更推断。
+
+### 伴生变更推断
+
+| CP | 触发的规则 | 伴生产物 | 已安排在 | 备注 |
+|----|-----------|---------|---------|------|
+| CP-1 | DB model 字段变更 | migration | task-002 | ALTER TABLE users ADD ... |
+| CP-2 | 新增 API | 路由+DTO+文档 | task-003 | — |
+
+无触发规则的 CP 填「无适用规则」。
+
+### Spec 覆盖率
+
+- 总 AC 数：X
+- 已覆盖：X
+- 未覆盖：无（或列出遗漏并说明原因）
+
+### CP-Task 一致性
+
+- 所有 CP 均有 task 覆盖：✅ / ❌（列出孤立 CP）

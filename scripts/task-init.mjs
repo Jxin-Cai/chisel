@@ -57,11 +57,13 @@ function validateTask(task, index) {
   requireArray(task.allowed_symbols || [], 'allowed_symbols', taskId);
   requireArray(task.forbidden_symbols || [], 'forbidden_symbols', taskId);
   requireArray(task.behavior_invariants, 'behavior_invariants', taskId);
+  requireArray(task.change_point_refs, 'change_point_refs', taskId);
   if (!task.impact_surface || typeof task.impact_surface !== 'object' || Array.isArray(task.impact_surface)) throw new Error(`${taskId} missing impact_surface`);
   for (const key of ['files', 'symbols', 'invariants', 'shared_state']) requireArray(task.impact_surface[key] || [], `impact_surface.${key}`, taskId);
   if (task.acceptance_criteria.length === 0) throw new Error(`${taskId} acceptance_criteria must not be empty`);
   if (task.trace_refs.length === 0) throw new Error(`${taskId} trace_refs must not be empty`);
   if (task.behavior_invariants.length === 0) throw new Error(`${taskId} behavior_invariants must not be empty`);
+  if (task.change_point_refs.length === 0) throw new Error(`${taskId} change_point_refs must not be empty`);
   if (!task.context_to_load || typeof task.context_to_load !== 'object') throw new Error(`${taskId} missing context_to_load`);
   for (const key of ['as_is', 'to_be', 'wiki', 'module_map', 'adr']) requireArray(task.context_to_load[key] || [], `context_to_load.${key}`, taskId);
   if (!VALID_RISK_LEVELS.has(task.risk_level)) throw new Error(`${taskId} risk_level must be low, medium, or high`);

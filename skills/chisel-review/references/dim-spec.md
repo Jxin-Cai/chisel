@@ -45,6 +45,26 @@
 - 如果 traceability-matrix.json 不存在，此项跳过（不报 fail）
 - 结果记录在 CR 报告的 "## Traceability Coverage" 章节
 
+### 7. 伴生产物完整性（Companion Artifact Check）
+
+从代码 diff 推断必须存在的伴生变更，验证它们是否被实现：
+
+**推断规则**（检测到 diff 中的模式 → 验证伴生产物存在）：
+
+| diff 中的变更模式 | 必须存在的伴生产物 | 验证方式 |
+|-----------------|-------------------|---------|
+| model/entity 新增字段（ORM annotation / schema 定义） | DB migration 文件（DDL） | 检查 migration 目录下有对应变更文件 |
+| 新增 controller/handler method | 路由注册 + DTO 定义 | 检查路由配置 + 类型定义文件 |
+| 代码引用新的 config key / env var | 配置模板中有该 key | grep `.env.example` / `application.yml` 等 |
+| 修改了序列化字段名或结构 | 版本兼容处理或 schema 文件更新 | 检查 schema 文件或兼容代码 |
+| 新增 DB 表 / 外键 | 完整 DDL + 索引 + 关联查询适配 | 检查 migration 文件内容 |
+| 删除/重命名公共 API | 所有内部 caller 已适配（与 D8 互补） | grep 旧符号名确认无残留引用 |
+
+**执行方式**：
+1. 扫描 diff 中每个变更文件，判断是否触发上述规则
+2. 对触发的规则，验证伴生产物是否存在于本次变更（changed_files）或已有代码中
+3. 缺失伴生产物 → 标 FAIL（confidence 90+，严重度 high）
+
 ## CR 产物格式
 
 ### Frontmatter
@@ -126,6 +146,16 @@ pass | fail
 - category/min-score：
 - load_plan：
 - None matched：
+
+## 伴生产物完整性
+
+| 触发模式 | 检测到的变更 | 必须的伴生产物 | 实际存在 | 结果 |
+|---------|------------|--------------|---------|------|
+| <规则名> | <文件:变更内容> | <应有的产物> | ✅ / ❌ <路径或说明> | pass / fail |
+
+- 未触发任何规则：「无适用规则，跳过」
+- 触发但全部通过：pass
+- 任一缺失：fail
 
 ## 不合规项汇总
 

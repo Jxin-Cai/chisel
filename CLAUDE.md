@@ -25,9 +25,9 @@ This repository contains the `chisel` Claude Code plugin.
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check/wiki 数据写入 `cr-context.json`，D2-D8 agent 共用。
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
 - `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
-- `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案。
+- `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案，完成后执行变更完整性自检（伴生变更推断/Spec覆盖率/CP-Task一致性/依赖完备性）。
 - `agent-chisel-coder` 只按已确认 task 实现，完成后执行 diff 自检（bug/AC/scope 三项检查）。
-- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d8）执行单维度深度审查。每个发现项附带 0-100 置信度评分，≥80 进 Rework Items 触发返修，60-79 进 Observations 供参考。D2/D7/D8 按变更特征条件激活，D3-D6 始终激活。fail 项经 sonnet 验证子阶段确认后聚合。
+- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d8）执行单维度深度审查。dim-spec 包含伴生产物完整性检查（加字段→DDL、加接口→路由+DTO 等推断规则）。每个发现项附带 0-100 置信度评分，≥80 进 Rework Items 触发返修，60-79 进 Observations 供参考。D2/D7/D8 按变更特征条件激活，D3-D6 始终激活。fail 项经 sonnet 验证子阶段确认后聚合。
 
 ## As-Is 分层结构
 
