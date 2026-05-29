@@ -253,6 +253,34 @@ function check(ideaDir, taskId, projectRoot = '.') {
     }
   }
 
+  const EXPORT_PATTERNS = [
+    /^\+\s*export\s+(?:default\s+)?(?:function|class|const|let|var|type|interface|enum)\s+(\w+)/,
+    /^\+\s*export\s*\{\s*([^}]+)\}/,
+    /^\+\s*module\.exports\s*[.=]/,
+    /^\+\s*(?:public|protected)\s+(?:static\s+)?(?:async\s+)?(\w+)\s*\(/,
+  ];
+  const taskState = readTaskState(taskStateFile(ideaDir));
+  const currentTask = taskState.tasks[taskId];
+  const taskExports = currentTask?.exports || [];
+  if (taskExports.length > 0) {
+    for (const file of changedFiles) {
+      const diff = changedText(projectRoot, file);
+      for (const line of diff.split('\n')) {
+        for (const pattern of EXPORT_PATTERNS) {
+          const m = line.match(pattern);
+          if (m) {
+            const symbols = m[1] ? m[1].split(',').map(s => s.trim().split(/\s+/)[0]) : ['module.exports'];
+            for (const sym of symbols) {
+              if (sym && !taskExports.includes(sym)) {
+                scopeWarnings.push({ file, type: 'undeclared_new_export', reason: `new export '${sym}' not in task.exports`, symbol: sym });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   return {
     schema_version: 3,
     task_id: taskId,

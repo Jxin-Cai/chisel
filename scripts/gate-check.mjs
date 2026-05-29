@@ -610,7 +610,7 @@ function validateRepoMap(ideaDir) {
   const parsed = readJsonFile(file);
   if (parsed.error) return `as-is/repo-map.json invalid JSON: ${parsed.error}`;
   const doc = parsed.value;
-  if (doc?.schema_version !== 1 && doc?.schema_version !== 2) return 'repo-map.json schema_version must be 1 or 2';
+  if (doc?.schema_version !== 1 && doc?.schema_version !== 2 && doc?.schema_version !== 3) return 'repo-map.json schema_version must be 1, 2, or 3';
   if (!doc.generated_at || typeof doc.generated_at !== 'string') return 'repo-map.json missing generated_at';
   if (!Array.isArray(doc.languages) || doc.languages.length === 0) return 'repo-map.json languages must be non-empty array';
   for (const [index, lang] of doc.languages.entries()) {
@@ -627,6 +627,11 @@ function validateRepoMap(ideaDir) {
       if (!entry.type || typeof entry.type !== 'string') return `repo-map.json entry_candidates[${index}] missing type`;
     }
     if (!Array.isArray(doc.core_modules)) return 'repo-map.json core_modules must be an array';
+  }
+  if (doc.schema_version === 3 && Array.isArray(doc.entry_candidates)) {
+    for (const [index, entry] of doc.entry_candidates.entries()) {
+      if (!entry?.file || typeof entry.file !== 'string') return `repo-map.json entry_candidates[${index}] missing file`;
+    }
   }
   if (!Array.isArray(doc.directory_summary)) return 'repo-map.json directory_summary must be an array';
   return '';
@@ -659,7 +664,7 @@ function validateQualityScore(ideaDir) {
   const parsed = readJsonFile(file);
   if (parsed.error) return `as-is/quality-score.json invalid JSON: ${parsed.error}`;
   const doc = parsed.value;
-  if (doc?.schema_version !== 1) return 'quality-score.json schema_version must be 1';
+  if (doc?.schema_version !== 1 && doc?.schema_version !== 2) return 'quality-score.json schema_version must be 1 or 2';
   if (typeof doc.overall !== 'number' || doc.overall < 0 || doc.overall > 1) return 'quality-score.json overall must be 0-1';
   if (!doc.dimensions || typeof doc.dimensions !== 'object') return 'quality-score.json missing dimensions';
   for (const dim of QUALITY_SCORE_DIMENSIONS) {
@@ -668,7 +673,9 @@ function validateQualityScore(ideaDir) {
     if (d.score < 0 || d.score > 1) return `quality-score.json dimensions.${dim}.score must be 0-1`;
   }
   if (doc.overall < 0.6) return `quality-score.json overall ${doc.overall} is below minimum threshold 0.6`;
+  const complexity = detectComplexity(ideaDir);
   for (const dim of QUALITY_SCORE_DIMENSIONS) {
+    if (dim === 'risk_awareness' && complexity === 'standard') continue;
     if (doc.dimensions[dim].score < 0.3) return `quality-score.json ${dim} score ${doc.dimensions[dim].score} is below minimum threshold 0.3`;
   }
   return '';

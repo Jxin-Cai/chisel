@@ -174,7 +174,7 @@ function countLines(projectRoot, files) {
   }
 }
 
-export function generateRepoMap(projectRoot) {
+export function generateRepoMap(projectRoot, options = {}) {
   const allFiles = listFiles(projectRoot);
   const nonBinaryFiles = allFiles.filter(f => !isBinaryFile(f));
 
@@ -185,9 +185,10 @@ export function generateRepoMap(projectRoot) {
   }
   const sourceFiles = classified.source;
   const totalLines = countLines(projectRoot, sourceFiles);
+  const entryCandidates = findEntryCandidates(projectRoot, sourceFiles, options.requirement);
 
   return {
-    schema_version: 2,
+    schema_version: 3,
     generated_at: new Date().toISOString(),
     project_root: projectRoot,
     stats: {
@@ -201,17 +202,70 @@ export function generateRepoMap(projectRoot) {
     },
     languages: detectLanguages(nonBinaryFiles),
     directory_summary: buildDirectorySummary(nonBinaryFiles),
+    entry_candidates: entryCandidates,
   };
 }
 
+const STOP_WORDS = new Set([
+  'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+  'should', 'may', 'might', 'shall', 'can', 'need', 'must',
+  'and', 'or', 'but', 'if', 'then', 'else', 'when', 'while',
+  'of', 'at', 'by', 'for', 'with', 'about', 'from', 'to', 'in', 'on',
+  'this', 'that', 'these', 'those', 'it', 'its',
+  'not', 'no', 'nor', 'so', 'as', 'up', 'out',
+  '需要', '实现', '功能', '支持', '添加', '修改', '新增', '删除', '使用', '通过',
+  '进行', '处理', '完成', '包括', '相关', '目前', '当前', '系统', '项目',
+]);
+
+function extractKeywords(text) {
+  const identifiers = text.match(/[A-Z][a-z]+(?:[A-Z][a-z]+)*/g) || [];
+  const camelParts = [];
+  for (const id of identifiers) {
+    const parts = id.replace(/([A-Z])/g, ' $1').trim().split(/\s+/).filter(p => p.length >= 3);
+    camelParts.push(...parts.map(p => p.toLowerCase()));
+  }
+  const words = text.match(/[a-zA-Z_][\w-]{2,}/g) || [];
+  const chinese = text.match(/[一-鿿]{2,}/g) || [];
+  const all = [...new Set([...camelParts, ...words.map(w => w.toLowerCase()), ...chinese])];
+  return all.filter(w => !STOP_WORDS.has(w) && w.length >= 3).slice(0, 30);
+}
+
+function findEntryCandidates(projectRoot, sourceFiles, requirementPath) {
+  if (!requirementPath || !existsSync(requirementPath)) return [];
+  const reqText = readFileSync(requirementPath, 'utf8');
+  const keywords = extractKeywords(reqText);
+  if (keywords.length === 0) return [];
+
+  const candidates = [];
+  for (const file of sourceFiles.slice(0, 3000)) {
+    const fileLower = file.toLowerCase();
+    const baseName = file.split(/[/\\]/).pop().replace(/\.\w+$/, '').toLowerCase();
+    const matched = keywords.filter(kw => fileLower.includes(kw.toLowerCase()));
+    const baseMatched = keywords.filter(kw => baseName.includes(kw.toLowerCase()));
+    if (matched.length > 0) {
+      const confidence = baseMatched.length >= 2 ? 'high' : baseMatched.length === 1 ? 'medium' : 'low';
+      candidates.push({ file, matched_keywords: [...new Set(matched)], confidence });
+    }
+  }
+  return candidates
+    .sort((a, b) => {
+      const confOrder = { high: 0, medium: 1, low: 2 };
+      if (confOrder[a.confidence] !== confOrder[b.confidence]) return confOrder[a.confidence] - confOrder[b.confidence];
+      return b.matched_keywords.length - a.matched_keywords.length;
+    })
+    .slice(0, 15);
+}
+
 function parseArgs(argv) {
-  const args = { projectRoot: null, output: null };
+  const args = { projectRoot: null, output: null, requirement: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--project-root' && argv[i + 1]) { args.projectRoot = argv[++i]; continue; }
     if (argv[i] === '--output' && argv[i + 1]) { args.output = argv[++i]; continue; }
+    if (argv[i] === '--requirement' && argv[i + 1]) { args.requirement = argv[++i]; continue; }
   }
   if (!args.projectRoot) {
-    process.stderr.write('用法: repo-map.mjs --project-root <path> [--output <file>]\n');
+    process.stderr.write('用法: repo-map.mjs --project-root <path> [--output <file>] [--requirement <file>]\n');
     process.exit(1);
   }
   return args;
@@ -219,11 +273,11 @@ function parseArgs(argv) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const args = parseArgs(process.argv.slice(2));
-  const result = generateRepoMap(args.projectRoot);
+  const result = generateRepoMap(args.projectRoot, { requirement: args.requirement });
   const json = JSON.stringify(result, null, 2);
   if (args.output) {
     writeFileSync(args.output, json + '\n');
-    process.stderr.write(`repo-map written to ${args.output} (${result.stats.total_files} files, ${result.stats.source_files} source)\n`);
+    process.stderr.write(`repo-map written to ${args.output} (${result.stats.total_files} files, ${result.stats.source_files} source, ${result.entry_candidates.length} entry candidates)\n`);
   } else {
     console.log(json);
   }

@@ -92,18 +92,36 @@ function main() {
     return { ac_id: acId, description: ac.description || '', mapped_trace_ids: mapped, status: mapped.length > 0 ? 'mapped' : 'unmapped' };
   });
 
+  let vcMissing = 0;
+  const vcCoverage = [];
+  for (const ac of acceptanceCriteria) {
+    const vcs = ac.verification_conditions;
+    if (!Array.isArray(vcs) || vcs.length === 0) continue;
+    for (const vc of vcs) {
+      const vcRef = `${ac.id}/${vc.id}`;
+      const coveringItem = items.find(it =>
+        (it.covered_by_tasks || []).length > 0 &&
+        (it.id === vcRef || (it.source_refs || []).includes(vcRef))
+      );
+      const coveringTask = coveringItem ? coveringItem.covered_by_tasks : [];
+      const status = coveringTask.length > 0 ? 'covered' : 'missing';
+      if (status === 'missing') vcMissing++;
+      vcCoverage.push({ vc_ref: vcRef, condition: vc.condition || '', covering_tasks: coveringTask, status });
+    }
+  }
+
   let pass;
   let reason;
   if (FINAL_MODE) {
-    pass = missing === 0 && pending === 0 && inProgress === 0;
-    reason = pass ? 'all requirements fully covered' : `${missing} missing, ${pending} pending, ${inProgress} in_progress`;
+    pass = missing === 0 && pending === 0 && inProgress === 0 && vcMissing === 0;
+    reason = pass ? 'all requirements fully covered' : `${missing} missing, ${pending} pending, ${inProgress} in_progress, ${vcMissing} vc_missing`;
   } else {
-    pass = missing === 0;
-    reason = pass ? 'no missing coverage' : `${missing} requirements have no covering task`;
+    pass = missing === 0 && vcMissing === 0;
+    reason = pass ? 'no missing coverage' : `${missing} requirements have no covering task, ${vcMissing} verification conditions uncovered`;
   }
 
   const output = {
-    schema_version: 1,
+    schema_version: 2,
     total_requirements: items.length,
     covered,
     in_progress: inProgress,
@@ -111,6 +129,8 @@ function main() {
     missing,
     items: results,
     acceptance_criteria_coverage: acCoverage,
+    verification_conditions_coverage: vcCoverage.length > 0 ? vcCoverage : undefined,
+    vc_missing: vcMissing,
     pass,
     reason
   };

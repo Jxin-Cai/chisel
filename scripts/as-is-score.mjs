@@ -246,6 +246,36 @@ function scoreRiskAwareness(ideaDir) {
   };
 }
 
+function scoreRelevance(ideaDir) {
+  const repoMap = readJson(join(ideaDir, 'as-is/repo-map.json'));
+  const entryCandidates = repoMap?.entry_candidates || [];
+  if (entryCandidates.length === 0) return { score: 1.0, detail: { reason: 'no entry_candidates, skipped' } };
+
+  const relevantDirs = new Set();
+  for (const c of entryCandidates) {
+    const parts = c.file.split('/');
+    if (parts.length > 1) relevantDirs.add(parts[0] + '/');
+    if (parts.length > 2) relevantDirs.add(parts.slice(0, 2).join('/') + '/');
+  }
+
+  const ledger = readJson(join(ideaDir, 'as-is/evidence-ledger.json'));
+  const facts = ledger?.facts || [];
+  if (facts.length === 0) return { score: 1.0, detail: { reason: 'no facts yet' } };
+
+  let relevantFacts = 0;
+  for (const fact of facts) {
+    const evidenceFiles = (fact.evidence || []).map(e => e.file).filter(Boolean);
+    const isRelevant = evidenceFiles.some(f => [...relevantDirs].some(d => f.startsWith(d)));
+    if (isRelevant) relevantFacts++;
+  }
+
+  const ratio = relevantFacts / facts.length;
+  return {
+    score: round(ratio),
+    detail: { relevant_dirs: [...relevantDirs], relevant_facts: relevantFacts, total_facts: facts.length },
+  };
+}
+
 // --- Weakness generation ---
 
 function generateWeaknesses(dimensions) {
@@ -300,7 +330,7 @@ function bar(score) {
   return '█'.repeat(filled) + '░'.repeat(10 - filled);
 }
 
-export function computeScore(ideaDir) {
+export function computeScore(ideaDir, options = {}) {
   const dimensions = {
     coverage: scoreCoverage(ideaDir),
     evidence_density: scoreEvidenceDensity(ideaDir),
@@ -310,19 +340,32 @@ export function computeScore(ideaDir) {
     risk_awareness: scoreRiskAwareness(ideaDir),
   };
 
-  let overall = 0;
+  const relevance = scoreRelevance(ideaDir);
+
+  let rawOverall = 0;
   for (const [dim, weight] of Object.entries(DIMENSION_WEIGHTS)) {
-    overall += dimensions[dim].score * weight;
+    rawOverall += dimensions[dim].score * weight;
   }
 
+  const overall = round(rawOverall * (0.7 + 0.3 * relevance.score));
   const weaknesses = generateWeaknesses(dimensions);
 
+  const minDimScore = options.complexity === 'standard' ? 0 : MIN_DIMENSION_SCORE;
+  const dimensionFailures = Object.entries(dimensions)
+    .filter(([dim, data]) => {
+      if (dim === 'risk_awareness' && options.complexity === 'standard') return false;
+      return data.score < MIN_DIMENSION_SCORE;
+    });
+
   return {
-    schema_version: 1,
+    schema_version: 2,
     generated_at: new Date().toISOString(),
     overall: round(overall),
+    raw_overall: round(rawOverall),
+    relevance,
     dimensions,
     weaknesses,
+    dimension_failures: dimensionFailures.map(([dim]) => dim),
   };
 }
 

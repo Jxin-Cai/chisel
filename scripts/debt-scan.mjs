@@ -540,7 +540,10 @@ const FILE_DETECTORS = [
 ];
 
 export function runDebtScan(projectRoot, repoMap, options = {}) {
-  const sourceFiles = getSourceFiles(projectRoot, repoMap);
+  let sourceFiles = getSourceFiles(projectRoot, repoMap);
+  if (options.scopeDirs && options.scopeDirs.length > 0) {
+    sourceFiles = sourceFiles.filter(f => options.scopeDirs.some(d => f.startsWith(d)));
+  }
   const allFindings = [];
 
   for (const file of sourceFiles) {
@@ -654,6 +657,7 @@ function parseArgs(args) {
     if (args[i] === '--project-root' && args[i + 1]) result.projectRoot = args[++i];
     else if (args[i] === '--repo-map' && args[i + 1]) result.repoMap = args[++i];
     else if (args[i] === '--output' && args[i + 1]) result.output = args[++i];
+    else if (args[i] === '--scope-dirs' && args[i + 1]) result.scopeDirs = args[++i];
   }
   return result;
 }
@@ -680,7 +684,8 @@ if (isMain) {
     process.exit(1);
   }
 
-  const findings = runDebtScan(args.projectRoot, repoMap);
+  const scopeDirs = args.scopeDirs ? args.scopeDirs.split(',').map(d => d.trim()).filter(Boolean) : [];
+  const findings = runDebtScan(args.projectRoot, repoMap, { scopeDirs });
   const result = writeFindings(args.output, findings);
 
   const categoryCounts = {};

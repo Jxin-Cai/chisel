@@ -51,7 +51,10 @@
       {
         "id": "AC-001",
         "description": "<可验证的行为描述>",
-        "verification_method": "<如何验证>"
+        "verification_method": "<如何验证>",
+        "verification_conditions": [
+          { "id": "VC-001", "condition": "<子验证条件，可选>" }
+        ]
       }
     ],
     "risk_tolerance": {
