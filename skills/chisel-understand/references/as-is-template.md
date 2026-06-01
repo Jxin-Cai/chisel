@@ -138,11 +138,11 @@
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "entrypoints": [
     {
       "id": "E-001",
-      "type": "http|rpc|message|job|cli|ui|other",
+      "type": "http|rpc|message|job|cli|ui-page|ui-component|other",
       "name": "POST /orders",
       "location": { "file": "src/controller/order.ts", "line_start": 42, "line_end": 60 },
       "covered_by_facts": ["F-001"]
@@ -176,14 +176,48 @@
       "evidence": [{ "file": "src/repository/order.ts", "line_start": 88 }]
     }
   ],
+  "ui_entries": [
+    {
+      "id": "UI-001",
+      "type": "page|component",
+      "route": "/orders",
+      "component_file": "src/pages/orders/index.tsx",
+      "api_calls": ["GET /api/orders", "POST /api/orders"],
+      "covered_by_facts": ["F-010"]
+    }
+  ],
+  "field_traces": [
+    {
+      "id": "FT-001",
+      "field_name": "discount_amount",
+      "layers": {
+        "db_column": { "location": "orders.discount_amount", "evidence": { "file": "migration/001.sql", "line_start": 10 } },
+        "entity": { "location": "Order.discountAmount", "evidence": { "file": "src/entity/order.ts", "line_start": 20 } },
+        "service_return": { "location": "OrderService.getOrder()", "evidence": { "file": "src/service/order.ts", "line_start": 30 } },
+        "dto": { "location": "OrderVO.discountAmount", "evidence": { "file": "src/dto/order-vo.ts", "line_start": 40 } },
+        "api_response": { "location": "GET /api/orders/:id → $.discountAmount", "evidence": { "file": "src/controller/order.ts", "line_start": 50 } },
+        "frontend_type": { "location": "OrderResponse.discountAmount", "evidence": { "file": "src/types/order.ts", "line_start": 60 } },
+        "frontend_state": { "location": "useOrderStore.discountAmount", "evidence": { "file": "src/stores/order.ts", "line_start": 70 } },
+        "ui_render": { "location": "OrderDetail.tsx", "evidence": { "file": "src/pages/orders/detail.tsx", "line_start": 80 } }
+      },
+      "gaps": [],
+      "covered_by_facts": ["F-015"]
+    }
+  ],
   "not_applicable": {
     "data": "",
-    "side_effects": ""
+    "side_effects": "",
+    "ui_entries": "",
+    "field_traces": ""
   }
 }
 ```
 
 要求：`entrypoints`、`links`、`data`、`side_effects` 四个维度必须存在；每个维度要么有覆盖项，要么在 `not_applicable` 写明不涉及原因。每个覆盖项必须有 `file + line_start` 证据；`covered_by_facts` 只能引用 evidence-ledger 中已有的 `F-xxx`。
+
+`ui_entries`（可选）：当项目有前端且需求涉及页面时产出。记录页面组件→API 调用的映射，供 planner 设计前端改造点。
+
+`field_traces`（可选）：当需求涉及字段增删改时产出。追踪每个目标字段从 DB 到 UI 的完整传递路径。`layers` 中每层为 `{ location, evidence }` 或省略（表示该层缺失）。缺失的层级名列入 `gaps`，标志链路断裂点。纯后端项目或不涉及字段变更时省略此维度。
 
 ---
 
@@ -199,7 +233,7 @@
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 4,
   "generated_at": "ISO-8601",
   "project_root": "string",
   "stats": {
@@ -221,18 +255,24 @@
     { "path": "string", "role": "source|test|config|docs|build|generated|other", "file_count": "number" }
   ],
   "entry_candidates": [
-    { "file": "string", "type": "http|rpc|message|job|cli", "evidence": "string", "line": "number" }
+    { "file": "string", "type": "frontend-page|frontend-component|api-route|backend-controller|unknown", "matched_keywords": ["string"], "confidence": "high|medium|low" }
   ],
   "core_modules": [
     { "file": "string", "imported_by_count": "number" }
   ],
   "requirement_hints": [
     { "file": "string", "matched_keywords": ["string"] }
-  ]
+  ],
+  "frontend": {
+    "framework": "nextjs-app|nextjs-pages|nuxt|vue-router|react-router|angular|null",
+    "routes": [
+      { "path": "string", "component_file": "string", "api_calls": ["string"] }
+    ]
+  }
 }
 ```
 
-要求：`schema_version` 必须为 1，`languages` 非空，`stats.total_files` 大于 0。
+要求：`schema_version` 必须为 4，`languages` 非空，`stats.total_files` 大于 0。`frontend` 部分由脚本自动检测，`framework` 为 null 时 `routes` 为空数组。
 
 ---
 

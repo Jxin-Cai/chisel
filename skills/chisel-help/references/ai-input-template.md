@@ -52,6 +52,15 @@
 | 入口 | 最终写入 | 最终读取 | 外部调用 |
 |------|---------|---------|---------|
 | POST /api/order | order, order_item | user, product | 无 |
+
+## 前端→API 映射
+
+> 当 coverage-matrix 有 `ui_entries` 时必须填写。无前端则写「不涉及前端」。
+
+| 前端页面/组件 | 路由 | API 调用 | 后端 Controller | 证据 |
+|-------------|------|---------|----------------|------|
+| pages/orders/index.tsx | /orders | GET /api/orders | OrderController.list | pages/orders/index.tsx:15 → src/controller/order.ts:20 |
+| pages/orders/[id].tsx | /orders/:id | GET /api/orders/:id | OrderController.get | pages/orders/[id].tsx:22 → src/controller/order.ts:35 |
 ```
 
 ---
@@ -154,4 +163,31 @@
 | 修改区域 | 直接影响 | 间接影响 |
 |---------|---------|---------|
 | Service.createOrder | OrderController, OrderTest | 下游消息消费者 |
+```
+
+---
+
+## field-flow.md
+
+> 仅当 coverage-matrix.json 中有 `field_traces` 时生成。无字段变更需求时不生成此文件。
+
+```
+## Source Coverage
+
+| Source | Covered refs | Omissions | Reason |
+|---|---|---|---|
+| as-is/coverage-matrix.json (field_traces) | FT-001 | 无 | — |
+
+## 字段流转表
+
+| 字段名 | DB Column | Entity/Model | Service Return | DTO/VO | API Response | Frontend Type | State/Store | UI Render | 备注 |
+|-------|-----------|-------------|---------------|--------|-------------|--------------|------------|-----------|------|
+| discount_amount | orders.discount_amount | Order.discountAmount | OrderService.get() | OrderVO.discountAmount | GET /orders/:id $.discountAmount | OrderResponse.discountAmount | orderStore.discount | OrderDetail.tsx:42 | 全链路存在 |
+| new_field | orders.new_field | Order.newField | OrderService.get() | — | — | — | — | — | 仅到 Entity 层，DTO 未透传 |
+
+## 断裂点
+
+| 字段 | 缺失层级 | 影响 | 建议 |
+|------|---------|------|------|
+| new_field | dto, api_response, frontend_type, frontend_state, ui_render | 前端不会展示此字段 | 补充 DTO 映射 + API 返回 + 前端类型 + 页面渲染 |
 ```

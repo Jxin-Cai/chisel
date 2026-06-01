@@ -44,13 +44,13 @@ function emit(resumeStep, reason, phaseDetail = {}) {
   if (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)) {
     const prevStep = readPreviousStep(IDEA_DIR);
     updateWorkflowPhase(IDEA_DIR, resumeStep);
-    const DASHBOARD_AUTO_OPEN_STEPS = ['understand:confirm', 'clarify:requirement'];
-    const shouldOpen = DASHBOARD_AUTO_OPEN_STEPS.includes(resumeStep) && prevStep !== resumeStep;
+    const shouldOpen = prevStep !== resumeStep;
     try {
       const __dirname = dirname(fileURLToPath(import.meta.url));
       const openFlag = shouldOpen ? '' : ' --no-open';
       execSync(`node "${join(__dirname, 'dashboard.mjs')}" "${IDEA_DIR}"${openFlag}`, { stdio: 'ignore', timeout: 5000 });
     } catch { /* non-critical */ }
+    if (shouldOpen) console.log('dashboard_opened: true');
   }
 }
 

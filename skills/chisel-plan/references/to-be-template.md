@@ -156,8 +156,31 @@
 |----|-----------|---------|---------|------|
 | CP-1 | DB model 字段变更 | migration | task-002 | ALTER TABLE users ADD ... |
 | CP-2 | 新增 API | 路由+DTO+文档 | task-003 | — |
+| CP-3 | 后端 DTO 新增字段 | 前端类型定义+页面适配 | task-004 | 更新 OrderResponse 接口 |
 
 无触发规则的 CP 填「无适用规则」。
+
+**后端伴生规则**：
+
+| 触发条件 | 必须伴生 | 示例 |
+|----------|---------|------|
+| 新增/修改 DB model 字段 | DDL migration 文件（或 ORM migration） | `ALTER TABLE`, flyway/liquibase/alembic 脚本 |
+| 新增/修改 API endpoint | 路由注册 + 请求/响应 DTO + 文档（如有 swagger/openapi） | controller + dto + yaml |
+| 新增配置项/环境变量 | 配置文件模板更新 + 部署文档/示例 | `.env.example`, `application.yml` |
+| 删除/重命名公共符号 | 所有 caller 适配 | grep 验证 |
+| 序列化格式变更（JSON/Protobuf/Avro） | 向后兼容处理或版本号递增 | — |
+| 新增异步消费者/生产者 | 消息格式定义 + 幂等/重试策略 | schema registry / dead-letter |
+
+**前端伴生规则**（当项目有前端时适用）：
+
+| 触发条件 | 必须伴生 | 验证方式 |
+|----------|---------|---------|
+| 后端 DTO/VO 新增/修改字段 | 前端 API 类型定义更新 + 调用处适配 | 检查 frontend types 文件 |
+| 后端接口响应结构变更 | 前端页面渲染逻辑适配 | grep 前端中使用该接口返回的组件 |
+| 新增后端 API endpoint | 前端 API 调用函数 + 路由/页面绑定 | 检查前端 api/ 目录 |
+| 数据库新增字段（需用户可见） | 全链路透传：Entity→DTO→API Response→Frontend Type→UI | 对照 field-flow.md 逐层检查 |
+| 前端新增页面/路由 | 路由注册 + 权限配置（如有）+ 导航菜单（如有） | 检查路由配置文件 |
+| 修改 API 请求参数 | 前端调用处参数同步更新 | grep 前端 API 调用 |
 
 ### Spec 覆盖率
 

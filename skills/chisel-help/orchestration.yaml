@@ -70,7 +70,10 @@ steps:
   - id: knowledge:extract
     # complexity-aware: trivial 模式跳过此步
     # parallel: plan:confirm 后并行启动，不阻塞主链路，final:summary 前必须完成
-    description: 从方案确认后的产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule。并行于 worktree:setup/tasks:init/implement，在 final:summary 前同步
+    # optional: 用户在 plan:confirm 后可选择跳过（knowledge_extraction.enabled=false）
+    optional: true
+    opt_in_at: plan:confirm
+    description: 从方案确认后的产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule。并行于 worktree:setup/tasks:init/implement，在 final:summary 前同步。用户可在 plan:confirm 后选择跳过
     parallel_with: [worktree:setup, tasks:init, implement:code, review:cr]
     sync_before: final:summary
     postcondition:

@@ -577,7 +577,7 @@ function validateAsIsCoverageMatrix(ideaDir) {
   const parsed = readJsonFile(file);
   if (parsed.error) return `as-is/coverage-matrix.json invalid JSON: ${parsed.error}`;
   const doc = parsed.value;
-  if (doc?.schema_version !== 1) return 'coverage-matrix.json schema_version must be 1';
+  if (doc?.schema_version !== 1 && doc?.schema_version !== 2) return 'coverage-matrix.json schema_version must be 1 or 2';
   const ledgerIds = evidenceLedgerFactIds(ideaDir);
   for (const section of ['entrypoints', 'links', 'data', 'side_effects']) {
     const items = doc?.[section];
@@ -610,7 +610,7 @@ function validateRepoMap(ideaDir) {
   const parsed = readJsonFile(file);
   if (parsed.error) return `as-is/repo-map.json invalid JSON: ${parsed.error}`;
   const doc = parsed.value;
-  if (doc?.schema_version !== 1 && doc?.schema_version !== 2 && doc?.schema_version !== 3) return 'repo-map.json schema_version must be 1, 2, or 3';
+  if (![1, 2, 3, 4].includes(doc?.schema_version)) return 'repo-map.json schema_version must be 1, 2, 3, or 4';
   if (!doc.generated_at || typeof doc.generated_at !== 'string') return 'repo-map.json missing generated_at';
   if (!Array.isArray(doc.languages) || doc.languages.length === 0) return 'repo-map.json languages must be non-empty array';
   for (const [index, lang] of doc.languages.entries()) {
@@ -628,7 +628,7 @@ function validateRepoMap(ideaDir) {
     }
     if (!Array.isArray(doc.core_modules)) return 'repo-map.json core_modules must be an array';
   }
-  if (doc.schema_version === 3 && Array.isArray(doc.entry_candidates)) {
+  if ((doc.schema_version === 3 || doc.schema_version === 4) && Array.isArray(doc.entry_candidates)) {
     for (const [index, entry] of doc.entry_candidates.entries()) {
       if (!entry?.file || typeof entry.file !== 'string') return `repo-map.json entry_candidates[${index}] missing file`;
     }
@@ -916,7 +916,15 @@ function validateKnowledgeCandidatesExist(ideaDir) {
   return '';
 }
 
+function isKnowledgeOptedOut(ideaDir) {
+  const confPath = join(ideaDir, 'confirmations/to-be.json');
+  if (!existsSync(confPath)) return false;
+  const parsed = readJsonFile(confPath);
+  return parsed.value?.knowledge_extraction?.enabled === false;
+}
+
 function validateKnowledgeExtracted(ideaDir) {
+  if (isKnowledgeOptedOut(ideaDir)) return '';
   if (!has(ideaDir, '.knowledge-extracted')) return '.knowledge-extracted missing';
   const baseReason = validateKnowledgeCandidatesExist(ideaDir);
   if (baseReason) return baseReason;
@@ -934,7 +942,10 @@ function validateFinalSummary(ideaDir) {
   const summaryPath = join(ideaDir, 'final-summary.md');
   if (!existsSync(summaryPath)) return 'final-summary.md missing';
   const text = readText(summaryPath);
-  const requiredSections = ['## 变更摘要', '## Scope Control Summary', '## Knowledge Candidates', '## Wiki Updates'];
+  const knowledgeOff = isKnowledgeOptedOut(ideaDir);
+  const requiredSections = knowledgeOff
+    ? ['## 变更摘要', '## Scope Control Summary']
+    : ['## 变更摘要', '## Scope Control Summary', '## Knowledge Candidates', '## Wiki Updates'];
   const missing = requiredSections.filter(section => !text.includes(section));
   if (missing.length > 0) return `final-summary.md missing sections: ${missing.join(', ')}`;
   for (const section of requiredSections.map(item => item.replace(/^##\s+/, ''))) {

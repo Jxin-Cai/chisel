@@ -17,10 +17,11 @@
 | 文件 | 数据来源 |
 |------|---------|
 | `facts.md` | overview 核心事实 + core-walkthrough 已确认事实 + as-is/evidence-ledger.json 中的 `F-xxx` |
-| `call-graph.md` | core-walkthrough 时序图 → 结构化调用关系表 |
+| `call-graph.md` | core-walkthrough 时序图 → 结构化调用关系表 + coverage-matrix.json 的 `ui_entries`（如有）→ 前端→API 映射表 |
 | `data-schema.md` | details/data-model 或 core-walkthrough 内联数据部分 |
 | `api-surface.md` | details/api-contracts 或 core-walkthrough 内联接口部分 |
 | `constraints.md` | overview 禁区/包袱/坏味道 + clarifications.json + confirmations/as-is.json |
 | `change-surface.md` | core-walkthrough safe-to-change area + as-is/coverage-matrix.json |
+| `field-flow.md`（可选） | coverage-matrix.json 的 `field_traces`（仅当该维度存在时生成） |
 
 4. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} ai-input-ready` 验证

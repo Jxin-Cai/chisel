@@ -90,13 +90,28 @@ function scoreCoverage(ideaDir) {
     lineCoverageRate = val > 1 ? val / 100 : val;
   }
 
-  const score = matrixScore * 0.5 + Math.min(lineCoverageRate, 1.0) * 0.5;
+  let frontendBonus = 0;
+  let frontendDetail = {};
+  if (matrix) {
+    const hasUiEntries = Array.isArray(matrix.ui_entries) && matrix.ui_entries.length > 0;
+    const hasFieldTraces = Array.isArray(matrix.field_traces) && matrix.field_traces.length > 0;
+    if (hasUiEntries) frontendBonus += 0.05;
+    if (hasFieldTraces) {
+      const totalTraces = matrix.field_traces.length;
+      const tracesWithoutGaps = matrix.field_traces.filter(ft => !ft.gaps || ft.gaps.length === 0).length;
+      frontendBonus += 0.05 * (tracesWithoutGaps / totalTraces);
+    }
+    frontendDetail = { ui_entries_count: matrix.ui_entries?.length || 0, field_traces_count: matrix.field_traces?.length || 0 };
+  }
+
+  const score = Math.min(matrixScore * 0.5 + Math.min(lineCoverageRate, 1.0) * 0.5 + frontendBonus, 1.0);
   return {
     score: round(score),
     detail: {
       matrix_dimensions: COVERAGE_DIMENSIONS.length,
       covered_dimensions: coveredDimensions,
       line_coverage_rate: round(lineCoverageRate),
+      ...frontendDetail,
     },
   };
 }

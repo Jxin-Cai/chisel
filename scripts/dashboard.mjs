@@ -194,6 +194,88 @@ function detectComplexity(ideaDir) {
   return 'standard';
 }
 
+// --- Step Outputs ---
+
+const STEP_OUTPUTS_MAP = {
+  'receive-requirement': [{ label: '需求文档', file: 'requirement.md' }],
+  'understand:explore': [
+    { label: '概览', file: 'as-is/overview.md' },
+    { label: '核心走查', file: 'as-is/core-walkthrough.md' },
+    { label: '证据索引', file: 'as-is/evidence-index.md' },
+    { label: '仓库地图', file: 'as-is/repo-map.json' },
+    { label: '质量评分', file: 'as-is/quality-score.json' },
+  ],
+  'understand:confirm': [
+    { label: '澄清记录', file: 'clarifications.json' },
+    { label: 'As-Is 确认', file: 'confirmations/as-is.json' },
+  ],
+  'understand:generate-ai-input': [
+    { label: 'AI 输入', file: 'as-is/ai-input/', isDir: true },
+  ],
+  'clarify:requirement': [
+    { label: '需求澄清', file: 'requirement-clarification.json' },
+  ],
+  'quick-dev:init': [
+    { label: 'Task 工作流', file: 'task-workflow-state.yaml' },
+    { label: 'Worktree 决策', file: 'worktree-decision.json' },
+    { label: '追溯矩阵', file: 'to-be/traceability-matrix.json' },
+  ],
+  'plan:design': [
+    { label: '实现方案', file: 'to-be/implementation-plan.md' },
+    { label: 'Tasks', file: 'to-be/tasks.json' },
+    { label: '追溯矩阵', file: 'to-be/traceability-matrix.json' },
+    { label: '影响风险', file: 'to-be/impact-risk-report.json' },
+  ],
+  'plan:confirm': [
+    { label: 'To-Be 确认', file: 'confirmations/to-be.json' },
+  ],
+  'knowledge:extract': [
+    { label: '知识候选', file: 'knowledge-candidates/', isDir: true },
+    { label: '提取完成标记', file: '.knowledge-extracted' },
+  ],
+  'worktree:setup': [
+    { label: 'Worktree 决策', file: 'worktree-decision.json' },
+  ],
+  'tasks:init': [
+    { label: 'Task 工作流', file: 'task-workflow-state.yaml' },
+  ],
+  'implement:code': [
+    { label: 'Task 报告', file: 'task-reports/', isDir: true },
+  ],
+  'review:cr': [
+    { label: 'CR 结果', file: 'cr/', isDir: true },
+  ],
+  'review:cr-light': [
+    { label: 'CR 结果', file: 'cr/', isDir: true },
+  ],
+  'repair:code': [
+    { label: 'Task 报告', file: 'task-reports/', isDir: true },
+  ],
+  'final:summary': [
+    { label: '最终摘要', file: 'final-summary.md' },
+  ],
+  'done': [],
+};
+
+function collectStepOutputs(ideaDir, steps, currentStep, stepHistory) {
+  const visitedSteps = new Set((stepHistory || []).map(h => h.step));
+  const toBeConf = readJson(ideaDir, 'confirmations/to-be.json');
+  const knowledgeSkipped = toBeConf?.knowledge_extraction?.enabled === false;
+
+  return steps.map(stepId => {
+    if (stepId === 'knowledge:extract' && knowledgeSkipped) {
+      return { step: stepId, status: 'skipped', outputs: [] };
+    }
+    const status = stepId === currentStep ? 'current'
+                 : visitedSteps.has(stepId) ? 'done' : 'pending';
+    const outputs = (STEP_OUTPUTS_MAP[stepId] || []).map(o => ({
+      ...o,
+      exists: existsSync(join(ideaDir, o.file))
+    }));
+    return { step: stepId, status, outputs };
+  });
+}
+
 // --- Main execution ---
 
 function main() {
@@ -239,6 +321,7 @@ const WORKFLOW_STEPS = complexity === 'trivial'
   : ['receive-requirement', 'understand:explore', 'understand:confirm', 'understand:generate-ai-input', 'clarify:requirement', 'plan:design', 'plan:confirm', 'knowledge:extract', 'worktree:setup', 'tasks:init', 'implement:code', 'review:cr', 'repair:code', 'final:summary', 'done'];
 
 const currentIdx = WORKFLOW_STEPS.indexOf(DATA.currentStep);
+const stepOutputs = collectStepOutputs(IDEA_DIR, WORKFLOW_STEPS, DATA.currentStep, DATA.stepHistory);
 
 const html = `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -367,6 +450,25 @@ canvas{max-height:260px}
       return `<div class="wf-step ${cls}">${escHtml(s)}</div>`;
     }).join('<span class="wf-connector">&rarr;</span>')}
   </div>
+</div>
+
+<!-- Step Outputs -->
+<div class="card grid-full" style="margin-bottom:16px">
+  <h2>步骤产出详情</h2>
+  <table>
+    <tr><th>步骤</th><th>状态</th><th>产出文件</th></tr>
+    ${stepOutputs.map(so => {
+      const statusIcon = so.status === 'done' ? '<span style="color:var(--success)">&#x2713;</span>'
+        : so.status === 'current' ? '<span style="color:var(--accent)">&#x25B6;</span>'
+        : so.status === 'skipped' ? '<span style="color:var(--text2)">&#x2298;</span>'
+        : '<span style="color:var(--text2)">&#x2015;</span>';
+      const rowStyle = so.status === 'current' ? ' style="background:var(--accent-dim)"' : so.status === 'skipped' ? ' style="opacity:0.5"' : '';
+      const outputsHtml = so.status === 'skipped' ? '<span style="color:var(--text2);font-size:0.75rem">已跳过</span>'
+        : so.outputs.length === 0 ? ''
+        : so.outputs.map(o => `<span style="font-size:0.75rem;margin-right:8px">${o.exists ? '<span style="color:var(--success)">&#x2713;</span>' : '<span style="color:var(--text2)">&mdash;</span>'} ${escHtml(o.label)}</span>`).join('');
+      return `<tr${rowStyle}><td style="white-space:nowrap;font-size:0.8rem">${escHtml(so.step)}</td><td>${statusIcon}</td><td>${outputsHtml}</td></tr>`;
+    }).join('')}
+  </table>
 </div>
 
 <div class="grid">

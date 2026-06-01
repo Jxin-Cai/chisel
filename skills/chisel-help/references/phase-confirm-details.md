@@ -65,11 +65,37 @@
 
 用户可以在此阶段要求调整方案，调整后需重新运行 `plan:design`。
 
+### 知识沉淀选择（plan:confirm 确认凭据写入后执行）
+
+确认凭据写入后，若 complexity ≠ trivial，使用 `AskUserQuestion` 询问用户：
+
+> "本轮需求执行过程中是否需要提炼和沉淀上下文知识到 Wiki？选择'是'会在对话中自动捕获知识信号并在最后阶段汇总合入；选择'否'则跳过所有知识相关环节，直接往下走。"
+
+选项：`["是，沉淀知识"]` / `["否，跳过"]`
+
+将用户选择回写 `{IDEA_DIR}/confirmations/to-be.json`，追加字段：
+
+```json
+{
+  "knowledge_extraction": {
+    "enabled": true/false,
+    "decided_at": "<ISO 8601>"
+  }
+}
+```
+
+- 用户选"是"：`enabled: true`，后续按原有流程启动 knowledge:extract 后台并行任务
+- 用户选"否"：`enabled: false`，跳过 knowledge:extract 步骤和所有实时知识捕获行为
+
 ---
 
 ## final:summary 详细行为
 
-写入 `{IDEA_DIR}/final-summary.md`，必须包含：变更摘要、验证结果、Scope Control Summary、Knowledge Candidates、Wiki Updates。
+写入 `{IDEA_DIR}/final-summary.md`，必须包含：变更摘要、验证结果、Scope Control Summary。
+
+当 `confirmations/to-be.json` 中 `knowledge_extraction.enabled !== false` 时（知识沉淀未跳过），还需包含：Knowledge Candidates、Wiki Updates。
+
+当 `knowledge_extraction.enabled === false` 时（知识沉淀已跳过），不需要 Knowledge Candidates 和 Wiki Updates 章节。
 
 验证证据汇总：从所有 task-report 的验证表格中提取结果，在 final-summary 中以汇总表形式展示：
 
@@ -160,5 +186,7 @@ git -C <worktree-path> log --oneline <default-branch>..HEAD
 ---
 
 ## 实时知识捕获
+
+**前置条件**：仅当 `{IDEA_DIR}/confirmations/to-be.json` 中 `knowledge_extraction.enabled !== false` 时执行本节行为。若用户选择跳过知识沉淀，则本节所有监听和写入行为均不执行。
 
 在 `understand:confirm` 和 `plan:confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 agent-shared-rules §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。

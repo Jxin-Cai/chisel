@@ -14,6 +14,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "<task goal/
 
 ## 2. 候选创建协议
 
+**前置条件**：仅当 `{idea_dir}/confirmations/to-be.json` 中 `knowledge_extraction.enabled !== false` 时执行本节行为。若该字段为 `false`（用户选择跳过知识沉淀），则不创建任何知识候选文件。在 `plan:confirm` 之前的步骤（`understand:confirm` 等），若 `confirmations/to-be.json` 尚不存在，默认执行本协议。
+
 在用户对话中识别到代码无法推导的上下文时（禁区/包袱/术语映射/历史决策），写 `{idea_dir}/knowledge-candidates/{prefix}-*.json`（fz/wbi/dnr/term）。
 
 仅在以下场景创建候选：

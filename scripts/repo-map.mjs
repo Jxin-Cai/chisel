@@ -174,6 +174,110 @@ function countLines(projectRoot, files) {
   }
 }
 
+const FRONTEND_PAGE_EXTS = new Set(['.tsx', '.jsx', '.ts', '.js', '.vue', '.svelte']);
+
+function detectFrontendFramework(projectRoot, allFiles) {
+  const hasFile = name => allFiles.some(f => f === name || f.endsWith('/' + name));
+  const hasDir = prefix => allFiles.some(f => f.startsWith(prefix + '/') || f.startsWith(prefix + '\\'));
+
+  if (hasFile('next.config.js') || hasFile('next.config.ts') || hasFile('next.config.mjs'))
+    return hasDir('app') && allFiles.some(f => /^app\/.*page\.\w+$/.test(f)) ? 'nextjs-app' : 'nextjs-pages';
+  if (hasFile('nuxt.config.js') || hasFile('nuxt.config.ts')) return 'nuxt';
+  if (hasDir('src/router') || allFiles.some(f => /^src\/router\.\w+$/.test(f))) return 'vue-router';
+  try {
+    const pkg = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
+    const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+    if (deps['react-router-dom'] || deps['react-router']) return 'react-router';
+    if (deps['@angular/router']) return 'angular';
+  } catch { /* no package.json */ }
+  return null;
+}
+
+function findFrontendRoutes(projectRoot, allFiles, framework) {
+  if (!framework) return [];
+  const routes = [];
+  const pageExts = [...FRONTEND_PAGE_EXTS];
+
+  if (framework === 'nextjs-app') {
+    for (const f of allFiles) {
+      const m = f.match(/^app\/(.+)\/page\.(tsx|jsx|ts|js)$/);
+      if (m) {
+        const routePath = '/' + m[1].replace(/\([^)]+\)\//g, '').replace(/\[([^\]]+)\]/g, ':$1');
+        routes.push({ path: routePath, component_file: f, api_calls: extractApiCalls(projectRoot, f) });
+      }
+    }
+  } else if (framework === 'nextjs-pages') {
+    for (const f of allFiles) {
+      const m = f.match(/^pages\/(.+)\.(tsx|jsx|ts|js)$/);
+      if (m && !m[1].startsWith('_') && !m[1].startsWith('api/')) {
+        const routePath = '/' + m[1].replace(/\[([^\]]+)\]/g, ':$1').replace(/\/index$/, '');
+        routes.push({ path: routePath || '/', component_file: f, api_calls: extractApiCalls(projectRoot, f) });
+      }
+    }
+  } else if (framework === 'nuxt') {
+    for (const f of allFiles) {
+      const m = f.match(/^pages\/(.+)\.vue$/);
+      if (m) {
+        const routePath = '/' + m[1].replace(/\[([^\]]+)\]/g, ':$1').replace(/\/index$/, '');
+        routes.push({ path: routePath || '/', component_file: f, api_calls: extractApiCalls(projectRoot, f) });
+      }
+    }
+  } else if (framework === 'vue-router' || framework === 'react-router' || framework === 'angular') {
+    const routerFiles = allFiles.filter(f =>
+      /router/i.test(f) && pageExts.some(ext => f.endsWith(ext))
+    ).slice(0, 5);
+    for (const rf of routerFiles) {
+      try {
+        const content = readFileSync(join(projectRoot, rf), 'utf8');
+        const pathMatches = content.matchAll(/path:\s*['"`]([^'"`]+)['"`]/g);
+        for (const pm of pathMatches) {
+          const componentMatch = content.slice(Math.max(0, pm.index - 200), pm.index + 300)
+            .match(/component:\s*(?:lazy\(\s*\(\)\s*=>\s*import\(['"`]([^'"`]+)['"`]\))?|element:\s*<(\w+)/);
+          routes.push({
+            path: pm[1],
+            component_file: componentMatch?.[1] || null,
+            api_calls: [],
+          });
+        }
+      } catch { /* unreadable */ }
+    }
+  }
+  return routes.slice(0, 30);
+}
+
+const API_CALL_PATTERNS = [
+  /fetch\s*\(\s*['"`]([^'"`\s]+)['"`]/g,
+  /axios\.\w+\s*\(\s*['"`]([^'"`\s]+)['"`]/g,
+  /\.\$?(?:get|post|put|patch|delete|request)\s*\(\s*['"`]([^'"`\s]+)['"`]/g,
+  /useSWR\s*\(\s*['"`]([^'"`\s]+)['"`]/g,
+  /useQuery\s*\([^)]*['"`]([^'"`\s]+)['"`]/g,
+];
+
+function extractApiCalls(projectRoot, filePath) {
+  try {
+    const content = readFileSync(join(projectRoot, filePath), 'utf8');
+    const calls = new Set();
+    for (const pattern of API_CALL_PATTERNS) {
+      pattern.lastIndex = 0;
+      let m;
+      while ((m = pattern.exec(content)) !== null) {
+        const url = m[1];
+        if (url.startsWith('/') || url.startsWith('http')) calls.add(url);
+      }
+    }
+    return [...calls].slice(0, 10);
+  } catch { return []; }
+}
+
+function classifyEntryType(file, frontendRoutes) {
+  if (frontendRoutes.some(r => r.component_file === file)) return 'frontend-page';
+  const lower = file.toLowerCase();
+  if (/\bcomponent/.test(lower) && FRONTEND_PAGE_EXTS.has(extname(file).toLowerCase())) return 'frontend-component';
+  if (/\b(controller|handler|endpoint|resource)\b/i.test(lower)) return 'backend-controller';
+  if (/\bapi\b/.test(lower) && /\broute/.test(lower)) return 'api-route';
+  return 'unknown';
+}
+
 export function generateRepoMap(projectRoot, options = {}) {
   const allFiles = listFiles(projectRoot);
   const nonBinaryFiles = allFiles.filter(f => !isBinaryFile(f));
@@ -187,8 +291,15 @@ export function generateRepoMap(projectRoot, options = {}) {
   const totalLines = countLines(projectRoot, sourceFiles);
   const entryCandidates = findEntryCandidates(projectRoot, sourceFiles, options.requirement);
 
+  const framework = detectFrontendFramework(projectRoot, allFiles);
+  const frontendRoutes = findFrontendRoutes(projectRoot, allFiles, framework);
+
+  for (const c of entryCandidates) {
+    c.type = classifyEntryType(c.file, frontendRoutes);
+  }
+
   return {
-    schema_version: 3,
+    schema_version: 4,
     generated_at: new Date().toISOString(),
     project_root: projectRoot,
     stats: {
@@ -203,6 +314,10 @@ export function generateRepoMap(projectRoot, options = {}) {
     languages: detectLanguages(nonBinaryFiles),
     directory_summary: buildDirectorySummary(nonBinaryFiles),
     entry_candidates: entryCandidates,
+    frontend: {
+      framework,
+      routes: frontendRoutes,
+    },
   };
 }
 
@@ -277,7 +392,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const json = JSON.stringify(result, null, 2);
   if (args.output) {
     writeFileSync(args.output, json + '\n');
-    process.stderr.write(`repo-map written to ${args.output} (${result.stats.total_files} files, ${result.stats.source_files} source, ${result.entry_candidates.length} entry candidates)\n`);
+    const fwk = result.frontend.framework ? `, frontend: ${result.frontend.framework}, ${result.frontend.routes.length} routes` : '';
+    process.stderr.write(`repo-map written to ${args.output} (${result.stats.total_files} files, ${result.stats.source_files} source, ${result.entry_candidates.length} entry candidates${fwk})\n`);
   } else {
     console.log(json);
   }

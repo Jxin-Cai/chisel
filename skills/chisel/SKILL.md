@@ -60,7 +60,7 @@ digraph chisel_flow {
   quickdev [label="quick-dev:init\n(trivial only)"];
   design [label="plan:design"];
   p_confirm [label="plan:confirm"];
-  knowledge [label="knowledge:extract\n(skip if trivial)"];
+  knowledge [label="knowledge:extract\n(optional, skip if trivial\nor user opted out)"];
   worktree [label="worktree:setup"];
   tasks [label="tasks:init"];
   implement [label="implement:code"];
@@ -108,6 +108,19 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | "需求已经很清楚了，直接开始编码" | 这是跳步违规——上下文变长后最常见的合理化冲动 |
 </HARD-GATE>
 
+<HARD-GATE>
+**仪表盘确认协议**（每次步骤切换后强制执行）：
+
+当 `orchestration-status.mjs` 输出包含 `dashboard_opened: true` 时，说明发生了步骤切换且仪表盘已在浏览器中打开。此时必须：
+
+1. 告知用户："仪表盘已更新并在浏览器中打开。请查看当前需求的整体执行步骤、进度和各环节产出情况。"
+2. 使用 `AskUserQuestion` 询问用户是否已查看完毕，选项：`["已查看，继续"]` / `["再看看"]`
+3. 用户确认"已查看，继续"后才执行当前 `resume_step` 的动作
+4. 用户选"再看看"时停止执行，等待用户下一轮消息
+
+此协议不可跳过。步骤切换是用户了解进度的关键时机，仪表盘确认确保用户始终掌握全局。
+</HARD-GATE>
+
 | resume_step | 动作 | postcondition |
 |---|---|---|
 | `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
@@ -117,8 +130,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
 | `quick-dev:init` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}`（trivial only：自动生成 task + worktree-decision + traceability-matrix） | `task-workflow-exists` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
-| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行。确认完成后，如 complexity≠trivial，立即启动 knowledge:extract 作为后台并行任务（使用 Agent run_in_background:true 调用 phase-knowledge-extract.md 流程），同时继续进入下一步（不等待 knowledge 完成） | `to-be-confirmed` |
-| `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行（通常已由 plan:confirm 后并行启动；若到 final:summary 前未完成则此处同步执行） | `knowledge-extracted` |
+| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行。确认完成后询问用户是否启用知识沉淀（AskUserQuestion），将决策写入 `confirmations/to-be.json` 的 `knowledge_extraction` 字段。如 enabled=true 且 complexity≠trivial，立即启动 knowledge:extract 作为后台并行任务（使用 Agent run_in_background:true 调用 phase-knowledge-extract.md 流程）；如 enabled=false 则跳过 knowledge 全部环节 | `to-be-confirmed` |
+| `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行（仅当 knowledge_extraction.enabled≠false 时触发；通常已由 plan:confirm 后并行启动；若到 final:summary 前未完成则此处同步执行） | `knowledge-extracted` |
 | `worktree:setup` | 多仓 worktree 设置：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --detect <workspace-root>` 检测工作空间下所有 Git 仓库；使用 `AskUserQuestion` 让用户确认涉及的仓库列表 + 是否 worktree 隔离；yes → 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --create <idea-name> --repos <repo1,repo2,...>` 在每个仓库创建同名分支 worktree；no → 当前分支开发。将决策写入 `{IDEA_DIR}/worktree-decision.json`（v2 含 `repos` 数组和各仓 `base_commit`，CR 阶段用它做 diff 基准）。单仓场景退化为 v1 schema + `EnterWorktree` | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |

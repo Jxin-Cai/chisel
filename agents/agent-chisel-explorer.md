@@ -77,11 +77,28 @@ debt-scan 的候选仅作探索参考，不进入 knowledge:extract 的决策池
 
 按由外到内的顺序扫描：
 
+0. **UI 入口层** — 当 repo-map.json 的 `frontend.framework` 非 null 时：
+   a. 从 `frontend.routes` 中筛选与需求相关的页面/组件（关键词匹配路由路径或组件文件名）
+   b. Read 匹配到的前端组件文件，grep 其中的 API 调用（fetch/axios/request/useSWR/useQuery），定位对应后端 controller
+   c. 记录 **前端页面→API endpoint→后端 controller** 的映射关系，作为后续链路追踪起点
+   d. 如果需求涉及特定页面（描述了页面名称、截图、URL 路径）但无法从 `frontend.routes` 或组件文件名匹配到具体组件：先尝试 grep 页面标题/文案关键词（在 template/JSX 中搜索），仍然匹配不到则**暂停向用户确认页面位置**，不允许跳过或标推断继续
 1. **入口层** — 搜索 HTTP controller、RPC handler、message listener、scheduled job、CLI entry，定位与需求相关的入口
 2. **调用链** — 从入口追踪到核心业务逻辑、service、domain、repository/mapper
-3. **数据层** — 扫描 ORM entity、SQL、DDL、migration、mapper XML，提取与需求相关的表结构和字段
-4. **关系推断** — 结合 join SQL、ID 字段传递、DTO 聚合、domain 引用推断表间关系；纯数据库外键不足以确认，要有代码证据
-5. **变更点** — 标记与需求直接相关的代码位置
+3. **字段传递链追踪** — 当需求涉及字段增删改或数据展示变更时，对每个目标字段追踪以下层级的完整路径：
+   - DB column（DDL/migration/schema 定义）
+   - ORM Entity / Model 字段
+   - Repository/Mapper 查询返回（select 字段列表或 `*`）
+   - Service 方法返回值（是否透传该字段）
+   - DTO/VO 序列化字段（Response 对象中是否包含）
+   - API Response JSON（接口返回的 JSON 中是否有该字段）
+   - 前端 API 类型定义（TypeScript interface / type 中是否声明）
+   - 前端 State / Store（是否存入状态管理）
+   - UI 渲染（template/JSX 中是否引用展示）
+
+   对每个目标字段确认各层存在性、命名是否一致（驼峰/下划线转换）、是否有字段映射/转换逻辑。将结果写入 coverage-matrix.json 的 `field_traces` 维度。
+4. **数据层** — 扫描 ORM entity、SQL、DDL、migration、mapper XML，提取与需求相关的表结构和字段
+5. **关系推断** — 结合 join SQL、ID 字段传递、DTO 聚合、domain 引用推断表间关系；纯数据库外键不足以确认，要有代码证据
+6. **变更点** — 标记与需求直接相关的代码位置
 
 <HARD-GATE>
 每个关键结论必须标注证据文件路径和行号。未确认的关系标记为"推断"。

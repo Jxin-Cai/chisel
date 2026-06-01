@@ -17,23 +17,23 @@ This repository contains the `chisel` Claude Code plugin.
 - `scripts/multi-repo-worktree.mjs` 多仓 worktree 检测/创建/状态/清理（支持非 git 工作空间下的多 git 仓库场景）。
 - `scripts/wiki-manage.mjs` wiki 初始化、候选合入、关联关系管理。
 - `scripts/wiki-rule-inject.mjs` 自动向业务项目注入 wiki 加载 rule。
-- `scripts/repo-map.mjs` 产出语言统计和目录结构（无 LLM 依赖），explorer 探索前自动运行。
+- `scripts/repo-map.mjs` 产出语言统计、目录结构和前端框架/路由检测（无 LLM 依赖），explorer 探索前自动运行。
 - `scripts/debt-scan.mjs` 纯静态技术债务扫描器（无 LLM 依赖），explorer 探索前自动运行，产出 proposed 候选。
 - `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
 - `scripts/quick-dev-init.mjs` trivial 快速通道自动生成单 task + worktree-decision + traceability-matrix。
 - `scripts/traceability-check.mjs` 需求→task 可追溯性验证，final 阶段前确认所有 AC 被覆盖实现。
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check/wiki 数据写入 `cr-context.json`，D2-D8 agent 共用。
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
-- `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本）。
-- `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案，完成后执行变更完整性自检（伴生变更推断/Spec覆盖率/CP-Task一致性/依赖完备性）。
+- `agent-chisel-explorer` 只读生成 as-is（面向人类学习的图形化版本），支持 UI 入口层探索（前端页面→API→后端 controller 映射）和字段传递链追踪（DB→Entity→DTO→API→Frontend 全链路）。
+- `agent-chisel-planner` 从 `as-is/ai-input/` 结构化输入 + `requirement-clarification.json` 设计 to-be 方案，完成后执行变更完整性自检（伴生变更推断（含前端伴生规则）/Spec覆盖率/CP-Task一致性/依赖完备性）。
 - `agent-chisel-coder` 只按已确认 task 实现，完成后执行 diff 自检（bug/AC/scope 三项检查）。
-- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d8）执行单维度深度审查。dim-spec 包含伴生产物完整性检查（加字段→DDL、加接口→路由+DTO 等推断规则）。每个发现项附带 0-100 置信度评分，≥80 进 Rework Items 触发返修，60-79 进 Observations 供参考。D2/D7/D8 按变更特征条件激活，D3-D6 始终激活。fail 项经 sonnet 验证子阶段确认后聚合。
+- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d8）执行单维度深度审查。dim-spec 包含伴生产物完整性检查（后端规则：加字段→DDL、加接口→路由+DTO；前端规则：DTO加字段→前端类型+页面适配、接口响应变更→前端渲染适配）和全链路字段透传验证。每个发现项附带 0-100 置信度评分，≥80 进 Rework Items 触发返修，60-79 进 Observations 供参考。D2/D7/D8 按变更特征条件激活，D3-D6 始终激活。fail 项经 sonnet 验证子阶段确认后聚合。
 
 ## As-Is 分层结构
 
 - **主干文件**（必须）：`repo-map.json`（脚本生成）、`overview.md`、`core-walkthrough.md`、`evidence-index.md`、`knowledge-candidates.md`、`context-budget.md`、`quality-score.json`（脚本生成）
 - **枝干文件**（按需）：`details/entrypoints.md`、`details/data-model.md`、`details/api-contracts.md`、`details/data-flow.md`
-- **AI 输入版**（`as-is/ai-input/`）：用户确认后从人类版提取的结构化数据，供 Planner 使用。
+- **AI 输入版**（`as-is/ai-input/`）：用户确认后从人类版提取的结构化数据，供 Planner 使用。含 `field-flow.md`（可选，仅字段变更场景）。
 - 主干聚焦需求相关的核心链路，枝干按需展开细节，主干用 `→ 详见 details/xxx.md` 引用。
 
 ## 知识系统
@@ -65,11 +65,12 @@ This repository contains the `chisel` Claude Code plugin.
 - `chisel-review` 在所有 task 编码完成后进行多维度 CR：spec 门槛（opus）通过后，D2-D8 按变更特征条件激活（D2 需并发/错误处理代码、D7 需删除/重命名、D8 需公共 API 变更，D3-D6 始终激活），已激活维度并行 opus 审查，每个发现附带置信度评分（≥80 返修、60-79 仅参考），fail 项经 sonnet 验证子阶段确认后聚合结果。Scope/Wiki Proof 只在 spec 维度执行一次，D2-D8 引用之。返修后从 spec 重新开始。
 - 需求完成后（`done` 阶段），多仓场景对每个仓库分别创建 PR 或 merge。
 
-## 知识提取并行化
+## 知识提取（可选）
 
-- `knowledge:extract` 在 `plan:confirm` 后作为并行旁支启动（后台 Agent），不阻塞 `worktree:setup` 和后续 implement 主链路。
-- 在 `final:summary` 前同步：如果 knowledge 提取尚未完成则此时等待/执行。
-- trivial 模式跳过 knowledge 提取。
+- `knowledge:extract` 为可选步骤：`plan:confirm` 后询问用户是否启用知识沉淀，决策存入 `confirmations/to-be.json` 的 `knowledge_extraction.enabled` 字段。
+- 用户选择"是"时：作为并行旁支启动（后台 Agent），不阻塞主链路，在 `final:summary` 前同步。实时知识捕获在对话中自动监测知识信号。
+- 用户选择"否"时：跳过 knowledge:extract 全部环节（包括实时捕获），gate 自动 pass，final-summary 不要求 Knowledge Candidates / Wiki Updates 章节。
+- trivial 模式始终跳过 knowledge 提取。
 
 ## Quick-dev 快速通道
 
@@ -88,8 +89,9 @@ This repository contains the `chisel` Claude Code plugin.
 ## 可视化仪表板
 
 - `/chisel-dashboard <idea-name>` 手动生成 `{idea-dir}/dashboard.html`。
-- as-is 完成后自动启动仪表盘并打开浏览器，后续步骤静默更新、浏览器 30s 自动刷新。
+- **每次步骤切换时强制打开浏览器**，并等待用户确认已查看后才继续执行（仪表盘确认协议）。浏览器 30s 自动刷新。
 - 自包含 HTML，使用 Mermaid CDN + Chart.js CDN 渲染图表。
+- 含"步骤产出详情"表：展示当前需求的完整执行步骤列表、每步状态（已完成/进行中/待执行/已跳过）和对应的产出文件完成情况。
 - 含 As-Is 查看器（5 Tab：概览、核心走查、证据表、质量雷达图、覆盖矩阵）。
 - 含全链路改造视图：从 `impact-risk-report.json` 的 `flow_graph` 渲染带颜色标记的 Mermaid 流程图（灰=保留/蓝=改造/绿=新增/红=删除）。
 - `workflow-state.yaml` 的 `step_history` 提供时间线数据。
