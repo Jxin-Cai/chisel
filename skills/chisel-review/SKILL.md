@@ -109,8 +109,8 @@ if (d.schema_version === 2 && Array.isArray(d.repos)) {
 
 ### 第一步：Spec 门槛
 
-1. `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --next-tasks review`
-2. 对所有待 review 的 task，`--start-review <task-id>` 标记为 reviewing
+1. `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --next-tasks review`（返回 review backlog：`coded` 或已中断的 `reviewing` task）
+2. 对所有待 review 的 task，`--start-review <task-id>` 标记为 reviewing；已是 reviewing 时该操作幂等，用于中断后接续
 3. 启动 `agent-chisel-reviewer`（opus），传入 TASK：
    ```json
    { "idea_dir": "{IDEA_DIR}", "task_ids": ["task-001", "task-002", ...], "dimension": "spec", "rework_count": 0, "base_ref": "{BASE_REF}" }

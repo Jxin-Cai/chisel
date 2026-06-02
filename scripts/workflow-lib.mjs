@@ -15,6 +15,7 @@ const VALID_TRANSITIONS = new Set([
   'reviewing:approved',
   'reviewing:needs_rework',
   'needs_rework:repairing',
+  'repairing:repairing',
   'repairing:coded',
   'needs_rework:blocked',
   'confirmed:confirmed',
@@ -279,9 +280,33 @@ export function getNextTasks(ideaDir) {
   }).map(([taskId]) => taskId);
 }
 
+export function getCodingTasks(ideaDir) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  return Object.entries(state.tasks).filter(([, task]) => task.status === 'coding').map(([taskId]) => taskId);
+}
+
+export function getRepairingTasks(ideaDir) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  return Object.entries(state.tasks).filter(([, task]) => task.status === 'repairing').map(([taskId]) => taskId);
+}
+
 export function getCodedTasksNeedingReview(ideaDir) {
   const state = readTaskState(taskStateFile(ideaDir));
   return Object.entries(state.tasks).filter(([, task]) => task.status === 'coded').map(([taskId]) => taskId);
+}
+
+export function getReviewingTasks(ideaDir) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  return Object.entries(state.tasks).filter(([, task]) => task.status === 'reviewing').map(([taskId]) => taskId);
+}
+
+export function getReviewBacklogTasks(ideaDir) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  const entries = Object.entries(state.tasks);
+  return [
+    ...entries.filter(([, task]) => task.status === 'reviewing').map(([taskId]) => taskId),
+    ...entries.filter(([, task]) => task.status === 'coded').map(([taskId]) => taskId)
+  ];
 }
 
 export function getReworkTasks(ideaDir) {

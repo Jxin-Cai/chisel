@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 import {
   allTasksApproved,
   getBlockedReworkTasks,
-  getCodedTasksNeedingReview,
+  getCodingTasks,
+  getRepairingTasks,
+  getReviewBacklogTasks,
   getNextTasks,
   getReworkTasks,
   getStaleCodingTasks,
@@ -130,19 +132,29 @@ function main() {
       emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
       return;
     }
+    const repairingTasks = getRepairingTasks(IDEA_DIR);
+    if (repairingTasks.length > 0) {
+      emit('repair:code', 'tasks are already being repaired', { in_progress_tasks: repairingTasks, complexity });
+      return;
+    }
     const reworkTasks = getReworkTasks(IDEA_DIR);
     if (reworkTasks.length > 0) {
       emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
       return;
     }
+    const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
+    if (reviewTasks.length > 0) {
+      emit('review:cr-light', 'tasks are ready or already in review (trivial)', { next_tasks: reviewTasks, complexity });
+      return;
+    }
+    const codingTasks = getCodingTasks(IDEA_DIR);
+    if (codingTasks.length > 0) {
+      emit('implement:code', 'tasks are already being coded', { in_progress_tasks: codingTasks, complexity });
+      return;
+    }
     const codeTasks = getNextTasks(IDEA_DIR);
     if (codeTasks.length > 0) {
       emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
-      return;
-    }
-    const reviewTasks = getCodedTasksNeedingReview(IDEA_DIR);
-    if (reviewTasks.length > 0) {
-      emit('review:cr-light', 'all tasks coded, spec-only review (trivial)', { next_tasks: reviewTasks, complexity });
       return;
     }
     if (allTasksApproved(IDEA_DIR)) {
@@ -214,21 +226,33 @@ function main() {
     return;
   }
 
+  const repairingTasks = getRepairingTasks(IDEA_DIR);
+  if (repairingTasks.length > 0) {
+    emit('repair:code', 'tasks are already being repaired', { in_progress_tasks: repairingTasks, complexity });
+    return;
+  }
+
   const reworkTasks = getReworkTasks(IDEA_DIR);
   if (reworkTasks.length > 0) {
     emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
     return;
   }
 
-  const codeTasks = getNextTasks(IDEA_DIR);
-  if (codeTasks.length > 0) {
-    emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
+  const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
+  if (reviewTasks.length > 0) {
+    emit('review:cr', 'tasks are ready or already in requirement-level review', { next_tasks: reviewTasks, complexity });
     return;
   }
 
-  const reviewTasks = getCodedTasksNeedingReview(IDEA_DIR);
-  if (reviewTasks.length > 0) {
-    emit('review:cr', 'all tasks coded, requirement-level review is ready', { next_tasks: reviewTasks, complexity });
+  const codingTasks = getCodingTasks(IDEA_DIR);
+  if (codingTasks.length > 0) {
+    emit('implement:code', 'tasks are already being coded', { in_progress_tasks: codingTasks, complexity });
+    return;
+  }
+
+  const codeTasks = getNextTasks(IDEA_DIR);
+  if (codeTasks.length > 0) {
+    emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
     return;
   }
 

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import {
   allTasksApproved,
   getBlockedReworkTasks,
-  getCodedTasksNeedingReview,
+  getReviewBacklogTasks,
   getNextTasks,
   getReworkTasks,
   getTasksFileOverlap,
@@ -54,7 +54,7 @@ export async function main(argv) {
       }
       case '--next-tasks': {
         const target = argv[2] || 'code';
-        if (target === 'review') print({ next_tasks: getCodedTasksNeedingReview(ideaDir) });
+        if (target === 'review') print({ next_tasks: getReviewBacklogTasks(ideaDir) });
         else if (target === 'rework') print({ next_tasks: getReworkTasks(ideaDir) });
         else print({ next_tasks: getNextTasks(ideaDir) });
         break;
@@ -64,7 +64,7 @@ export async function main(argv) {
         if (!taskId) fail('--start-task 需要 task-id');
         const state = readTaskState(taskStateFile(ideaDir));
         const current = state.tasks[taskId]?.status;
-        const next = current === 'needs_rework' ? 'repairing' : 'coding';
+        const next = ['needs_rework', 'repairing'].includes(current) ? 'repairing' : 'coding';
         updateTaskStatus(ideaDir, taskId, next);
         print({ updated: true, task_id: taskId, status: next });
         break;
@@ -127,7 +127,7 @@ export async function main(argv) {
           idea: state.idea,
           task_count: Object.keys(state.tasks).length,
           next_code_tasks: exists ? getNextTasks(ideaDir) : [],
-          next_review_tasks: exists ? getCodedTasksNeedingReview(ideaDir) : [],
+          next_review_tasks: exists ? getReviewBacklogTasks(ideaDir) : [],
           next_rework_tasks: exists ? getReworkTasks(ideaDir) : [],
           blocked_rework_tasks: exists ? getBlockedReworkTasks(ideaDir) : [],
           all_approved: exists ? allTasksApproved(ideaDir) : false,
