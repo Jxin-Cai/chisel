@@ -3,7 +3,20 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { collectCrResults, collectTraceability, detectComplexity, parseTableSection } from '../scripts/dashboard.mjs';
+import {
+  collectCrResults,
+  collectTraceability,
+  detectComplexity,
+  formatEvidence,
+  normalizeApiChangePlan,
+  normalizeCoverageMatrixRefs,
+  normalizeDataChangePlan,
+  normalizeTaskItem,
+  normalizeTasksJson,
+  normalizeTraceabilityTree,
+  oneSentence,
+  parseTableSection,
+} from '../scripts/dashboard.mjs';
 
 function makeTmpDir() {
   return mkdtempSync(join(tmpdir(), 'chisel-dash-'));
@@ -99,6 +112,56 @@ describe('collectCrResults', () => {
     assert.equal(results[0].reworkItems[0]['严重度'], 'high');
     assert.equal(results[0].observations.length, 1);
     assert.equal(results[0].observations[0]['描述'], 'naming');
+  });
+});
+
+describe('dashboard normalization helpers', () => {
+  it('normalizes task_id/risk_level and legacy id/risk', () => {
+    assert.deepEqual(normalizeTaskItem({ task_id: 'task-001', risk_level: 'high', title: 'A', change_point_refs: ['CP-1'] }).id, 'task-001');
+    assert.equal(normalizeTaskItem({ id: 'task-002', risk: 'medium' }).risk_level, 'medium');
+    assert.deepEqual(normalizeTasksJson({ tasks: [{ task_id: 'task-003' }] }).map(t => t.id), ['task-003']);
+  });
+
+  it('keeps RISK outside requirement coverage', () => {
+    const model = normalizeTraceabilityTree({
+      traceability: {
+        items: [
+          { id: 'AC-001', type: 'acceptance_criteria', description: '验收项', covered_by_tasks: ['task-001'] },
+          { id: 'RISK-1', type: 'risk', description: '风险项', covered_by_tasks: ['task-002'] },
+        ]
+      },
+      clarification: null,
+      tasks: [],
+      taskState: { tasks: { 'task-001': { status: 'approved' }, 'task-002': { status: 'approved' } } }
+    });
+    assert.equal(model.total, 1);
+    assert.equal(model.covered, 1);
+    assert.equal(model.percentage, 100);
+    assert.equal(model.riskItems.length, 1);
+  });
+
+  it('normalizes coverage matrix E/L/D/S into readable summaries', () => {
+    const refs = normalizeCoverageMatrixRefs({
+      entrypoints: [{ id: 'E-001', name: 'POST /orders' }],
+      links: [{ id: 'L-001', from: 'Controller', to: 'Service' }],
+      data: [{ id: 'D-001', entity: 'orders' }],
+      side_effects: [{ id: 'S-001', kind: 'db_write' }],
+    });
+    assert.equal(refs.byId['E-001'].label, '入口');
+    assert.match(refs.byId['L-001'].summary, /Controller/);
+    assert.match(refs.byId['D-001'].summary, /orders/);
+  });
+
+  it('normalizes DB/API change plans with markdown fallback', () => {
+    assert.equal(normalizeDataChangePlan({ summary: {}, entities: [{ name: 'users' }] }, null).kind, 'json');
+    assert.equal(normalizeDataChangePlan(null, '## DB').kind, 'markdown');
+    assert.equal(normalizeApiChangePlan({ summary: {}, endpoints: [{ path: '/x' }] }, null).kind, 'json');
+    assert.equal(normalizeApiChangePlan(null, '## API').kind, 'markdown');
+  });
+
+  it('formats evidence arrays and extracts one sentence', () => {
+    assert.equal(formatEvidence([{ file: 'src/a.ts', line_start: 10, line_end: 12 }]), 'src/a.ts:10-12');
+    assert.equal(oneSentence('第一句说明影响。第二句更多细节。'), '第一句说明影响。');
   });
 });
 
