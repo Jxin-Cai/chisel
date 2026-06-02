@@ -31,6 +31,8 @@
 
 #### CP-1: Service.method() — 新增分支处理 X 场景
 
+- **做什么（一句话）**：新增 X 场景处理分支，确保 Y 输入得到 Z 行为。
+- **影响（一句话）**：影响 Service.method() 的下游持久化/返回语义，但保持既有 A 场景不变。
 - **当前行为**：...（引用 call-graph 中的 evidence / facts.md 中的 F-xxx）
 - **目标行为**：...
 - **修改方式**：...（具体到函数级别，如"在 X 函数第 N 行后插入分支判断"）
@@ -88,18 +90,31 @@
 
 ## Task 拆分建议
 
-每个 Task 必须通过 `trace_refs` 关联到一个或多个 CP。
+每个 Task 必须通过 `trace_refs` 关联到一个或多个需求/验收/验证追踪项，并通过 `change_point_refs` 关联到一个或多个 CP。
 
-同时写入 `to-be/traceability-matrix.json`：
+同时写入 `to-be/traceability-matrix.json`。该文件表达需求链路，不要把 `RISK-*` 当作需求项；风险放入 `impact-risk-report.json.risk_matrix`，如需追踪风险缓解，可使用 `type: "risk_mitigation"`，dashboard 不计入需求覆盖率。
 
 ```json
 {
   "items": [
     {
-      "id": "REQ-001",
-      "type": "goal",
-      "source": "requirement.md",
+      "id": "AC-001",
+      "type": "acceptance_criteria",
+      "source": "requirement-clarification.json",
+      "source_refs": ["REQ-001", "C-001"],
       "description": "用户创建时拒绝空名称",
+      "cp_refs": ["CP-1"],
+      "coverage_refs": ["E-001", "L-001", "D-001", "S-001"],
+      "covered_by_tasks": ["task-001"]
+    },
+    {
+      "id": "AC-001/VC-001",
+      "type": "verification_condition",
+      "source": "requirement-clarification.json",
+      "source_refs": ["AC-001", "VC-001"],
+      "description": "空名称请求返回 400 且不写库",
+      "cp_refs": ["CP-1"],
+      "coverage_refs": ["E-001", "D-001", "S-001"],
       "covered_by_tasks": ["task-001"]
     }
   ]
@@ -145,6 +160,52 @@
 同时写入 `to-be/impact-risk-report.json`（详见独立 schema 定义）。
 
 > **flow_graph 必填说明**：impact-risk-report.json 的 `flow_graph` 字段描述功能全链路，nodes 包含链路上所有节点（保留/改造/新增/删除），edges 按调用/数据流方向连接。dashboard 据此自动渲染带颜色标记的全链路改造视图：灰色=保留、蓝色=改造、绿色=新增、红色=删除。
+
+如涉及 DB 表/字段/关系新增、修改、删除，同时写入 `to-be/data-change-plan.json`：
+
+```json
+{
+  "schema_version": 1,
+  "summary": {"has_db_changes": true, "change_count": 1, "compatibility": "compatible", "notes": "新增可空字段，不影响旧写入路径"},
+  "entities": [
+    {
+      "name": "users",
+      "display_name": "用户表",
+      "change_type": "modify",
+      "description": "用户表新增 last_login_at 用于登录审计",
+      "fields": [
+        {"name": "last_login_at", "change_type": "add", "before": null, "after": {"type": "timestamp", "nullable": true, "default": null, "comment": "最后登录时间"}, "impact": "新增可空字段，不影响旧写入路径", "cp_refs": ["CP-2"], "task_refs": ["task-002"]}
+      ],
+      "relations": []
+    }
+  ],
+  "migrations": []
+}
+```
+
+如涉及 API endpoint、请求字段、响应字段、错误码、鉴权契约新增、修改、删除，同时写入 `to-be/api-change-plan.json`：
+
+```json
+{
+  "schema_version": 1,
+  "summary": {"has_api_changes": true, "change_count": 1, "compatibility": "compatible", "notes": "新增可选响应字段，旧客户端可忽略"},
+  "endpoints": [
+    {
+      "id": "API-001",
+      "method": "POST",
+      "path": "/users",
+      "change_type": "modify",
+      "description": "创建用户接口新增 nickname 入参",
+      "request": {"params": [], "query": [], "headers": [], "body": [{"name": "nickname", "change_type": "add", "before": null, "after": {"type": "string", "required": false, "description": "用户昵称"}, "impact": "可选字段，兼容旧客户端"}]},
+      "response": {"status_codes": [], "body": []},
+      "errors": [],
+      "compatibility": "compatible",
+      "cp_refs": ["CP-1"],
+      "task_refs": ["task-001"]
+    }
+  ]
+}
+```
 
 ## 变更完整性自检结果
 

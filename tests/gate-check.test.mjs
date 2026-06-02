@@ -47,6 +47,7 @@ function writeMinimalToBe(ideaDir) {
       forbidden_files: ['config/'],
       expected_files: ['src/feature.js'],
       acceptance_criteria: ['AC1: feature works'],
+      change_point_refs: ['CP-1'],
       trace_refs: ['REQ-1'],
       behavior_invariants: ['existing behavior preserved'],
       impact_surface: { files: ['src/feature.js'], symbols: [], invariants: [], shared_state: [] },

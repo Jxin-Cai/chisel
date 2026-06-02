@@ -184,6 +184,476 @@ function escHtml(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+
+function escAttr(s) {
+  return escHtml(s).replace(/'/g, '&#39;');
+}
+
+function scriptJson(value) {
+  return JSON.stringify(value || {}).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
+}
+
+function stripMarkdown(text) {
+  return String(text || '')
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^>\s?/gm, '')
+    .replace(/[\*_~]/g, '')
+    .replace(/\|/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function oneSentence(text, fallback = '') {
+  const clean = stripMarkdown(text || fallback);
+  if (!clean) return fallback || '';
+  const m = clean.match(/^(.{1,180}?[。.!！？?])/);
+  if (m) return m[1];
+  if (clean.length <= 180) return clean;
+  const cut = clean.slice(0, 180).replace(/[，,；;：:].*$/, '');
+  return (cut || clean.slice(0, 180)) + '…';
+}
+
+function normalizeTaskItem(t = {}) {
+  return {
+    ...t,
+    id: t.task_id || t.id || '',
+    title: t.title || t.goal || '',
+    goal: t.goal || t.description || t.title || '',
+    risk_level: t.risk_level || t.risk || 'low',
+    change_point_refs: t.change_point_refs || t.cp_refs || [],
+    trace_refs: t.trace_refs || [],
+    acceptance_criteria: t.acceptance_criteria || t.ac || [],
+    depends_on: t.depends_on || [],
+    expected_files: t.expected_files || [],
+    allowed_files: t.allowed_files || [],
+    forbidden_files: t.forbidden_files || [],
+    context_to_load: t.context_to_load || {},
+  };
+}
+
+function normalizeTasksJson(tasksJson) {
+  const raw = tasksJson?.tasks || (Array.isArray(tasksJson) ? tasksJson : []);
+  return raw.map(normalizeTaskItem).filter(t => t.id);
+}
+
+function inferTraceType(id) {
+  const s = String(id || '').toUpperCase();
+  if (s.startsWith('RISK')) return 'risk';
+  if (s.startsWith('AC-') && s.includes('/VC-')) return 'verification';
+  if (s.startsWith('VC-') || s.startsWith('VER-') || s.includes('/VC-') || s.includes('/VER-')) return 'verification';
+  if (s.startsWith('AC-')) return 'acceptance_criteria';
+  if (s.startsWith('C-')) return 'constraint';
+  if (s.startsWith('REQ-')) return 'requirement';
+  return 'requirement';
+}
+
+function normalizeTraceType(type, id = '') {
+  const raw = String(type || '').toLowerCase().replace(/[\s-]+/g, '_');
+  if (['requirement', 'req', 'goal', 'functional'].includes(raw)) return 'requirement';
+  if (['acceptance_criteria', 'acceptance', 'ac'].includes(raw)) return 'acceptance_criteria';
+  if (['verification', 'verification_condition', 'vc', 'ver'].includes(raw)) return 'verification';
+  if (['constraint', 'clarification', 'decision', 'c'].includes(raw)) return 'constraint';
+  if (['risk', 'risk_mitigation', 'mitigation'].includes(raw)) return raw;
+  return inferTraceType(id);
+}
+
+function isRiskTrace(item) {
+  const type = normalizeTraceType(item?.type, item?.id);
+  return type === 'risk' || type === 'risk_mitigation';
+}
+
+function isRequirementTrace(item) {
+  return !isRiskTrace(item);
+}
+
+function normalizeTraceabilityItem(item = {}, taskState = { tasks: {} }) {
+  const id = item.id || item.requirement_id || item.req_id || '';
+  const coveredBy = item.covered_by_tasks || item.tasks || [];
+  const statuses = coveredBy.map(t => taskState.tasks?.[t]?.status || 'unknown');
+  const allApproved = statuses.length > 0 && statuses.every(s => s === 'approved');
+  const anyInProgress = statuses.some(s => ['coding', 'coded', 'reviewing', 'repairing'].includes(s));
+  const coverage = allApproved ? 'complete' : anyInProgress ? 'in_progress' : coveredBy.length === 0 ? 'missing' : 'pending';
+  return {
+    ...item,
+    id,
+    type: normalizeTraceType(item.type, id),
+    source: item.source || '',
+    source_refs: item.source_refs || item.sources || [],
+    description: item.description || item.requirement || item.goal || '',
+    covered_by_tasks: coveredBy,
+    cp_refs: item.cp_refs || item.change_point_refs || [],
+    coverage_refs: item.coverage_refs || item.as_is_refs || [],
+    task_statuses: statuses,
+    coverage,
+  };
+}
+
+function normalizeCoverageMatrixRefs(matrix = {}) {
+  const dims = [
+    ['entrypoints', 'E', '入口'],
+    ['links', 'L', '链路'],
+    ['data', 'D', '数据'],
+    ['side_effects', 'S', '副作用'],
+  ];
+  const byId = {};
+  const groups = {};
+  for (const [key, prefix, label] of dims) {
+    const items = Array.isArray(matrix?.[key]) ? matrix[key] : [];
+    groups[key] = items.map(item => {
+      const id = item.id || '';
+      const normalized = { ...item, id, prefix, label, summary: summarizeCoverageItem(label, item) };
+      if (id) byId[id] = normalized;
+      return normalized;
+    });
+  }
+  return { byId, groups };
+}
+
+function summarizeCoverageItem(label, item = {}) {
+  if (label === '入口') {
+    const name = item.name || item.entrypoint || item.path || item.description || item.id;
+    return oneSentence(item.description || `${name} 是需求触发入口，影响请求进入后的主链路。`);
+  }
+  if (label === '链路') {
+    const from = item.from || item.source || item.caller || '';
+    const to = item.to || item.target || item.callee || '';
+    return oneSentence(item.description || `${from}${from && to ? ' → ' : ''}${to} 是相关调用链路，影响上下游行为传递。`);
+  }
+  if (label === '数据') {
+    const entity = item.entity || item.table || item.name || item.id;
+    return oneSentence(item.description || `${entity} 是相关数据对象，影响字段、关系或持久化语义。`);
+  }
+  const name = item.name || item.kind || item.type || item.description || item.id;
+  return oneSentence(item.description || `${name} 是相关副作用，影响外部调用、写入或异步行为。`);
+}
+
+function formatEvidence(evidence) {
+  if (Array.isArray(evidence)) return evidence.map(formatEvidenceOne).filter(Boolean).join('; ');
+  return formatEvidenceOne(evidence);
+}
+
+function formatEvidenceOne(e) {
+  if (!e) return '';
+  if (typeof e === 'string') return e;
+  if (typeof e !== 'object') return String(e);
+  const loc = [e.file || e.path || e.source || '', e.line_start ? `:${e.line_start}` : '', e.line_end ? `-${e.line_end}` : ''].join('');
+  return loc || e.url || e.note || '';
+}
+
+function collectTaskDetails(ideaDir, taskState = { tasks: {} }) {
+  const details = {};
+  for (const [taskId, task] of Object.entries(taskState.tasks || {})) {
+    const taskFile = task.file || `tasks/${taskId}.md`;
+    const reportFile = task.report_file || `task-reports/${taskId}-report.md`;
+    const crFile = task.cr_file || `cr/${taskId}-cr.md`;
+    const taskMd = readMd(ideaDir, taskFile);
+    const reportMd = readMd(ideaDir, reportFile);
+    const crMd = readMd(ideaDir, crFile);
+    details[taskId] = {
+      id: taskId,
+      status: task.status || 'pending',
+      description: task.description || '',
+      file: taskFile,
+      report_file: reportFile,
+      cr_file: crFile,
+      task_html: taskMd ? mdToHtml(taskMd) : '<p style="color:var(--text2)">未找到 task markdown</p>',
+      report_html: reportMd ? mdToHtml(reportMd) : '<p style="color:var(--text2)">暂无 task report</p>',
+      cr_html: crMd ? mdToHtml(crMd) : '<p style="color:var(--text2)">暂无 task CR</p>',
+    };
+  }
+  return details;
+}
+
+function renderTaskChip(taskId, taskDetails = {}) {
+  if (!taskId) return '';
+  const exists = Boolean(taskDetails[taskId]);
+  if (!exists) return `<span class="task-chip missing" title="未找到 task 详情">${escHtml(taskId)}</span>`;
+  return `<button type="button" class="task-chip" data-task-id="${escAttr(taskId)}">${escHtml(taskId)}</button>`;
+}
+
+function renderTaskChips(taskIds = [], taskDetails = {}) {
+  const ids = [...new Set(taskIds.filter(Boolean))];
+  if (ids.length === 0) return '<span style="color:var(--text2)">—</span>';
+  return ids.map(id => renderTaskChip(id, taskDetails)).join(' ');
+}
+
+function normalizeTraceabilityTree({ traceability, clarification, tasks, taskState }) {
+  const items = (traceability?.items || []).map(i => normalizeTraceabilityItem(i, taskState));
+  const existing = new Set(items.map(i => i.id));
+  const acs = clarification?.acceptance_criteria || clarification?.acceptanceCriteria || [];
+  for (const [idx, ac] of acs.entries()) {
+    const acId = ac.id || `AC-${String(idx + 1).padStart(3, '0')}`;
+    if (!existing.has(acId)) {
+      items.push(normalizeTraceabilityItem({ id: acId, type: 'acceptance_criteria', source: 'requirement-clarification.json', description: ac.description || ac.title || String(ac), covered_by_tasks: [] }, taskState));
+      existing.add(acId);
+    }
+    const vcs = ac.verification_conditions || ac.verifications || ac.conditions || [];
+    for (const [vcIdx, vc] of vcs.entries()) {
+      const vcId = vc.id || `VC-${String(vcIdx + 1).padStart(3, '0')}`;
+      const fullId = `${acId}/${vcId}`;
+      if (!existing.has(fullId) && !existing.has(vcId)) {
+        items.push(normalizeTraceabilityItem({ id: fullId, type: 'verification', source: 'requirement-clarification.json', source_refs: [acId, vcId], description: vc.description || vc.condition || String(vc), covered_by_tasks: [] }, taskState));
+        existing.add(fullId);
+      }
+    }
+  }
+  const requirementItems = items.filter(isRequirementTrace);
+  const riskItems = items.filter(isRiskTrace);
+  const covered = requirementItems.filter(i => i.coverage === 'complete').length;
+  const total = requirementItems.length;
+  const taskByTrace = new Map();
+  for (const t of tasks || []) {
+    for (const ref of t.trace_refs || []) {
+      if (!taskByTrace.has(ref)) taskByTrace.set(ref, []);
+      taskByTrace.get(ref).push(t.id);
+    }
+  }
+  return { total, covered, percentage: total > 0 ? Math.round((covered / total) * 100) : 0, requirementItems, riskItems, taskByTrace };
+}
+
+function traceTypeLabel(type) {
+  return ({ requirement: 'REQ 需求', acceptance_criteria: 'AC 验收', verification: 'VC/VER 验证', constraint: 'C 约束', risk: 'RISK 风险', risk_mitigation: '风险缓解' })[type] || type;
+}
+
+function statusClassForCoverage(coverage) {
+  return coverage === 'complete' ? 'approved' : coverage === 'missing' ? 'failed' : coverage === 'in_progress' ? 'coding' : 'pending';
+}
+
+function normalizeChangePoints({ impactRisk, tasks, traceabilityModel, coverageRefs, implementationPlan }) {
+  const byId = new Map();
+  for (const cp of impactRisk?.change_points || []) {
+    byId.set(cp.id, { ...cp, tasks: [], risk_items: [], coverage_refs: [], summary: oneSentence(cp.description || cp.node || cp.id), impact: oneSentence([...(cp.upstream_impact || []), ...(cp.downstream_impact || []), cp.risk_detail || ''].join('；')) });
+  }
+  const cpSection = extractCpSummariesFromPlan(implementationPlan);
+  for (const [id, summary] of Object.entries(cpSection)) {
+    if (!byId.has(id)) byId.set(id, { id, node: id, decision: '改造', tasks: [], risk_items: [], coverage_refs: [], summary, impact: '' });
+    else byId.get(id).summary ||= summary;
+  }
+  for (const t of tasks || []) {
+    for (const cpId of t.change_point_refs || []) {
+      if (!byId.has(cpId)) byId.set(cpId, { id: cpId, node: cpId, decision: '改造', tasks: [], risk_items: [], coverage_refs: [], summary: oneSentence(t.goal || t.title || cpId), impact: '' });
+      byId.get(cpId).tasks.push(t.id);
+    }
+  }
+  for (const risk of impactRisk?.risk_matrix || []) {
+    for (const cpId of risk.affected_cps || []) {
+      if (!byId.has(cpId)) byId.set(cpId, { id: cpId, node: cpId, decision: '改造', tasks: [], risk_items: [], coverage_refs: [], summary: cpId, impact: '' });
+      byId.get(cpId).risk_items.push(risk);
+    }
+  }
+  for (const item of traceabilityModel?.requirementItems || []) {
+    for (const cpId of item.cp_refs || []) {
+      if (!byId.has(cpId)) continue;
+      byId.get(cpId).coverage_refs.push(...(item.coverage_refs || []));
+    }
+  }
+  return [...byId.values()].map(cp => ({ ...cp, tasks: [...new Set(cp.tasks)], coverage_refs: [...new Set(cp.coverage_refs)].map(id => coverageRefs.byId[id]).filter(Boolean) }));
+}
+
+function extractCpSummariesFromPlan(plan = '') {
+  const out = {};
+  const re = /#{3,4}\s+(CP-\d+)[:：]?([^\n]*)\n([\s\S]*?)(?=\n#{3,4}\s+CP-\d+|\n##\s|$)/g;
+  let m;
+  while ((m = re.exec(plan || ''))) out[m[1]] = oneSentence(m[2] || m[3] || m[1]);
+  return out;
+}
+
+function normalizeDataChangePlan(jsonDoc, markdownText) {
+  if (jsonDoc) return { kind: 'json', summary: jsonDoc.summary || {}, entities: jsonDoc.entities || [], migrations: jsonDoc.migrations || [] };
+  if (markdownText) return { kind: 'markdown', markdown: markdownText, summary: {}, entities: [], migrations: [] };
+  return null;
+}
+
+function normalizeApiChangePlan(jsonDoc, markdownText) {
+  if (jsonDoc) return { kind: 'json', summary: jsonDoc.summary || {}, endpoints: jsonDoc.endpoints || [] };
+  if (markdownText) return { kind: 'markdown', markdown: markdownText, summary: {}, endpoints: [] };
+  return null;
+}
+
+function mermaidId(s) {
+  const raw = String(s || 'entity').replace(/[^A-Za-z0-9_]/g, '_');
+  return /^[A-Za-z_]/.test(raw) ? raw : `E_${raw}`;
+}
+
+
+function renderToBeSection({ implementationPlan, tasks, traceabilityModel, changePoints, dataChanges, apiChanges, taskDetails }) {
+  if (!implementationPlan && tasks.length === 0 && changePoints.length === 0 && !dataChanges && !apiChanges) return '';
+  return `<div class="card" style="margin-bottom:16px">
+    <h2>To-Be 方案</h2>
+    <div class="tabs" data-group="tobe">
+      <button class="tab active" data-tab="tobe-overview">方案概览</button>
+      <button class="tab" data-tab="tobe-chain">需求拆解链路</button>
+      ${changePoints.length ? '<button class="tab" data-tab="tobe-cp">CP 改造点</button>' : ''}
+      ${tasks.length ? '<button class="tab" data-tab="tobe-tasks">Task 拆分</button>' : ''}
+      <button class="tab" data-tab="tobe-data">数据变更</button>
+      <button class="tab" data-tab="tobe-api">API 契约</button>
+      <button class="tab" data-tab="tobe-risk">风险与缓解</button>
+      ${implementationPlan ? '<button class="tab" data-tab="tobe-raw">原始文档</button>' : ''}
+    </div>
+    <div class="tab-content active" id="tobe-overview">${renderPlanOverview(implementationPlan)}</div>
+    <div class="tab-content" id="tobe-chain">${renderTraceabilityTree(traceabilityModel, taskDetails, { compact: false })}</div>
+    ${changePoints.length ? `<div class="tab-content" id="tobe-cp">${renderChangePointPanel(changePoints, taskDetails)}</div>` : ''}
+    ${tasks.length ? `<div class="tab-content" id="tobe-tasks">${renderTasksPanel(tasks, taskDetails)}</div>` : ''}
+    <div class="tab-content" id="tobe-data">${renderDataChangePanel(dataChanges, taskDetails)}</div>
+    <div class="tab-content" id="tobe-api">${renderApiChangePanel(apiChanges, taskDetails)}</div>
+    <div class="tab-content" id="tobe-risk">${renderRiskCoverage(traceabilityModel, changePoints, taskDetails)}</div>
+    ${implementationPlan ? `<div class="tab-content" id="tobe-raw">${mdToHtml(implementationPlan)}</div>` : ''}
+  </div>`;
+}
+
+function renderPlanOverview(plan) {
+  if (!plan) return '<p class="muted">无 implementation-plan.md</p>';
+  const sections = ['目标行为', '非目标行为', '方案总览', '回滚方案'];
+  let html = '';
+  for (const sec of sections) {
+    const m = plan.match(new RegExp('##\\s+' + sec + '[^\\n]*\\n([\\s\\S]*?)(?=\\n## |$)'));
+    if (m) html += `<h3>${escHtml(sec)}</h3>${mdToHtml(m[1].trim())}`;
+  }
+  return html || mdToHtml(plan);
+}
+
+function renderTasksPanel(tasks, taskDetails) {
+  return `<table><tr><th>ID</th><th>标题</th><th>CP Refs</th><th>风险</th><th>AC 数</th><th>Trace Refs</th></tr>
+    ${tasks.map(t => `<tr>
+      <td>${renderTaskChip(t.id, taskDetails)}</td>
+      <td class="desc-cell">${escHtml(oneSentence(t.title || t.goal))}</td>
+      <td>${renderRefChips(t.change_point_refs, 'cp')}</td>
+      <td><span class="status s-${t.risk_level === 'high' ? 'fail' : t.risk_level === 'medium' ? 'coding' : 'approved'}">${escHtml(t.risk_level)}</span></td>
+      <td>${(t.acceptance_criteria || []).length}</td>
+      <td>${renderRefChips(t.trace_refs)}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+function renderTraceabilitySection(model, taskDetails) {
+  if (!model || model.total === 0 && model.riskItems.length === 0) return '';
+  return `<div class="card" style="margin-bottom:16px">
+    <h2>需求可追溯覆盖度 — ${model.percentage}%</h2>
+    <p class="muted" style="font-size:.82rem;margin-bottom:10px">覆盖率只统计 REQ/AC/C/VC(VER) 等需求类项；RISK 单独展示为风险缓解链路，不计入需求覆盖。</p>
+    <div class="progress-bar" style="height:12px;margin:8px 0">
+      <div class="progress-fill ${model.percentage === 100 ? 'fill-success' : model.percentage >= 50 ? 'fill-warn' : 'fill-accent'}" style="width:${model.percentage}%"></div>
+    </div>
+    ${renderTraceabilityTree(model, taskDetails, { compact: true })}
+  </div>`;
+}
+
+function renderTraceabilityTree(model, taskDetails, { compact } = {}) {
+  if (!model || model.requirementItems.length === 0) return '<p class="muted">暂无需求追踪项</p>';
+  return model.requirementItems.map(item => `<div class="trace-card">
+    <div class="trace-head">
+      <span class="trace-id">${escHtml(item.id)}</span>
+      <span class="status s-${statusClassForCoverage(item.coverage)}">${escHtml(item.coverage)}</span>
+      <span class="ref-chip">${escHtml(traceTypeLabel(item.type))}</span>
+    </div>
+    <div class="desc-cell">${escHtml(compact ? oneSentence(item.description || item.id) : (item.description || item.id))}</div>
+    <div class="trace-chain">
+      <div class="chain-node"><strong>来源</strong>${renderRefChips([item.source, ...(item.source_refs || [])].filter(Boolean))}</div>
+      <div class="chain-node"><strong>CP 改造点</strong>${renderRefChips(item.cp_refs || [], 'cp')}</div>
+      <div class="chain-node"><strong>E/L/D/S 影响面</strong>${renderRefChips(item.coverage_refs || [], 'coverage')}</div>
+      <div class="chain-node"><strong>覆盖 Task</strong>${renderTaskChips(item.covered_by_tasks || [], taskDetails)}</div>
+    </div>
+  </div>`).join('');
+}
+
+function renderChangePointPanel(changePoints, taskDetails) {
+  if (!changePoints.length) return '<p class="muted">暂无 CP 改造点</p>';
+  return changePoints.map(cp => `<div class="trace-card">
+    <div class="trace-head"><span class="trace-id">${escHtml(cp.id)}</span><span class="status s-${cp.decision === '删除' ? 'failed' : cp.decision === '新增' ? 'approved' : 'coding'}">${escHtml(cp.decision || '改造')}</span><span class="status s-${cp.risk_level === 'high' ? 'failed' : cp.risk_level === 'medium' ? 'needs_rework' : 'approved'}">${escHtml(cp.risk_level || 'low')}</span></div>
+    <div class="trace-chain">
+      <div class="chain-node"><strong>做什么</strong><div class="desc-cell">${escHtml(cp.summary || cp.node || cp.id)}</div></div>
+      <div class="chain-node"><strong>影响</strong><div class="desc-cell">${escHtml(cp.impact || cp.risk_detail || '未声明影响')}</div></div>
+      <div class="chain-node"><strong>Task</strong>${renderTaskChips(cp.tasks || [], taskDetails)}</div>
+      <div class="chain-node"><strong>E/L/D/S</strong>${(cp.coverage_refs || []).length ? cp.coverage_refs.map(r => `<span class="ref-chip coverage" title="${escAttr(r.summary)}">${escHtml(r.id)} · ${escHtml(r.label)}</span>`).join('') : '<span class="muted">—</span>'}</div>
+      <div class="chain-node"><strong>风险</strong>${(cp.risk_items || []).length ? cp.risk_items.map(r => `<span class="ref-chip" title="${escAttr(r.description || '')}">${escHtml(r.id || r.category)}</span>`).join('') : '<span class="muted">—</span>'}</div>
+    </div>
+  </div>`).join('');
+}
+
+function renderRiskCoverage(model, changePoints, taskDetails) {
+  const risks = [...(model?.riskItems || [])];
+  const cpRisks = changePoints.flatMap(cp => (cp.risk_items || []).map(r => ({ ...r, cp_id: cp.id, task_refs: cp.tasks || [] })));
+  if (risks.length === 0 && cpRisks.length === 0) return '<p class="muted">暂无风险项。RISK 不作为需求统计项。</p>';
+  return `<table><tr><th>风险</th><th>描述</th><th>关联 CP</th><th>缓解 Task</th><th>状态/级别</th></tr>
+    ${risks.map(r => `<tr><td>${escHtml(r.id)}</td><td class="desc-cell">${escHtml(r.description)}</td><td>${renderRefChips(r.cp_refs || [], 'cp')}</td><td>${renderTaskChips(r.covered_by_tasks || [], taskDetails)}</td><td><span class="status s-${statusClassForCoverage(r.coverage)}">${escHtml(r.coverage)}</span></td></tr>`).join('')}
+    ${cpRisks.map(r => `<tr><td>${escHtml(r.id || r.category)}</td><td class="desc-cell">${escHtml(r.description || r.mitigation || '')}</td><td>${renderRefChips([r.cp_id], 'cp')}</td><td>${renderTaskChips(r.task_refs || [], taskDetails)}</td><td><span class="status s-${r.severity === 'high' ? 'failed' : r.severity === 'medium' ? 'needs_rework' : 'approved'}">${escHtml(r.severity || r.likelihood || 'risk')}</span></td></tr>`).join('')}
+  </table>`;
+}
+
+function renderRefChips(refs = [], cls = '') {
+  const vals = [...new Set(refs.filter(Boolean))];
+  if (vals.length === 0) return '<span class="muted">—</span>';
+  return vals.map(r => `<span class="ref-chip ${cls}">${escHtml(r)}</span>`).join('');
+}
+
+function renderDataChangePanel(dataChanges, taskDetails) {
+  if (!dataChanges) return '<p class="muted">未声明 DB 字段/表关系变更；如涉及 DB，请在 to-be/data-change-plan.json 中表达以生成 ER diff。</p>';
+  if (dataChanges.kind === 'markdown') return `<p class="muted">当前仅发现 Markdown 计划；建议补充 to-be/data-change-plan.json 以启用结构化 ER diff。</p>${mdToHtml(dataChanges.markdown)}`;
+  const changedFields = dataChanges.entities.flatMap(e => (e.fields || []).map(f => ({ ...f, entity: e.name || e.display_name || '' })));
+  return `<div class="change-summary"><div><strong>${dataChanges.summary.change_count ?? changedFields.length}</strong><br><span class="muted">字段/实体变更</span></div><div><strong>${escHtml(dataChanges.summary.compatibility || 'unknown')}</strong><br><span class="muted">兼容性</span></div><div class="desc-cell">${escHtml(dataChanges.summary.notes || '')}</div></div>
+    ${renderErChangeDiagram(dataChanges)}
+    <h3>字段 diff</h3>
+    <table><tr><th>实体</th><th>字段</th><th>变更</th><th>Before</th><th>After</th><th>影响</th><th>CP</th><th>Task</th></tr>
+      ${changedFields.map(f => `<tr><td>${escHtml(f.entity)}</td><td>${escHtml(f.name)}</td><td><span class="status s-${f.change_type === 'delete' ? 'failed' : f.change_type === 'modify' ? 'coding' : 'approved'}">${escHtml(f.change_type)}</span></td><td><code>${escHtml(formatFieldSpec(f.before))}</code></td><td><code>${escHtml(formatFieldSpec(f.after))}</code></td><td class="desc-cell">${escHtml(f.impact || '')}</td><td>${renderRefChips(f.cp_refs || [], 'cp')}</td><td>${renderTaskChips(f.task_refs || [], taskDetails)}</td></tr>`).join('')}
+    </table>`;
+}
+
+function renderErChangeDiagram(dataChanges) {
+  const entities = dataChanges.entities || [];
+  if (entities.length === 0) return '';
+  let mermaid = 'erDiagram\n';
+  for (const e of entities) {
+    const eid = mermaidId(e.name || e.display_name);
+    mermaid += `  ${eid} {\n`;
+    const fields = e.fields && e.fields.length ? e.fields : [{ name: 'id', after: { type: 'unknown' }, change_type: e.change_type || 'unchanged' }];
+    for (const f of fields) {
+      const spec = f.after || f.before || {};
+      const type = String(spec.type || 'unknown').replace(/[^A-Za-z0-9_]/g, '_');
+      mermaid += `    ${type} ${mermaidId(f.name)} "${String(f.change_type || '').replace(/"/g, "'")}"\n`;
+    }
+    mermaid += '  }\n';
+    for (const r of e.relations || []) {
+      const to = mermaidId(r.to || r.target);
+      if (to) mermaid += `  ${eid} ||--o{ ${to} : "${String(r.description || r.type || 'relates').replace(/"/g, "'")}"\n`;
+    }
+  }
+  return `<pre class="mermaid">${escHtml(mermaid)}</pre>`;
+}
+
+function renderApiChangePanel(apiChanges, taskDetails) {
+  if (!apiChanges) return '<p class="muted">未声明 API 出入参变更；如涉及 API，请在 to-be/api-change-plan.json 中表达以生成契约 diff。</p>';
+  if (apiChanges.kind === 'markdown') return `<p class="muted">当前仅发现 Markdown 计划；建议补充 to-be/api-change-plan.json 以启用结构化 API 契约 diff。</p>${mdToHtml(apiChanges.markdown)}`;
+  return `<div class="change-summary"><div><strong>${apiChanges.summary.change_count ?? apiChanges.endpoints.length}</strong><br><span class="muted">接口变更</span></div><div><strong>${escHtml(apiChanges.summary.compatibility || 'unknown')}</strong><br><span class="muted">兼容性</span></div><div class="desc-cell">${escHtml(apiChanges.summary.notes || '')}</div></div>
+    <table><tr><th>接口</th><th>变更</th><th>描述</th><th>兼容性</th><th>CP</th><th>Task</th></tr>
+    ${(apiChanges.endpoints || []).map(ep => `<tr><td><code>${escHtml([ep.method, ep.path].filter(Boolean).join(' '))}</code></td><td><span class="status s-${ep.change_type === 'delete' ? 'failed' : ep.change_type === 'modify' ? 'coding' : 'approved'}">${escHtml(ep.change_type)}</span></td><td class="desc-cell">${escHtml(ep.description || '')}</td><td>${escHtml(ep.compatibility || '')}</td><td>${renderRefChips(ep.cp_refs || [], 'cp')}</td><td>${renderTaskChips(ep.task_refs || [], taskDetails)}</td></tr>`).join('')}
+    </table>
+    ${(apiChanges.endpoints || []).map(ep => renderEndpointFields(ep, taskDetails)).join('')}`;
+}
+
+function renderEndpointFields(ep) {
+  const reqFields = flattenApiFields(ep.request);
+  const resFields = flattenApiFields(ep.response);
+  const renderRows = (title, rows) => rows.length ? `<h3>${escHtml(title)} — ${escHtml([ep.method, ep.path].filter(Boolean).join(' '))}</h3><table><tr><th>位置</th><th>字段</th><th>变更</th><th>Before</th><th>After</th><th>影响</th></tr>${rows.map(f => `<tr><td>${escHtml(f.location)}</td><td><code>${escHtml(f.name)}</code></td><td><span class="status s-${f.change_type === 'delete' ? 'failed' : f.change_type === 'modify' ? 'coding' : 'approved'}">${escHtml(f.change_type)}</span></td><td><code>${escHtml(formatFieldSpec(f.before))}</code></td><td><code>${escHtml(formatFieldSpec(f.after))}</code></td><td class="desc-cell">${escHtml(f.impact || '')}</td></tr>`).join('')}</table>` : '';
+  return renderRows('Request diff', reqFields) + renderRows('Response diff', resFields);
+}
+
+function flattenApiFields(section = {}) {
+  const out = [];
+  for (const key of ['params', 'query', 'headers', 'body', 'status_codes']) {
+    for (const f of section?.[key] || []) out.push({ ...f, location: key });
+  }
+  return out;
+}
+
+function formatFieldSpec(spec) {
+  if (!spec) return '—';
+  if (typeof spec === 'string') return spec;
+  return Object.entries(spec).map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : String(v)}`).join('; ');
+}
+
 // --- Utility functions (exported for testing) ---
 
 function detectComplexity(ideaDir) {
@@ -298,6 +768,18 @@ const qualityScore = readJson(IDEA_DIR, 'as-is/quality-score.json');
 const coverageMatrix = readJson(IDEA_DIR, 'as-is/coverage-matrix.json');
 const implementationPlan = readMd(IDEA_DIR, 'to-be/implementation-plan.md');
 const tasksJson = readJson(IDEA_DIR, 'to-be/tasks.json');
+const clarification = readJson(IDEA_DIR, 'requirement-clarification.json');
+const dataChangePlanJson = readJson(IDEA_DIR, 'to-be/data-change-plan.json');
+const dataChangePlanMd = readMd(IDEA_DIR, 'to-be/data-change-plan.md');
+const apiChangePlanJson = readJson(IDEA_DIR, 'to-be/api-change-plan.json');
+const apiChangePlanMd = readMd(IDEA_DIR, 'to-be/api-change-plan.md');
+const normalizedTasks = normalizeTasksJson(tasksJson);
+const taskDetails = collectTaskDetails(IDEA_DIR, taskState);
+const coverageRefs = normalizeCoverageMatrixRefs(coverageMatrix || {});
+const traceabilityTree = normalizeTraceabilityTree({ traceability, clarification, tasks: normalizedTasks, taskState });
+const changePoints = normalizeChangePoints({ impactRisk, tasks: normalizedTasks, traceabilityModel: traceabilityTree, coverageRefs, implementationPlan });
+const dataChanges = normalizeDataChangePlan(dataChangePlanJson, dataChangePlanMd);
+const apiChanges = normalizeApiChangePlan(apiChangePlanJson, apiChangePlanMd);
 const ideaName = basename(IDEA_DIR);
 const complexity = detectComplexity(IDEA_DIR);
 
@@ -312,8 +794,14 @@ const DATA = {
   phases: workflowState?.phases || {},
   stepHistory: workflowState?.step_history || [],
   tasks: taskState.tasks,
+  normalizedTasks,
+  taskDetails,
   crResults,
   traceability,
+  traceabilityTree,
+  changePoints,
+  dataChanges,
+  apiChanges,
 };
 
 const WORKFLOW_STEPS = complexity === 'trivial'
@@ -479,10 +967,10 @@ canvas{max-height:260px}
     <tr><th>Task</th><th>状态</th><th>返修</th><th>描述</th></tr>
     ${Object.entries(DATA.tasks).map(([id, t]) => `
     <tr>
-      <td><strong>${escHtml(id)}</strong></td>
+      <td>${renderTaskChip(id, taskDetails)}</td>
       <td><span class="status s-${t.status || 'pending'}">${escHtml(t.status || 'pending')}</span></td>
       <td>${t.rework_count || 0}</td>
-      <td style="color:var(--text2);font-size:0.8rem">${escHtml(String(t.description || '').slice(0, 60))}</td>
+      <td class="desc-cell muted">${escHtml(oneSentence(t.description || ''))}</td>
     </tr>`).join('')}
   </table>
 </div>
@@ -518,9 +1006,9 @@ canvas{max-height:260px}
     </div>`;
   })()}
   <div class="tabs" data-group="cr-detail">
-    <button class="tab active" onclick="switchTab(this,'cr-detail','cr-summary')">总览</button>
-    <button class="tab" onclick="switchTab(this,'cr-detail','cr-rework')">Rework Items</button>
-    <button class="tab" onclick="switchTab(this,'cr-detail','cr-obs')">Observations</button>
+    <button class="tab active" data-tab="cr-summary">总览</button>
+    <button class="tab" data-tab="cr-rework">Rework Items</button>
+    <button class="tab" data-tab="cr-obs">Observations</button>
   </div>
   <div class="tab-content active" id="cr-summary">
     <table>
@@ -533,7 +1021,7 @@ canvas{max-height:260px}
       const allRework = crResults.flatMap(r => (r.reworkItems || []).map(i => ({ ...i, dim: r.dimension })));
       if (allRework.length === 0) return '<p style="color:var(--text2)">无 Rework Items</p>';
       return `<table><tr><th>ID</th><th>维度</th><th>问题</th><th>严重度</th><th>置信度</th><th>Task</th></tr>
-        ${allRework.map(i => `<tr><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.id || i.ID || '')}</td><td>${escHtml(i.dim)}</td><td style="font-size:0.8rem;max-width:300px">${escHtml((i['问题描述'] || i.description || '').slice(0, 100))}</td><td><span class="status s-${(i['严重度'] || i.severity || '') === 'high' ? 'fail' : 'coding'}">${escHtml(i['严重度'] || i.severity || '')}</span></td><td>${escHtml(i['置信度'] || i.confidence || '')}</td><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.affected_task_id || i['affected_task_id'] || '')}</td></tr>`).join('')}
+        ${allRework.map(i => `<tr><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.id || i.ID || '')}</td><td>${escHtml(i.dim)}</td><td style="font-size:0.8rem;max-width:300px">${escHtml(oneSentence(i['问题描述'] || i.description || ''))}</td><td><span class="status s-${(i['严重度'] || i.severity || '') === 'high' ? 'fail' : 'coding'}">${escHtml(i['严重度'] || i.severity || '')}</span></td><td>${escHtml(i['置信度'] || i.confidence || '')}</td><td style="font-family:var(--font-mono);font-size:0.75rem">${renderTaskChips([i.affected_task_id || i['affected_task_id'] || ''], taskDetails)}</td></tr>`).join('')}
       </table>`;
     })()}
   </div>
@@ -542,7 +1030,7 @@ canvas{max-height:260px}
       const allObs = crResults.flatMap(r => (r.observations || []).map(i => ({ ...i, dim: r.dimension })));
       if (allObs.length === 0) return '<p style="color:var(--text2)">无 Observations</p>';
       return `<table><tr><th>ID</th><th>维度</th><th>描述</th><th>置信度</th><th>Task</th></tr>
-        ${allObs.map(i => `<tr><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.id || i.ID || '')}</td><td>${escHtml(i.dim)}</td><td style="font-size:0.8rem;max-width:400px">${escHtml((i['描述'] || i.description || '').slice(0, 120))}</td><td>${escHtml(i['置信度'] || i.confidence || '')}</td><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.affected_task_id || i['affected_task_id'] || '')}</td></tr>`).join('')}
+        ${allObs.map(i => `<tr><td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(i.id || i.ID || '')}</td><td>${escHtml(i.dim)}</td><td style="font-size:0.8rem;max-width:400px">${escHtml(oneSentence(i['描述'] || i.description || ''))}</td><td>${escHtml(i['置信度'] || i.confidence || '')}</td><td style="font-family:var(--font-mono);font-size:0.75rem">${renderTaskChips([i.affected_task_id || i['affected_task_id'] || ''], taskDetails)}</td></tr>`).join('')}
       </table>`;
     })()}
   </div>` : '<p style="color:var(--text2)">暂无 CR 结果</p>'}
@@ -550,83 +1038,10 @@ canvas{max-height:260px}
 </div>
 
 <!-- To-Be 方案视图 -->
-${(implementationPlan || tasksJson) ? `
-<div class="card" style="margin-bottom:16px">
-  <h2>To-Be 方案</h2>
-  <div class="tabs" data-group="tobe">
-    <button class="tab active" onclick="switchTab(this,'tobe','tobe-overview')">方案概览</button>
-    ${implementationPlan && implementationPlan.includes('## 改造点') ? `<button class="tab" onclick="switchTab(this,'tobe','tobe-cp')">改造点映射</button>` : ''}
-    ${tasksJson ? `<button class="tab" onclick="switchTab(this,'tobe','tobe-tasks')">Task 拆分</button>` : ''}
-    ${(traceability && tasksJson) ? `<button class="tab" onclick="switchTab(this,'tobe','tobe-matrix')">覆盖矩阵</button>` : ''}
-  </div>
-  <div class="tab-content active" id="tobe-overview">
-    ${(() => {
-      if (!implementationPlan) return '<p style="color:var(--text2)">无 implementation-plan.md</p>';
-      const sections = ['目标行为', '非目标行为', '方案总览', '回滚方案'];
-      let html = '';
-      for (const sec of sections) {
-        const re = new RegExp('##\\\\s+' + sec + '[^\\n]*\\n([\\\\s\\\\S]*?)(?=\\n##\\\\s|$)');
-        const m = implementationPlan.match(new RegExp('##\\s+' + sec + '[^\\n]*\\n([\\s\\S]*?)(?=\\n## |$)'));
-        if (m) html += '<h3>' + sec + '</h3>' + mdToHtml(m[1].trim());
-      }
-      return html || mdToHtml(implementationPlan.slice(0, 2000));
-    })()}
-  </div>
-  ${implementationPlan && implementationPlan.includes('## 改造点') ? `<div class="tab-content" id="tobe-cp">
-    ${(() => {
-      const m = implementationPlan.match(/## 改造点[^\n]*\n([\s\S]*?)(?=\n## |$)/);
-      return m ? mdToHtml(m[1].trim()) : '<p style="color:var(--text2)">无改造点章节</p>';
-    })()}
-  </div>` : ''}
-  ${tasksJson ? `<div class="tab-content" id="tobe-tasks">
-    <table>
-      <tr><th>ID</th><th>标题</th><th>CP Refs</th><th>风险</th><th>AC 数</th></tr>
-      ${(tasksJson.tasks || tasksJson || []).map(t => `<tr>
-        <td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(t.id || '')}</td>
-        <td style="font-size:0.8rem">${escHtml(String(t.title || '').slice(0, 60))}</td>
-        <td style="font-size:0.75rem">${escHtml((t.change_point_refs || t.cp_refs || []).join(', '))}</td>
-        <td><span class="status s-${(t.risk || '') === 'high' ? 'fail' : (t.risk || '') === 'medium' ? 'coding' : 'approved'}">${escHtml(t.risk || 'low')}</span></td>
-        <td>${(t.acceptance_criteria || t.ac || []).length}</td>
-      </tr>`).join('')}
-    </table>
-  </div>` : ''}
-  ${(traceability && tasksJson) ? `<div class="tab-content" id="tobe-matrix">
-    <table>
-      <tr><th>需求 AC</th><th>覆盖 Task</th><th>关联 CP</th></tr>
-      ${(traceability.items || []).map(item => {
-        const tasks = item.covered_by_tasks || [];
-        const cps = tasks.flatMap(tid => {
-          const t = (tasksJson.tasks || tasksJson || []).find(x => x.id === tid);
-          return t ? (t.change_point_refs || t.cp_refs || []) : [];
-        });
-        return `<tr>
-          <td style="font-size:0.8rem">${escHtml(String(item.description || item.requirement || item.id || '').slice(0, 60))}</td>
-          <td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml(tasks.join(', '))}</td>
-          <td style="font-family:var(--font-mono);font-size:0.75rem">${escHtml([...new Set(cps)].join(', '))}</td>
-        </tr>`;
-      }).join('')}
-    </table>
-  </div>` : ''}
-</div>` : ''}
+${renderToBeSection({ implementationPlan, tasks: normalizedTasks, traceabilityModel: traceabilityTree, changePoints, dataChanges, apiChanges, taskDetails })}
 
 <!-- Traceability -->
-${traceability ? `
-<div class="card" style="margin-bottom:16px">
-  <h2>需求可追溯覆盖度 — ${traceability.percentage}%</h2>
-  <div class="progress-bar" style="height:12px;margin:8px 0">
-    <div class="progress-fill ${traceability.percentage === 100 ? 'fill-success' : traceability.percentage >= 50 ? 'fill-warn' : 'fill-accent'}" style="width:${traceability.percentage}%"></div>
-  </div>
-  <table>
-    <tr><th>需求 ID</th><th>描述</th><th>覆盖 Tasks</th><th>状态</th></tr>
-    ${traceability.items.map(item => `
-    <tr>
-      <td>${escHtml(item.id || item.requirement_id || '')}</td>
-      <td style="font-size:0.8rem">${escHtml(String(item.description || item.requirement || '').slice(0, 80))}</td>
-      <td style="font-size:0.8rem">${escHtml((item.covered_by_tasks || []).join(', '))}</td>
-      <td><span class="status s-${item.coverage === 'complete' ? 'approved' : item.coverage === 'missing' ? 'failed' : 'coding'}">${escHtml(item.coverage)}</span></td>
-    </tr>`).join('')}
-  </table>
-</div>` : ''}
+${renderTraceabilitySection(traceabilityTree, taskDetails)}
 
 <!-- Impact & Risk -->
 ${impactRisk ? `
@@ -732,6 +1147,30 @@ ${DATA.stepHistory.length > 0 ? `
   </div>
 </div>` : ''}
 
+
+
+<div class="modal-backdrop" id="taskModalBackdrop" role="presentation">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="taskModalTitle">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="taskModalTitle">Task</div>
+        <div class="muted" id="taskModalMeta" style="font-size:.78rem"></div>
+      </div>
+      <button type="button" class="modal-close" id="taskModalClose">关闭</button>
+    </div>
+    <div class="modal-body">
+      <div class="tabs" id="taskModalTabs">
+        <button class="tab active" data-tab="task-modal-task">Task</button>
+        <button class="tab" data-tab="task-modal-report">Report</button>
+        <button class="tab" data-tab="task-modal-cr">CR</button>
+      </div>
+      <div class="tab-content active" id="task-modal-task"></div>
+      <div class="tab-content" id="task-modal-report"></div>
+      <div class="tab-content" id="task-modal-cr"></div>
+    </div>
+  </div>
+</div>
+
 <div class="refresh-indicator" id="refreshIndicator">
   <div class="ri-bar"><div class="ri-fill" id="riFill"></div></div>
   <span id="riText">30s</span>
@@ -785,6 +1224,40 @@ document.querySelectorAll('.tabs').forEach(tabGroup=>{
 });
 
 restoreTabState();
+
+
+// --- Task detail modal ---
+const TASK_DETAILS=${scriptJson(taskDetails)};
+const taskBackdrop=document.getElementById('taskModalBackdrop');
+const taskClose=document.getElementById('taskModalClose');
+function setModalTab(tabId){
+  const group=document.getElementById('taskModalTabs');
+  if(!group)return;
+  group.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.tab===tabId));
+  ['task-modal-task','task-modal-report','task-modal-cr'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.classList.toggle('active',id===tabId);
+  });
+}
+function openTaskModal(taskId){
+  const detail=TASK_DETAILS[taskId];
+  if(!detail||!taskBackdrop)return;
+  document.getElementById('taskModalTitle').textContent=taskId;
+  document.getElementById('taskModalMeta').textContent=(detail.status||'')+' · '+(detail.file||'');
+  document.getElementById('task-modal-task').innerHTML=detail.task_html||'';
+  document.getElementById('task-modal-report').innerHTML=detail.report_html||'';
+  document.getElementById('task-modal-cr').innerHTML=detail.cr_html||'';
+  setModalTab('task-modal-task');
+  taskBackdrop.classList.add('open');
+  taskClose?.focus();
+  try{mermaid.run({nodes:taskBackdrop.querySelectorAll('.mermaid')});}catch{}
+}
+function closeTaskModal(){taskBackdrop?.classList.remove('open');}
+document.querySelectorAll('.task-chip[data-task-id]').forEach(btn=>btn.addEventListener('click',()=>openTaskModal(btn.dataset.taskId)));
+taskClose?.addEventListener('click',closeTaskModal);
+taskBackdrop?.addEventListener('click',e=>{if(e.target===taskBackdrop)closeTaskModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeTaskModal();});
+document.getElementById('taskModalTabs')?.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>setModalTab(btn.dataset.tab)));
 
 // --- Scroll position persistence ---
 try{
@@ -840,9 +1313,9 @@ function renderEvidenceTable(ledger) {
     <tr><th>ID</th><th>声明</th><th>状态</th><th>来源</th></tr>
     ${items.map(e => `<tr>
       <td>${escHtml(e.id || '')}</td>
-      <td style="font-size:0.85rem">${escHtml(String(e.claim || e.description || '').slice(0, 120))}</td>
+      <td class="desc-cell">${escHtml(oneSentence(e.claim || e.description || ''))}</td>
       <td><span class="status s-${(e.status || 'pending') === 'confirmed' ? 'approved' : 'pending'}">${escHtml(e.status || 'pending')}</span></td>
-      <td style="font-size:0.8rem;color:var(--text2)">${escHtml(String(e.source || e.evidence || '').slice(0, 60))}</td>
+      <td class="desc-cell muted">${escHtml(formatEvidence(e.source || e.evidence || ''))}</td>
     </tr>`).join('')}
   </table>`;
 }
@@ -884,18 +1357,24 @@ function renderFlowGraph(flowGraph) {
 
 function renderCoverageMatrix(matrix) {
   if (!matrix) return '';
-  // matrix can be {rows, columns, cells} or array format
+  const structuredKeys = ['entrypoints', 'links', 'data', 'side_effects'];
+  if (structuredKeys.some(k => Array.isArray(matrix[k]))) {
+    const refs = normalizeCoverageMatrixRefs(matrix);
+    return Object.entries(refs.groups).map(([key, items]) => {
+      const title = ({ entrypoints: '入口 E', links: '链路 L', data: '数据 D', side_effects: '副作用 S' })[key];
+      return `<h3>${title}</h3>${items.length ? `<table><tr><th>ID</th><th>一句话说明</th><th>证据</th></tr>${items.map(i => `<tr><td><span class="ref-chip coverage">${escHtml(i.id)}</span></td><td class="desc-cell">${escHtml(i.summary)}</td><td class="desc-cell muted">${escHtml(formatEvidence(i.evidence || i.source || i.covered_by_facts || ''))}</td></tr>`).join('')}</table>` : '<p class="muted">未适用或无条目</p>'}`;
+    }).join('');
+  }
   if (matrix.rows && matrix.columns && matrix.cells) {
     return `<table>
-      <tr><th></th>${matrix.columns.map(c => `<th style="font-size:0.75rem;writing-mode:vertical-lr">${escHtml(String(c).slice(0, 20))}</th>`).join('')}</tr>
-      ${matrix.rows.map((r, ri) => `<tr><td style="font-size:0.8rem">${escHtml(String(r).slice(0, 30))}</td>${(matrix.cells[ri] || []).map(cell => {
+      <tr><th></th>${matrix.columns.map(c => `<th style="font-size:0.75rem;writing-mode:vertical-lr">${escHtml(oneSentence(c))}</th>`).join('')}</tr>
+      ${matrix.rows.map((r, ri) => `<tr><td class="desc-cell">${escHtml(oneSentence(r))}</td>${(matrix.cells[ri] || []).map(cell => {
         const val = typeof cell === 'number' ? cell : (cell ? 1 : 0);
         const bg = val > 0 ? 'background:rgba(34,197,94,0.3)' : '';
         return `<td style="text-align:center;${bg}">${val > 0 ? '✓' : '·'}</td>`;
       }).join('')}</tr>`).join('')}
     </table>`;
   }
-  // Fallback: just render as JSON
   return `<pre><code>${escHtml(JSON.stringify(matrix, null, 2))}</code></pre>`;
 }
 
@@ -921,4 +1400,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
 
-export { collectCrResults, collectTraceability, detectComplexity, parseTableSection };
+export { collectCrResults, collectTraceability, detectComplexity, parseTableSection, normalizeTaskItem, normalizeTasksJson, normalizeTraceabilityTree, normalizeCoverageMatrixRefs, normalizeDataChangePlan, normalizeApiChangePlan, oneSentence, formatEvidence };
