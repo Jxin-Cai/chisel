@@ -4,8 +4,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  buildTraceabilityHierarchy,
   collectCrResults,
   collectTraceability,
+  computeDashboardSummary,
   detectComplexity,
   formatEvidence,
   normalizeApiChangePlan,
@@ -16,6 +18,8 @@ import {
   normalizeTraceabilityTree,
   oneSentence,
   parseTableSection,
+  renderTaskChip,
+  safeDomId,
 } from '../scripts/dashboard.mjs';
 
 function makeTmpDir() {
@@ -162,6 +166,60 @@ describe('dashboard normalization helpers', () => {
   it('formats evidence arrays and extracts one sentence', () => {
     assert.equal(formatEvidence([{ file: 'src/a.ts', line_start: 10, line_end: 12 }]), 'src/a.ts:10-12');
     assert.equal(oneSentence('第一句说明影响。第二句更多细节。'), '第一句说明影响。');
+  });
+
+  it('builds traceability hierarchy from source refs and id fallback', () => {
+    const model = normalizeTraceabilityTree({
+      traceability: {
+        items: [
+          { id: 'REQ-001', type: 'requirement', description: '需求', covered_by_tasks: [] },
+          { id: 'AC-001', type: 'acceptance_criteria', source_refs: ['REQ-001'], description: '验收', covered_by_tasks: [] },
+          { id: 'AC-001/VC-001', type: 'verification', description: '验证', covered_by_tasks: [] },
+          { id: 'AC-999', type: 'acceptance_criteria', description: '未归类', covered_by_tasks: [] },
+          { id: 'RISK-1', type: 'risk', description: '风险', covered_by_tasks: [] },
+        ]
+      },
+      clarification: null,
+      tasks: [],
+      taskState: { tasks: {} }
+    });
+    const tree = buildTraceabilityHierarchy(model);
+    assert.equal(tree.roots.length, 1);
+    assert.equal(tree.roots[0].item.id, 'REQ-001');
+    assert.equal(tree.roots[0].children[0].item.id, 'AC-001');
+    assert.equal(tree.roots[0].children[0].children[0].item.id, 'AC-001/VC-001');
+    assert.deepEqual(tree.ungrouped.map(n => n.item.id), ['AC-999']);
+  });
+
+  it('creates stable DOM ids and task chips with return context', () => {
+    assert.equal(safeDomId('trace', 'AC-001/VC.1 中文'), 'trace-AC-001-VC-1');
+    const chip = renderTaskChip('task-001', { 'task-001': { status: 'coding' } }, {
+      sourceType: 'trace',
+      sourceId: 'AC-001',
+      sourceLabel: 'AC-001 验收',
+      returnTarget: 'trace-AC-001',
+    });
+    assert.match(chip, /data-task-id="task-001"/);
+    assert.match(chip, /data-source-type="trace"/);
+    assert.match(chip, /data-return-target="trace-AC-001"/);
+  });
+
+  it('computes dashboard summary from workflow, tasks, traceability and CR', () => {
+    const summary = computeDashboardSummary({
+      tasks: { 'task-001': { status: 'approved' }, 'task-002': { status: 'coding' } },
+      traceabilityModel: { percentage: 50, requirementItems: [{ coverage: 'complete' }, { coverage: 'missing' }] },
+      crResults: [{ reworkItems: [{ '严重度': 'high', '置信度': '90' }], observations: [{}] }],
+      impactRisk: { summary: { risk_level: 'medium' } },
+      currentIdx: 2,
+      workflowSteps: ['a', 'b', 'c', 'd'],
+    });
+    assert.equal(summary.workflowPercentage, 75);
+    assert.equal(summary.taskStats.percentage, 50);
+    assert.equal(summary.requirementCoverage, 50);
+    assert.equal(summary.missingRequirements, 1);
+    assert.equal(summary.crStats.rework, 1);
+    assert.equal(summary.crStats.highSeverity, 1);
+    assert.equal(summary.riskLevel, 'medium');
   });
 });
 
