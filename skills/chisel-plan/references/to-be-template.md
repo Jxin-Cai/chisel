@@ -125,6 +125,8 @@
 
 ```json
 {
+  "schema_version": 2,
+  "plan_with_file": true,
   "tasks": [
     {
       "task_id": "task-001",
@@ -139,6 +141,17 @@
       "acceptance_criteria": ["满足某个可验证行为"],
       "behavior_invariants": ["需要保持的旧行为、接口契约或包袱"],
       "impact_surface": {"files": ["src/a.ts"], "symbols": [], "invariants": [], "shared_state": []},
+      "file_plan": [
+        {
+          "path": "src/a.ts",
+          "change_type": "modify",
+          "purpose": "在现有业务入口中增加 X 场景处理",
+          "change_point_refs": ["CP-1"],
+          "trace_refs": ["REQ-001"],
+          "expected_symbols": ["handleX"],
+          "report_required": true
+        }
+      ],
       "context_to_load": {"as_is": [], "to_be": [], "wiki": [], "module_map": [], "adr": []},
       "risk_level": "low",
       "rollback": "回退本 task 修改的文件"
@@ -147,11 +160,13 @@
 }
 ```
 
-必填字段：`behavior_invariants`、`impact_surface`、`context_to_load`、`change_point_refs` 必须填写，即使为空数组也要显式给出结构，供 task-init、并行调度和 coder 上下文加载使用。
+必填字段：`behavior_invariants`、`impact_surface`、`context_to_load`、`change_point_refs` 必须填写，即使为空数组也要显式给出结构，供 task-init、并行调度和 coder 上下文加载使用。新生成的标准/复杂需求应使用 `schema_version: 2` 和 `plan_with_file: true`，并为每个 task 填写 `file_plan`。
 
-可选字段：`allowed_symbols`、`forbidden_symbols`、`exports`、`imports`、`modification_hints`、`task_complexity`。
+可选字段：`allowed_symbols`、`forbidden_symbols`、`exports`、`imports`、`modification_hints`、`task_complexity`。旧任务可不含 `file_plan`；当 `plan_with_file=true` 或 `schema_version>=2` 时，`file_plan` 变为必填。
 
 - `change_point_refs`：本 task 对应的改造点 CP 编号列表。
+- `expected_files`：scope 边界，用于 scope-check 判断是否越界。
+- `file_plan`：文件级实现计划和报告契约；每项说明一个文件/目录为什么要改、对应哪些 CP 和 Trace Ref。`file_plan[].change_point_refs` 必须是本 task `change_point_refs` 子集，`file_plan[].trace_refs` 必须是本 task `trace_refs` 子集。无法提前确定具体文件时可写目录/glob，但必须在 `purpose` 中说明探索原因，并明确 `report_required`。
 - `exports`：本 task 产出的、可被其他 task 引用的符号或文件（如新增的函数、类型、配置）。
 - `imports`：本 task 依赖的、由其他 task 产出的符号或文件（引用 `exports` 的 task_id）。
 - `modification_hints`：string[] — 给 coder 的修改提示（如"在 X 函数后添加 Y 调用"），降低上手成本。
@@ -252,3 +267,14 @@
 ### CP-Task 一致性
 
 - 所有 CP 均有 task 覆盖：✅ / ❌（列出孤立 CP）
+
+### File Plan 完整性
+
+| Task | 检查项 | 结果 | 说明 |
+|------|--------|------|------|
+| task-001 | 每个 CP 均有 file_plan 落点 | ✅ / ❌ | |
+| task-001 | 每个 Trace Ref 均有 file_plan 落点 | ✅ / ❌ | |
+| task-001 | file_plan 不触碰 forbidden_files | ✅ / ❌ | |
+| task-001 | 伴生变更文件已进入 expected_files + file_plan | ✅ / ❌ | |
+
+`file_plan` 是 coder report 的文件级契约：Planner 必须确保每个需实现/适配的文件都有 purpose、CP、Trace Ref；遗漏的伴生文件不要留给 coder 临场猜测。

@@ -259,21 +259,32 @@ function sectionTextAnyDepth(text, heading) {
   return match ? match[1].trim() : '';
 }
 
-function parseMarkdownTableRows(section) {
-  const rows = String(section || '').split('\n')
+function parseMarkdownTableRowsByHeader(section, requiredColumns = []) {
+  const lines = String(section || '').split('\n')
     .map(line => line.trim())
-    .filter(line => /^\|.*\|$/.test(line))
-    .map(line => line.split('|').map(cell => cell.trim()).slice(1, -1));
-  const header = rows.find(cells => cells.some(cell => cell === 'Invariant'));
-  if (!header) return { rows: [], columns: new Map() };
+    .filter(line => /^\|.*\|$/.test(line));
+  const rows = lines.map(line => line.split('|').map(cell => cell.trim()).slice(1, -1));
+  const header = rows.find(cells => requiredColumns.length === 0 || requiredColumns.every(column => cells.includes(column)));
+  if (!header) return { rows: [], columns: new Map(), missingColumns: requiredColumns };
   const columns = new Map(header.map((cell, index) => [cell, index]));
-  const dataRows = rows.filter(cells => cells !== header && !cells.every(cell => /^-+$/.test(cell)));
+  const missingColumns = requiredColumns.filter(column => !columns.has(column));
+  const headerIndex = rows.indexOf(header);
+  const dataRows = rows.slice(headerIndex + 1).filter(cells => !cells.every(cell => /^:?-+:?$/.test(cell)));
   return {
     columns,
-    rows: dataRows.map(cells => ({
-      invariant: cells[columns.get('Invariant')] || '',
-      proof: cells[columns.get('Proof')] || '',
-      result: cells[columns.get('Result')] || ''
+    missingColumns,
+    rows: dataRows.map(cells => Object.fromEntries(header.map((column, index) => [column, cells[index] || ''])))
+  };
+}
+
+function parseMarkdownTableRows(section) {
+  const table = parseMarkdownTableRowsByHeader(section, ['Invariant', 'Proof', 'Result']);
+  return {
+    columns: table.columns,
+    rows: table.rows.map(row => ({
+      invariant: row.Invariant || '',
+      proof: row.Proof || '',
+      result: row.Result || ''
     }))
   };
 }
@@ -337,7 +348,148 @@ function validateScopeProof(text, mode, { behaviorInvariants = [], requireAllInv
   return '';
 }
 
-function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = []) {
+const FILE_PLAN_COLUMNS = ['File', 'Change Type', 'Purpose', 'CP Refs', 'Trace Refs', 'Expected Symbols', 'Report Required'];
+const FILE_REPORT_COLUMNS = ['File', 'Planned', 'Change Type', 'CP Refs', 'Trace Refs', 'Summary', 'Evidence', 'Status'];
+const VALID_FILE_REPORT_PLANNED = new Set(['yes', 'no']);
+const VALID_FILE_REPORT_STATUS = new Set(['done', 'not_changed', 'extra', 'blocked']);
+const VALID_COMPLETION_STATUSES = new Set(['DONE', 'DONE_WITH_CONCERNS', 'NEEDS_CONTEXT', 'BLOCKED']);
+
+function normalizeCell(value) {
+  return String(value || '').trim();
+}
+
+function meaningfulFile(value) {
+  const file = normalizeCell(value);
+  return file && !['无', '-', '—', 'N/A'].includes(file.toUpperCase()) && file !== '无';
+}
+
+function parseFileLevelPlan(taskText) {
+  const table = parseMarkdownTableRowsByHeader(sectionTextAnyDepth(taskText, 'File-Level Plan'), FILE_PLAN_COLUMNS);
+  return { ...table, rows: table.rows.filter(row => meaningfulFile(row.File)) };
+}
+
+function parseFileLevelReport(reportText) {
+  return parseMarkdownTableRowsByHeader(sectionTextAnyDepth(reportText, 'File-Level Implementation Report'), FILE_REPORT_COLUMNS);
+}
+
+function hasPlanWithFileFlag(ideaDir) {
+  if (!ideaDir) return false;
+  const parsed = readJsonFile(join(ideaDir, 'to-be/tasks.json'));
+  if (parsed.error) return false;
+  return parsed.value?.plan_with_file === true || Number(parsed.value?.schema_version || 1) >= 2;
+}
+
+function isNewFileReportContract(ideaDir, taskText, taskFm, reportFm) {
+  if (reportFm.file_report_schema_version !== undefined) return true;
+  if (taskFm.file_plan_schema_version !== undefined) return true;
+  if (hasPlanWithFileFlag(ideaDir)) return true;
+  return parseFileLevelPlan(taskText).rows.length > 0;
+}
+
+function extractNumberAfterLabel(text, label) {
+  const match = String(text || '').match(new RegExp(`${label}[：:]\\s*(\\d+)\\b`, 'i'));
+  return match ? Number(match[1]) : null;
+}
+
+function extractScopeResult(text) {
+  const match = String(text || '').match(/Result[：:]\s*(pass|fail)\b/i);
+  return match ? match[1].toLowerCase() : '';
+}
+
+function extractJsonObject(text) {
+  const source = String(text || '');
+  const start = source.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') depth += 1;
+    else if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) return source.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+function extractScopeCheckJson(text) {
+  const section = sectionTextAnyDepth(text, 'Scope Check JSON Summary');
+  if (!section) return { error: 'Scope Check JSON Summary missing' };
+  const fenced = section.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = fenced ? fenced[1].trim() : extractJsonObject(section);
+  if (!candidate) return { error: 'Scope Check JSON Summary must contain parseable scope-check JSON' };
+  try {
+    return { value: JSON.parse(sanitizeSmartQuotes(candidate)) };
+  } catch (error) {
+    return { error: `Scope Check JSON Summary invalid JSON: ${error.message}` };
+  }
+}
+
+function validateCompletionStatus(text) {
+  const section = sectionTextAnyDepth(text, 'Completion Status');
+  if (!section) return 'missing ## Completion Status';
+  const match = section.match(/^status[：:]\s*(\S+)\s*$/mi);
+  if (!match) return 'Completion Status missing status';
+  const status = match[1].trim();
+  if (!VALID_COMPLETION_STATUSES.has(status)) return 'Completion Status status must be DONE/DONE_WITH_CONCERNS/NEEDS_CONTEXT/BLOCKED';
+  if (status === 'DONE_WITH_CONCERNS' && isBlankProof((section.match(/^concerns[：:]\s*(.+)$/mi) || [])[1])) return 'DONE_WITH_CONCERNS must include concerns';
+  if (status === 'NEEDS_CONTEXT' && isBlankProof((section.match(/^missing_context[：:]\s*(.+)$/mi) || [])[1])) return 'NEEDS_CONTEXT must include missing_context';
+  if (status === 'BLOCKED' && isBlankProof((section.match(/^blocker[：:]\s*(.+)$/mi) || [])[1])) return 'BLOCKED must include blocker';
+  return '';
+}
+
+function validateFileLevelReport(text, taskText) {
+  const reportTable = parseFileLevelReport(text);
+  if (reportTable.missingColumns.length > 0) return `File-Level Implementation Report missing columns: ${reportTable.missingColumns.join(', ')}`;
+  if (reportTable.rows.length === 0) return 'File-Level Implementation Report must contain at least one row';
+
+  const reportRowsByFile = new Map();
+  for (const row of reportTable.rows) {
+    const file = normalizeCell(row.File);
+    if (!meaningfulFile(file)) continue;
+    reportRowsByFile.set(file, row);
+    const planned = normalizeCell(row.Planned).toLowerCase();
+    if (!VALID_FILE_REPORT_PLANNED.has(planned)) return `File-Level Implementation Report Planned must be yes/no for: ${file}`;
+    const status = normalizeCell(row.Status).toLowerCase();
+    if (!VALID_FILE_REPORT_STATUS.has(status)) return `File-Level Implementation Report Status must be done/not_changed/extra/blocked for: ${file}`;
+    if (isBlankProof(row.Evidence)) return `File-Level Implementation Report Evidence must be non-empty for: ${file}`;
+    if (isBlankProof(row.Summary)) return `File-Level Implementation Report Summary must be non-empty for: ${file}`;
+  }
+
+  const planTable = parseFileLevelPlan(taskText);
+  if (planTable.missingColumns.length > 0 && sectionTextAnyDepth(taskText, 'File-Level Plan')) return `File-Level Plan missing columns: ${planTable.missingColumns.join(', ')}`;
+  for (const row of planTable.rows) {
+    const required = normalizeCell(row['Report Required']).toLowerCase() !== 'false';
+    if (required && !reportRowsByFile.has(normalizeCell(row.File))) return `File-Level Implementation Report missing planned file: ${normalizeCell(row.File)}`;
+  }
+
+  const parsedScope = extractScopeCheckJson(text);
+  if (parsedScope.error) return parsedScope.error;
+  const scope = parsedScope.value;
+  if (!Array.isArray(scope.changed_files)) return 'Scope Check JSON Summary changed_files must be an array';
+  for (const file of scope.changed_files) {
+    if (!reportRowsByFile.has(file)) return `File-Level Implementation Report missing changed file from scope-check: ${file}`;
+  }
+  if (!scope.summary || typeof scope.summary !== 'object') return 'Scope Check JSON Summary missing summary';
+  const scopeResult = extractScopeResult(text);
+  if (scopeResult && typeof scope.pass === 'boolean' && scopeResult !== (scope.pass ? 'pass' : 'fail')) return 'scope proof Result does not match Scope Check JSON Summary pass';
+  const violationsCount = extractNumberAfterLabel(text, 'violations_count');
+  if (violationsCount !== null && Number(scope.summary.violations_count) !== violationsCount) return 'scope proof violations_count does not match Scope Check JSON Summary';
+  const changedFilesCount = extractNumberAfterLabel(text, 'changed_files_count');
+  if (changedFilesCount !== null && Number(scope.summary.changed_files_count) !== changedFilesCount) return 'scope proof changed_files_count does not match Scope Check JSON Summary';
+  return validateCompletionStatus(text);
+}
+
+function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = [], { ideaDir = '', taskText = '', taskFm = {} } = {}) {
   const text = readText(reportPath);
   if (!hasRequiredLines(reportPath, ['## 做了什么', '## 改了什么'])) return 'missing required report sections';
   if (traceRefs.length > 0) {
@@ -355,7 +507,10 @@ function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = [])
   }
   const wikiProofReason = validateWikiLoadProof(text);
   if (wikiProofReason) return wikiProofReason;
-  return validateScopeProof(text, 'report', { behaviorInvariants });
+  const scopeReason = validateScopeProof(text, 'report', { behaviorInvariants });
+  if (scopeReason) return scopeReason;
+  if (isNewFileReportContract(ideaDir, taskText, taskFm, readFrontmatter(text))) return validateFileLevelReport(text, taskText);
+  return '';
 }
 
 function validateCrFile(crPath, status, behaviorInvariants = []) {
@@ -1054,7 +1209,8 @@ export function checkGate(ideaDir, gateId) {
         const taskPath = join(ideaDir, task.file || `tasks/${taskId}.md`);
         const taskFm = existsSync(taskPath) ? readFrontmatter(readText(taskPath)) : {};
         const traceRefs = Array.isArray(taskFm.trace_refs) ? taskFm.trace_refs : [];
-        const reason = validateTaskReport(reportPath, behaviorInvariants, traceRefs);
+        const taskText = existsSync(taskPath) ? readText(taskPath) : '';
+        const reason = validateTaskReport(reportPath, behaviorInvariants, traceRefs, { ideaDir, taskText, taskFm });
         return reason ? `${taskId} (${reason})` : '';
       }).filter(Boolean);
       return invalid.length === 0 ? result(gateId, true) : result(gateId, false, `invalid task reports: ${invalid.join(', ')}`);

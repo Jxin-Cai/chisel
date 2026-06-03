@@ -5,6 +5,8 @@ loc_added: 0
 loc_deleted: 0
 expected_files: []
 changed_files: []
+file_report_schema_version: 1
+scope_check_schema_version: 3
 ---
 
 # Task Report: task-001-example
@@ -16,6 +18,18 @@ changed_files: []
 | 文件 | 修改点 | 是否在 expected_files 内 |
 |---|---|---|
 | | | |
+
+## File-Level Implementation Report
+
+| File | Planned | Change Type | CP Refs | Trace Refs | Summary | Evidence | Status |
+|---|---|---|---|---|---|---|---|
+| src/a.ts | yes | modify | CP-1 | REQ-001 | 增加 X 场景处理 | src/a.ts:123 / 验证命令 | done |
+
+必须覆盖 task `File-Level Plan` 中 `Report Required=true` 的每个文件，并覆盖 scope-check JSON `changed_files[]` 中的每个文件。
+- `Planned` 只能是 `yes` 或 `no`。
+- `Status` 只能是 `done`、`not_changed`、`extra`、`blocked`。
+- `Evidence` 必须填写实际文件行号、验证命令或行为说明，不得为空、占位、`TODO/TBD/无/-`。
+- 计划外文件必须标记 `Planned=no`，并在 `Summary` 说明为什么必要。
 
 ## 代码量
 
@@ -64,7 +78,7 @@ changed_files: []
 
 #### Scope Check JSON Summary
 
-粘贴 scope-check.mjs 的完整 JSON 输出。
+粘贴 scope-check.mjs 的完整 JSON 输出。新契约报告必须包含可解析 JSON，至少包含：`schema_version`、`changed_files`、`hit_proofs`、`violations`、`summary.changed_files_count`、`summary.violations_count`、`pass`。
 
 #### Hit Proofs Summary
 
@@ -94,3 +108,10 @@ changed_files: []
 - Terms：
 
 ## 风险与后续
+
+## Completion Status
+
+status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED
+concerns: <仅 DONE_WITH_CONCERNS 时填写——对实现有疑虑但已完成>
+missing_context: <仅 NEEDS_CONTEXT 时填写——缺少哪些信息无法继续>
+blocker: <仅 BLOCKED 时填写——无法完成的原因>

@@ -38,30 +38,23 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 
 1. **Wiki 查询** — 按 agent-shared-rules §1 执行查询
 2. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
-3. **实现** — 修改代码，靠齐 as-is 风格
-4. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
+3. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。
+4. **实现** — 修改代码，靠齐 as-is 风格
+5. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
 
-5. **Diff 自检** — 运行 `git diff` 查看自己的全部变更，按以下清单快速检查：
+6. **Diff 自检** — 运行 `git diff` 查看自己的全部变更，按以下清单快速检查：
    - 是否引入了明显 bug（逻辑错误、空值处理、off-by-one）？
    - task 文件中每条 Acceptance Criteria 是否都被覆盖？
    - 是否越界修改了不该碰的文件？
    发现问题则立即修复，不等 CR 阶段。这一步在现有 turn 内完成，不额外调用 agent。
 
-6. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`
-7. **Completion Status** — 在 report 末尾追加状态章节：
-   ```markdown
-   ## Completion Status
-
-   status: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED
-   concerns: <仅 DONE_WITH_CONCERNS 时填写——对实现有疑虑但已完成>
-   missing_context: <仅 NEEDS_CONTEXT 时填写——缺少哪些信息无法继续>
-   blocker: <仅 BLOCKED 时填写——无法完成的原因>
-   ```
+7. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`。必须填写 `## File-Level Implementation Report`，覆盖 task `File-Level Plan` 中 `Report Required=true` 的文件，以及 scope-check JSON `changed_files[]` 的每个文件；每行 Evidence 必须是实际文件行号、验证命令或行为说明，不能留空或占位。
+8. **Completion Status** — 填写模板中的 `## Completion Status`，不得省略该章节：
    - DONE：正常完成
    - DONE_WITH_CONCERNS：完成但对某些决策不确定
    - NEEDS_CONTEXT：缺少关键信息无法继续，不写 report，不标状态
    - BLOCKED：遇到无法绕过的阻碍
-8. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：
+9. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：
    - DONE / DONE_WITH_CONCERNS → `--finish-task {task_id} coded`
    - BLOCKED → `--finish-task {task_id} failed`
    - NEEDS_CONTEXT → 不更新状态，直接结束并在输出中说明缺失信息

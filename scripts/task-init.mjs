@@ -5,6 +5,7 @@ import { atomicWriteFile, ensureDir, initTaskState, normalizeImpactSurface, read
 
 const VALID_RISK_LEVELS = new Set(['low', 'medium', 'high']);
 const VALID_TASK_COMPLEXITIES = new Set(['trivial', 'standard', 'complex']);
+const VALID_FILE_CHANGE_TYPES = new Set(['add', 'modify', 'delete', 'rename', 'config', 'test', 'docs', 'review_only']);
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -40,7 +41,35 @@ function requireArray(value, field, taskId) {
   return value;
 }
 
-function validateTask(task, index) {
+function validateFilePlan(task, { requireFilePlan = false } = {}) {
+  const taskId = task.task_id || '';
+  if (task.file_plan === undefined) {
+    if (requireFilePlan) throw new Error(`${taskId} missing file_plan (required by schema_version>=2 or plan_with_file=true)`);
+    return [];
+  }
+  const filePlan = requireArray(task.file_plan, 'file_plan', taskId);
+  if (requireFilePlan && filePlan.length === 0) throw new Error(`${taskId} file_plan must not be empty`);
+  const cpRefs = new Set(task.change_point_refs || []);
+  const traceRefs = new Set(task.trace_refs || []);
+  for (const [index, item] of filePlan.entries()) {
+    const label = `${taskId} file_plan[${index}]`;
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error(`${label} must be an object`);
+    if (!item.path || typeof item.path !== 'string') throw new Error(`${label} missing path`);
+    if (!VALID_FILE_CHANGE_TYPES.has(item.change_type)) throw new Error(`${label} change_type must be one of: ${[...VALID_FILE_CHANGE_TYPES].join(', ')}`);
+    if (!item.purpose || typeof item.purpose !== 'string') throw new Error(`${label} missing purpose`);
+    const itemCpRefs = requireArray(item.change_point_refs || [], `${label}.change_point_refs`, taskId);
+    const itemTraceRefs = requireArray(item.trace_refs || [], `${label}.trace_refs`, taskId);
+    requireArray(item.expected_symbols || [], `${label}.expected_symbols`, taskId);
+    if (item.report_required !== undefined && typeof item.report_required !== 'boolean') throw new Error(`${label} report_required must be boolean`);
+    const unknownCpRefs = itemCpRefs.filter(ref => !cpRefs.has(ref));
+    if (unknownCpRefs.length > 0) throw new Error(`${label} references unknown change_point_refs: ${unknownCpRefs.join(', ')}`);
+    const unknownTraceRefs = itemTraceRefs.filter(ref => !traceRefs.has(ref));
+    if (unknownTraceRefs.length > 0) throw new Error(`${label} references unknown trace_refs: ${unknownTraceRefs.join(', ')}`);
+  }
+  return filePlan;
+}
+
+function validateTask(task, index, options = {}) {
   const taskId = task.task_id || '';
   if (!/^task-\d{3}[A-Za-z0-9_-]*$/.test(taskId)) throw new Error(`tasks[${index}] missing valid task_id`);
   if (!task.goal) throw new Error(`${taskId} missing goal`);
@@ -69,12 +98,14 @@ function validateTask(task, index) {
   if (!VALID_RISK_LEVELS.has(task.risk_level)) throw new Error(`${taskId} risk_level must be low, medium, or high`);
   if (!task.rollback) throw new Error(`${taskId} missing rollback`);
   if (task.task_complexity && !VALID_TASK_COMPLEXITIES.has(task.task_complexity)) throw new Error(`${taskId} task_complexity must be trivial, standard, or complex`);
+  validateFilePlan(task, options);
   return task;
 }
 
 function validateTasksDocument(doc) {
   if (!doc || !Array.isArray(doc.tasks)) throw new Error('tasks.json must contain tasks array');
-  const tasks = doc.tasks.map(validateTask);
+  const requireFilePlan = doc.plan_with_file === true || Number(doc.schema_version || 1) >= 2;
+  const tasks = doc.tasks.map((task, index) => validateTask(task, index, { requireFilePlan }));
   const ids = new Set(tasks.map(task => task.task_id));
   if (ids.size !== tasks.length) throw new Error('tasks.json contains duplicate task_id');
   for (const task of tasks) {
@@ -100,6 +131,23 @@ function inlineList(values = []) {
   return `[${values.join(', ')}]`;
 }
 
+function markdownCell(value) {
+  return String(value ?? '').replace(/\|/g, '/').replace(/\n/g, ' ').trim() || '无';
+}
+
+function renderFilePlanRows(filePlan = []) {
+  if (filePlan.length === 0) return '| 无 | review_only | 未声明 file_plan；请按 expected_files 和 implementation_notes 执行，并在 report 中列出 changed_files。 | 无 | 无 | 无 | false |';
+  return filePlan.map(item => [
+    item.path,
+    item.change_type,
+    item.purpose,
+    (item.change_point_refs || []).join(', ') || '无',
+    (item.trace_refs || []).join(', ') || '无',
+    (item.expected_symbols || []).join(', ') || '无',
+    item.report_required === false ? 'false' : 'true'
+  ].map(markdownCell)).map(cells => `| ${cells.join(' | ')} |`).join('\n');
+}
+
 function contextLines(context = {}) {
   return [
     `- as-is：${(context.as_is || []).join(', ') || '无'}`,
@@ -118,7 +166,8 @@ depends_on: ${yamlList(task.depends_on || [])}
 description: ${JSON.stringify(task.title)}
 expected_files: ${yamlList(task.expected_files || [])}
 trace_refs: ${yamlList(task.trace_refs || [])}
-allowed_symbols: ${yamlList(task.allowed_symbols || [])}
+change_point_refs: ${yamlList(task.change_point_refs || [])}
+${task.file_plan ? 'file_plan_schema_version: 1\n' : ''}allowed_symbols: ${yamlList(task.allowed_symbols || [])}
 forbidden_symbols: ${yamlList(task.forbidden_symbols || [])}
 exports: ${yamlList(task.exports || [])}
 imports: ${yamlList(task.imports || [])}
@@ -164,6 +213,16 @@ ${bulletList(task.forbidden_symbols || [])}
 - symbols：${inlineList(normalizeImpactSurface(task.impact_surface).symbols)}
 - invariants：${inlineList(normalizeImpactSurface(task.impact_surface).invariants)}
 - shared_state：${inlineList(normalizeImpactSurface(task.impact_surface).shared_state)}
+
+## Change Points
+
+${bulletList(task.change_point_refs)}
+
+## File-Level Plan
+
+| File | Change Type | Purpose | CP Refs | Trace Refs | Expected Symbols | Report Required |
+|---|---|---|---|---|---|---|
+${renderFilePlanRows(task.file_plan || [])}
 
 ## Exports
 
