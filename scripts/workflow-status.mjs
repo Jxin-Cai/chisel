@@ -29,10 +29,39 @@ function print(value) {
   console.log(JSON.stringify(value));
 }
 
+function help() {
+  return [
+    '用法: workflow-status.mjs <idea-dir> [command] [args...]',
+    '',
+    'Commands:',
+    '  --summary | status | --status      输出 task 状态摘要（默认）',
+    '  --init <idea-name>                 初始化 workflow-state.yaml',
+    '  --init-tasks <idea-name> <spec...> 初始化 task-workflow-state.yaml',
+    '  --next-tasks [code|review|rework]  输出下一批可执行 task',
+    '  --start-task <task-id>             标记 task 开始编码/返修',
+    '  --start-review <task-id>           标记 task 开始 review',
+    '  --finish-task <task-id> coded|failed',
+    '  --mark-cr <task-id> approved|needs_rework|blocked',
+    '  --mark-cr-requirement approved|needs_rework|blocked [task-ids]',
+    '  --rollback-step <step> [--dry-run]',
+    '  --rollback-task <task-id> [--dry-run]',
+    '  --check-overlap <task-id...>       检查 task 文件/影响面重叠',
+    '  --help | help | -h                 显示帮助',
+  ].join('\n');
+}
+
 export async function main(argv) {
   const ideaDir = argv[0];
+  if (['--help', 'help', '-h'].includes(ideaDir)) {
+    console.log(help());
+    return;
+  }
   const mode = argv[1] || '--summary';
   if (!ideaDir) fail('用法: workflow-status.mjs <idea-dir> [command] [args...]');
+  if (['--help', 'help', '-h'].includes(mode)) {
+    console.log(help());
+    return;
+  }
 
   try {
     switch (mode) {
