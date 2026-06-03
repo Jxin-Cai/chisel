@@ -9,10 +9,12 @@ import {
   collectTraceability,
   computeDashboardSummary,
   detectComplexity,
+  formatDuration,
   formatEvidence,
   normalizeApiChangePlan,
   normalizeCoverageMatrixRefs,
   normalizeDataChangePlan,
+  normalizeStepTimings,
   normalizeTaskItem,
   normalizeTasksJson,
   normalizeTraceabilityTree,
@@ -166,6 +168,48 @@ describe('dashboard normalization helpers', () => {
   it('formats evidence arrays and extracts one sentence', () => {
     assert.equal(formatEvidence([{ file: 'src/a.ts', line_start: 10, line_end: 12 }]), 'src/a.ts:10-12');
     assert.equal(oneSentence('第一句说明影响。第二句更多细节。'), '第一句说明影响。');
+  });
+
+  it('formats workflow durations compactly', () => {
+    assert.equal(formatDuration(12_400), '12s');
+    assert.equal(formatDuration(8 * 60_000 + 3_000), '8m 03s');
+    assert.equal(formatDuration(75 * 60_000), '1h 15m');
+  });
+
+  it('normalizes workflow timing from new and legacy history', () => {
+    const timing = normalizeStepTimings({
+      currentStep: 'implement:code',
+      startedAt: '2026-06-03T10:00:00.000Z',
+      lastUpdated: '2026-06-03T10:10:00.000Z',
+      now: '2026-06-03T10:10:00.000Z',
+      stepHistory: [
+        { step: 'receive-requirement', entered_at: '2026-06-03T10:00:00.000Z', exited_at: '2026-06-03T10:01:00.000Z', duration_ms: 60_000 },
+        { step: 'receive-requirement', entered_at: '2026-06-03T10:00:30.000Z' },
+        { step: 'clarify:requirement', entered_at: '2026-06-03T10:01:00.000Z' },
+        { step: 'implement:code', entered_at: '2026-06-03T10:04:00.000Z' },
+      ]
+    });
+
+    assert.equal(timing.steps.length, 3);
+    assert.equal(timing.steps[0].duration_ms, 60_000);
+    assert.equal(timing.steps[1].duration_ms, 180_000);
+    assert.equal(timing.steps[2].duration_ms, 360_000);
+    assert.equal(timing.steps[2].running, true);
+    assert.equal(timing.longest_step.step, 'implement:code');
+    assert.equal(timing.total_label, '10m 00s');
+  });
+
+  it('uses last_updated_at as total end for completed workflows', () => {
+    const timing = normalizeStepTimings({
+      currentStep: 'done',
+      startedAt: '2026-06-03T10:00:00.000Z',
+      lastUpdated: '2026-06-03T10:05:00.000Z',
+      now: '2026-06-03T11:00:00.000Z',
+      stepHistory: [{ step: 'done', entered_at: '2026-06-03T10:05:00.000Z' }]
+    });
+
+    assert.equal(timing.total_label, '5m 00s');
+    assert.equal(timing.steps[0].running, false);
   });
 
   it('builds traceability hierarchy from source refs and id fallback', () => {

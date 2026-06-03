@@ -200,6 +200,52 @@ export function initWorkflowState(ideaDir, ideaName) {
   ].join('\n'));
 }
 
+export function parseWorkflowStepHistory(text) {
+  const history = [];
+  const historyStart = String(text || '').indexOf('step_history:');
+  if (historyStart === -1) return history;
+  const histLines = String(text).slice(historyStart).split('\n').slice(1);
+  let entry = {};
+  for (const hl of histLines) {
+    if (/^\s+-\s*$/.test(hl) || /^\s+- step:/.test(hl)) {
+      if (entry.step) history.push(entry);
+      entry = {};
+      const sm = hl.match(/step:\s*(.+)/);
+      if (sm) entry.step = sm[1].trim();
+    } else if (/^\s+step:/.test(hl)) {
+      const sm = hl.match(/step:\s*(.+)/);
+      if (sm) entry.step = sm[1].trim();
+    } else if (/^\s+entered_at:/.test(hl)) {
+      const sm = hl.match(/entered_at:\s*(.+)/);
+      if (sm) entry.entered_at = sm[1].trim();
+    } else if (/^\s+exited_at:/.test(hl)) {
+      const sm = hl.match(/exited_at:\s*(.+)/);
+      if (sm) entry.exited_at = sm[1].trim();
+    } else if (/^\s+duration_ms:/.test(hl)) {
+      const sm = hl.match(/duration_ms:\s*(.+)/);
+      if (sm) entry.duration_ms = Number(sm[1].trim()) || 0;
+    } else if (/^[a-z]/.test(hl)) break;
+  }
+  if (entry.step) history.push(entry);
+  return history;
+}
+
+function workflowStepHistoryYaml(history) {
+  if (!history.length) return '';
+  return ['step_history:', ...history.flatMap(h => {
+    const lines = [`  - step: ${h.step}`, `    entered_at: ${h.entered_at}`];
+    if (h.exited_at) lines.push(`    exited_at: ${h.exited_at}`);
+    if (h.duration_ms !== undefined) lines.push(`    duration_ms: ${Math.max(0, Number(h.duration_ms) || 0)}`);
+    return lines;
+  })].join('\n');
+}
+
+function replaceWorkflowStepHistory(text, history) {
+  const base = String(text || '').replace(/\n?step_history:\n[\s\S]*$/m, '').trimEnd();
+  const historyYaml = workflowStepHistoryYaml(history);
+  return `${base}${historyYaml ? `\n${historyYaml}` : ''}\n`;
+}
+
 const STEP_TO_PHASE = {
   'receive-requirement': 'requirement',
   'understand:explore': 'understand',
@@ -228,20 +274,27 @@ export function updateWorkflowPhase(ideaDir, stepId) {
   if (!existsSync(file)) return;
   let text = readFileSync(file, 'utf8');
   const now = new Date().toISOString();
+  const previousStep = text.match(/^current_step:\s*(.+)$/m)?.[1]?.trim() || '';
   text = text.replace(/^last_updated_at:.*$/m, `last_updated_at: ${now}`);
   text = text.replace(/^current_step:.*$/m, `current_step: ${stepId}`);
   const phase = STEP_TO_PHASE[stepId];
   if (phase) {
     text = text.replace(new RegExp(`^(  ${phase}:).*$`, 'm'), `$1 in_progress`);
   }
-  // Append step_history entry
-  const historyEntry = `  - step: ${stepId}\n    entered_at: ${now}`;
-  if (text.includes('step_history:')) {
-    text = text.trimEnd() + '\n' + historyEntry + '\n';
-  } else {
-    text = text.trimEnd() + '\nstep_history:\n' + historyEntry + '\n';
+
+  const history = parseWorkflowStepHistory(text);
+  if (history.length === 0) {
+    history.push({ step: stepId, entered_at: now });
+  } else if (stepId !== previousStep) {
+    const last = history[history.length - 1];
+    if (!last.exited_at && last.entered_at) {
+      last.exited_at = now;
+      last.duration_ms = Math.max(0, new Date(now).getTime() - new Date(last.entered_at).getTime());
+    }
+    history.push({ step: stepId, entered_at: now });
   }
-  atomicWriteFile(file, text);
+
+  atomicWriteFile(file, replaceWorkflowStepHistory(text, history));
 }
 
 export function initTaskState(ideaDir, ideaName, specs) {

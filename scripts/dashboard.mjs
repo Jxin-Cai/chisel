@@ -53,6 +53,12 @@ function readWorkflowState(ideaDir) {
       } else if (/^\s+entered_at:/.test(hl)) {
         const sm = hl.match(/entered_at:\s*(.+)/);
         if (sm) entry.entered_at = sm[1].trim();
+      } else if (/^\s+exited_at:/.test(hl)) {
+        const sm = hl.match(/exited_at:\s*(.+)/);
+        if (sm) entry.exited_at = sm[1].trim();
+      } else if (/^\s+duration_ms:/.test(hl)) {
+        const sm = hl.match(/duration_ms:\s*(.+)/);
+        if (sm) entry.duration_ms = Number(sm[1].trim()) || 0;
       } else if (/^[a-z]/.test(hl)) break;
     }
     if (entry.step) history.push(entry);
@@ -574,6 +580,69 @@ function mermaidId(s) {
   return /^[A-Za-z_]/.test(raw) ? raw : `E_${raw}`;
 }
 
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.round((Number(ms) || 0) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+  return `${seconds}s`;
+}
+
+function parseTimeMs(value) {
+  const ms = new Date(value || '').getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+function normalizeStepTimings({ stepHistory = [], currentStep = '', startedAt = '', lastUpdated = '', now = new Date().toISOString() } = {}) {
+  const nowMs = parseTimeMs(now) ?? Date.now();
+  const collapsed = [];
+  for (const h of stepHistory || []) {
+    if (!h?.step || !h.entered_at) continue;
+    const prev = collapsed[collapsed.length - 1];
+    if (prev?.step === h.step) {
+      if (!prev.exited_at && h.exited_at) prev.exited_at = h.exited_at;
+      if (prev.duration_ms === undefined && h.duration_ms !== undefined) prev.duration_ms = h.duration_ms;
+      continue;
+    }
+    collapsed.push({ ...h });
+  }
+
+  const steps = collapsed.map((h, index) => {
+    const enteredMs = parseTimeMs(h.entered_at);
+    const exitedMs = parseTimeMs(h.exited_at);
+    const next = collapsed.slice(index + 1).find(item => item.step !== h.step && item.entered_at);
+    const nextMs = parseTimeMs(next?.entered_at);
+    const running = h.step === currentStep && currentStep !== 'done' && !h.exited_at && index === collapsed.length - 1;
+    const durationMs = h.duration_ms !== undefined
+      ? Number(h.duration_ms) || 0
+      : enteredMs === null ? 0
+        : Math.max(0, (exitedMs ?? nextMs ?? (running ? nowMs : parseTimeMs(lastUpdated) ?? nowMs)) - enteredMs);
+    return {
+      step: h.step,
+      entered_at: h.entered_at,
+      exited_at: h.exited_at || '',
+      duration_ms: Math.max(0, durationMs),
+      duration_label: formatDuration(durationMs),
+      running
+    };
+  });
+
+  const startedMs = parseTimeMs(startedAt);
+  const totalEndMs = currentStep === 'done' ? (parseTimeMs(lastUpdated) ?? nowMs) : nowMs;
+  const totalMs = startedMs !== null ? Math.max(0, totalEndMs - startedMs) : steps.reduce((sum, s) => sum + s.duration_ms, 0);
+  const longestStep = steps.reduce((max, step) => step.duration_ms > (max?.duration_ms || 0) ? step : max, null);
+  const current = steps.findLast?.(s => s.step === currentStep) || [...steps].reverse().find(s => s.step === currentStep) || null;
+  return {
+    total_ms: totalMs,
+    total_label: formatDuration(totalMs),
+    longest_step: longestStep,
+    current_step: current,
+    steps
+  };
+}
+
 function metricCard(label, value, hint = '', tone = '') {
   const toneClass = tone ? ` metric-${tone}` : '';
   return `<div class="metric-card${toneClass}"><div class="metric-value">${escHtml(value)}</div><div class="metric-label">${escHtml(label)}</div>${hint ? `<div class="metric-hint">${escHtml(hint)}</div>` : ''}</div>`;
@@ -728,7 +797,29 @@ function renderTimelineCard(stepHistory) {
   </div></div>`;
 }
 
-function renderOverviewPanel(summary, workflowSteps, currentIdx, stepOutputs, impactRisk) {
+function renderTimingCard(timing) {
+  if (!timing?.steps?.length) return '<div class="card"><h2>环节耗时</h2><p class="muted">暂无耗时数据，进入下一步骤后会开始统计。</p></div>';
+  const maxMs = Math.max(1, ...timing.steps.map(s => s.duration_ms));
+  const longest = timing.longest_step?.step || '';
+  const current = timing.current_step;
+  return `<div class="card">
+    <h2>环节耗时</h2>
+    <div class="timing-summary">
+      <div><span>总耗时</span><strong>${escHtml(timing.total_label)}</strong></div>
+      <div><span>最长环节</span><strong title="${escAttr(longest)}">${escHtml(longest || '—')}</strong><div class="muted">${escHtml(timing.longest_step?.duration_label || '—')}</div></div>
+      <div><span>当前环节</span><strong title="${escAttr(current?.step || '')}">${escHtml(current?.step || '—')}</strong><div class="muted">${escHtml(current?.duration_label || '—')}${current?.running ? ' · 进行中' : ''}</div></div>
+    </div>
+    <div class="timing-bars" aria-label="各步骤耗时">
+      ${timing.steps.map(s => {
+        const pct = Math.max(2, Math.round((s.duration_ms / maxMs) * 100));
+        const cls = [s.step === longest ? 'longest' : '', s.running ? 'running' : ''].filter(Boolean).join(' ');
+        return `<div class="timing-row ${cls}"><div class="timing-step" title="${escAttr(s.step)}">${escHtml(s.step)}</div><div class="timing-bar" aria-hidden="true"><div class="timing-fill" style="width:${pct}%"></div></div><div class="timing-value">${escHtml(s.duration_label)}</div></div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function renderOverviewPanel(summary, workflowSteps, currentIdx, stepOutputs, impactRisk, timingSummary) {
   const pendingOutputs = stepOutputs.filter(s => s.status === 'current' || s.status === 'pending').slice(0, 5);
   return `<div class="panel-stack">
     ${renderMetricGrid([
@@ -736,9 +827,10 @@ function renderOverviewPanel(summary, workflowSteps, currentIdx, stepOutputs, im
       metricCard('Task 完成度', `${summary.taskStats.percentage}%`, `${summary.taskStats.approved}/${summary.taskStats.total} approved`, summary.taskStats.percentage === 100 ? 'success' : 'accent'),
       metricCard('需求覆盖度', `${summary.requirementCoverage}%`, summary.missingRequirements ? `${summary.missingRequirements} 项缺失` : '需求链路覆盖', summary.requirementCoverage === 100 ? 'success' : 'warn'),
       metricCard('CR Rework', String(summary.crStats.rework), `${summary.crStats.highSeverity} high`, summary.crStats.rework ? 'danger' : 'success'),
-      metricCard('风险等级', summary.riskLevel, 'Impact Risk', summary.riskLevel === 'high' ? 'danger' : summary.riskLevel === 'medium' ? 'warn' : 'success'),
+      metricCard('总耗时', timingSummary.total_label, timingSummary.longest_step ? `最长：${timingSummary.longest_step.step}` : 'Workflow Timing', 'accent'),
     ])}
     ${renderWorkflowProgress(workflowSteps, currentIdx)}
+    ${renderTimingCard(timingSummary)}
     ${impactRisk?.summary?.highest_risk ? `<div class="card"><h2>当前关注</h2><p class="risk-callout"><strong>风险提示：</strong>${escHtml(impactRisk.summary.highest_risk)}</p></div>` : ''}
     <div class="card"><h2>接下来关注</h2>${pendingOutputs.length ? `<ul class="focus-list">${pendingOutputs.map(s => `<li><span class="status s-${s.status === 'current' ? 'coding' : 'pending'}">${s.status === 'current' ? '进行中' : '待执行'}</span><span>${escHtml(s.step)}</span></li>`).join('')}</ul>` : '<p class="muted">没有待执行步骤。</p>'}</div>
   </div>`;
@@ -1217,6 +1309,7 @@ const WORKFLOW_STEPS = complexity === 'trivial'
 
 const currentIdx = WORKFLOW_STEPS.indexOf(DATA.currentStep);
 const stepOutputs = collectStepOutputs(IDEA_DIR, WORKFLOW_STEPS, DATA.currentStep, DATA.stepHistory);
+const timingSummary = normalizeStepTimings({ stepHistory: DATA.stepHistory, currentStep: DATA.currentStep, startedAt: DATA.startedAt, lastUpdated: DATA.lastUpdated });
 const dashboardSummary = computeDashboardSummary({ tasks: DATA.tasks, traceabilityModel: traceabilityTree, crResults, impactRisk, currentIdx, workflowSteps: WORKFLOW_STEPS });
 
 const html = `<!DOCTYPE html>
@@ -1331,6 +1424,7 @@ tr:hover td{background:var(--surface-hover)}
 .metric-label{font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.08em;margin-top:2px}
 .metric-hint{font-size:.72rem;color:var(--text2);margin-top:6px}
 .metric-success .metric-value{color:var(--success)}.metric-warn .metric-value{color:var(--warn)}.metric-danger .metric-value{color:var(--danger)}.metric-accent .metric-value{color:var(--accent)}
+.timing-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}.timing-summary>div{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;padding:10px;min-width:0}.timing-summary strong{display:block;font-size:1.1rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.timing-summary span{display:block;font-size:.72rem;color:var(--text2);text-transform:uppercase;letter-spacing:.07em}.timing-bars{display:flex;flex-direction:column;gap:8px}.timing-row{display:grid;grid-template-columns:minmax(160px,.7fr) minmax(140px,1.3fr) 88px;gap:10px;align-items:center}.timing-step{font-family:var(--font-mono);font-size:.72rem;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.timing-bar{height:9px;background:var(--surface2);border-radius:999px;overflow:hidden}.timing-fill{height:100%;min-width:2px;border-radius:999px;background:linear-gradient(90deg,var(--accent),#8b5cf6)}.timing-row.longest .timing-step,.timing-row.longest .timing-value{color:var(--warn)}.timing-row.longest .timing-fill{background:linear-gradient(90deg,#d97706,var(--warn))}.timing-row.running .timing-step::after{content:' 进行中';color:var(--accent);font-family:var(--font-sans);font-size:.68rem}.timing-value{font-family:var(--font-mono);font-size:.72rem;color:var(--text);text-align:right;white-space:nowrap}
 .view-nav{position:sticky;top:10px;z-index:20;display:flex;gap:4px;overflow-x:auto;margin:4px 0 18px;padding:4px;background:rgba(17,24,39,.82);border:1px solid var(--border);border-radius:12px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
 .view-tab{min-height:44px;padding:8px 16px;border:0;border-radius:9px;background:transparent;color:var(--text2);font-family:var(--font-sans);font-weight:650;cursor:pointer;white-space:nowrap;transition:background .18s,color .18s}
 .view-tab:hover{background:rgba(255,255,255,.05);color:var(--text)}
@@ -1361,7 +1455,7 @@ canvas{max-height:260px}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important}body::before{animation:none}.live-dot{animation:none}}
 @media(max-width:1100px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.trace-chain{grid-template-columns:repeat(2,minmax(0,1fr))}.relation-row{grid-template-columns:1fr}.relation-arrow{display:none}.change-summary{grid-template-columns:1fr}}
 @media(max-width:900px){.grid{grid-template-columns:1fr}.header-meta{margin-left:0;margin-top:4px}.trace-depth-1,.trace-depth-2,.trace-depth-3{margin-left:10px}}
-@media(max-width:520px){.container{padding:16px 14px 72px}.summary-grid{grid-template-columns:1fr}.tabs{display:flex;overflow-x:auto}.card{padding:14px}.trace-chain{grid-template-columns:1fr}.view-tab{padding:8px 12px}}
+@media(max-width:520px){.container{padding:16px 14px 72px}.summary-grid{grid-template-columns:1fr}.tabs{display:flex;overflow-x:auto}.card{padding:14px}.trace-chain{grid-template-columns:1fr}.view-tab{padding:8px 12px}.timing-summary{grid-template-columns:1fr}.timing-row{grid-template-columns:1fr;gap:4px}.timing-value{text-align:left}}
 </style>
 </head>
 <body>
@@ -1383,7 +1477,7 @@ canvas{max-height:260px}
     metricCard('Task 完成度', `${dashboardSummary.taskStats.percentage}%`, `${dashboardSummary.taskStats.approved}/${dashboardSummary.taskStats.total} approved`, dashboardSummary.taskStats.percentage === 100 ? 'success' : 'accent'),
     metricCard('需求覆盖度', `${dashboardSummary.requirementCoverage}%`, dashboardSummary.missingRequirements ? `${dashboardSummary.missingRequirements} 项缺失` : '需求链路覆盖', dashboardSummary.requirementCoverage === 100 ? 'success' : 'warn'),
     metricCard('CR Rework', String(dashboardSummary.crStats.rework), `${dashboardSummary.crStats.highSeverity} high`, dashboardSummary.crStats.rework ? 'danger' : 'success'),
-    metricCard('风险等级', dashboardSummary.riskLevel, 'Impact Risk', dashboardSummary.riskLevel === 'high' ? 'danger' : dashboardSummary.riskLevel === 'medium' ? 'warn' : 'success'),
+    metricCard('总耗时', timingSummary.total_label, timingSummary.longest_step ? `最长：${timingSummary.longest_step.step}` : 'Workflow Timing', 'accent'),
   ])}
 </section>
 
@@ -1398,7 +1492,7 @@ canvas{max-height:260px}
 
 <main id="main-content">
   <section class="view-panel active" id="view-overview" tabindex="-1">
-    ${renderOverviewPanel(dashboardSummary, WORKFLOW_STEPS, currentIdx, stepOutputs, impactRisk)}
+    ${renderOverviewPanel(dashboardSummary, WORKFLOW_STEPS, currentIdx, stepOutputs, impactRisk, timingSummary)}
   </section>
   <section class="view-panel" id="view-as-is" tabindex="-1">
     ${renderAsIsSection({ overview, coreWalkthrough, evidenceLedger, qualityScore, coverageMatrix })}
@@ -1420,6 +1514,7 @@ canvas{max-height:260px}
   </section>
   <section class="view-panel" id="view-timeline" tabindex="-1">
     <div class="panel-stack">
+      ${renderTimingCard(timingSummary)}
       ${renderStepOutputsCard(stepOutputs)}
       ${renderTimelineCard(DATA.stepHistory)}
     </div>
@@ -1737,4 +1832,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
 
-export { buildTraceabilityHierarchy, collectCrResults, collectTraceability, computeDashboardSummary, countCrFindings, countTasksByStatus, detectComplexity, formatEvidence, normalizeApiChangePlan, normalizeCoverageMatrixRefs, normalizeDataChangePlan, normalizeTaskItem, normalizeTasksJson, normalizeTraceabilityTree, oneSentence, parseTableSection, renderTaskChip, renderTaskChips, safeDomId };
+export { buildTraceabilityHierarchy, collectCrResults, collectTraceability, computeDashboardSummary, countCrFindings, countTasksByStatus, detectComplexity, formatDuration, formatEvidence, normalizeApiChangePlan, normalizeCoverageMatrixRefs, normalizeDataChangePlan, normalizeStepTimings, normalizeTaskItem, normalizeTasksJson, normalizeTraceabilityTree, oneSentence, parseTableSection, renderTaskChip, renderTaskChips, safeDomId };
