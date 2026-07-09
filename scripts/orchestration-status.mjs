@@ -187,10 +187,6 @@ function main() {
     emit('understand:confirm', 'as-is structured confirmation is missing or invalid');
     return;
   }
-  if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'ai-input-ready').pass) {
-    emit('understand:generate-ai-input', 'ai-input documents have not been generated from confirmed as-is', { complexity });
-    return;
-  }
   if (!checkGate(IDEA_DIR, 'clarification-complete').pass) {
     emit('clarify:requirement', 'requirement clarification is incomplete', { complexity });
     return;

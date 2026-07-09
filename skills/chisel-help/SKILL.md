@@ -20,7 +20,7 @@ disable-model-invocation: true
 | `references/knowledge-candidates-template.md` | 单次迭代结束后的长期知识候选模板 |
 | `references/final-summary-template.md` | final:summary 产物模板 |
 | `references/phase-confirm-details.md` | confirm/final/merge/知识捕获阶段的详细行为指南 |
-| `references/phase-ai-input.md` | AI 输入生成阶段指南 |
+| ~~`references/phase-ai-input.md`~~ | 已移至 `chisel-understand/references/ai-input-template.md`（ai-input 阶段取消，模板由主编排器直接使用） |
 | `references/phase-task-init.md` | task 初始化阶段指南 |
 | `references/phase-knowledge-extract.md` | 知识提取阶段指南 |
 

@@ -1,7 +1,7 @@
 {
   "name": "chisel",
   "description": "Legacy system feature enhancement workflow for Claude Code",
-  "version": "0.16.0",
+  "version": "0.17.0",
   "author": {
     "name": "jxin",
     "email": "105760730@qq.com"
@@ -11,8 +11,7 @@
   "license": "MIT",
   "keywords": ["chisel", "feature-enhancement", "as-is", "to-be", "code-review"],
   "agents": [
-    "./agents/agent-chisel-explorer.md",
-    "./agents/agent-chisel-planner.md",
+    "./agents/agent-chisel-writer.md",
     "./agents/agent-chisel-coder.md",
     "./agents/agent-chisel-coder-light.md",
     "./agents/agent-chisel-coder-heavy.md",

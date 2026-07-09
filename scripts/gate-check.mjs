@@ -1142,6 +1142,8 @@ export function checkGate(ideaDir, gateId) {
       if (budgetReason) return result(gateId, false, budgetReason);
       const qualityReason = validateQualityScore(ideaDir);
       if (qualityReason) return result(gateId, false, qualityReason);
+      const aiInputReason = validateAiInput(ideaDir);
+      if (aiInputReason) return result(gateId, false, aiInputReason);
       return result(gateId, true);
     }
     case 'as-is-confirmed': {

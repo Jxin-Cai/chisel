@@ -30,12 +30,6 @@ steps:
     postcondition:
       check: as-is-confirmed
 
-  - id: understand:generate-ai-input
-    # complexity-aware: trivial 模式跳过此步，直接进入 clarify:requirement
-    description: 基于已确认的 as-is 人类学习版生成面向 AI 的结构化输入
-    postcondition:
-      check: ai-input-ready
-
   - id: clarify:requirement
     description: 基于 as-is 理解和原始需求，多维度澄清用户真实意图——功能范围、影响分析、兼容约束、非功能需求、优先级、验收标准、风险容忍度
     action:

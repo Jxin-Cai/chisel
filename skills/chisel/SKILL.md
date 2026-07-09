@@ -55,7 +55,6 @@ digraph chisel_flow {
   receive [label="receive-requirement"];
   explore [label="understand:explore"];
   u_confirm [label="understand:confirm"];
-  ai_input [label="understand:generate-ai-input\n(skip if trivial)"];
   clarify [label="clarify:requirement"];
   quickdev [label="quick-dev:init\n(trivial only)"];
   design [label="plan:design"];
@@ -72,7 +71,7 @@ digraph chisel_flow {
 
   receive -> explore [label="standard/complex"];
   receive -> clarify [label="trivial"];
-  explore -> u_confirm -> ai_input -> clarify;
+  explore -> u_confirm -> clarify;
   clarify -> quickdev [label="trivial"];
   clarify -> design [label="standard/complex"];
   quickdev -> implement;
@@ -126,7 +125,6 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
 | `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-confirmed` |
-| `understand:generate-ai-input` | Read `${REF}/phase-ai-input.md`，按其流程执行 | `ai-input-ready` |
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
 | `quick-dev:init` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}`（trivial only：自动生成 task + worktree-decision + traceability-matrix） | `task-workflow-exists` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
@@ -144,7 +142,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references`
 > 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
-> 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `ai-input-ready` | `clarification-complete` | `quick-dev-ready` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `knowledge-candidates-exists` | `knowledge-extracted` | `done`。不要发明其他 gate 名称。
+> 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `clarification-complete` | `quick-dev-ready` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `knowledge-candidates-exists` | `knowledge-extracted` | `done`。不要发明其他 gate 名称。
 
 ### Complexity 分级
 
@@ -152,9 +150,9 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 **trivial 快速通道**：当 `complexity = trivial` 时，整个流程缩短为：
 - `receive-requirement` → `clarify:requirement`（只需 2 维度） → `quick-dev:init` → `implement:code` → `review:cr-light`（spec-only） → `final:summary` → `done`
-- 跳过：`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`plan:design`、`plan:confirm`、`knowledge:extract`、`worktree:setup`、`tasks:init`、D2-D8 CR
+- 跳过：`understand:explore`、`understand:confirm`、`plan:design`、`plan:confirm`、`knowledge:extract`、`worktree:setup`、`tasks:init`、D2-D8 CR
 
-**standard/complex 正常流程**：走完整步骤，其中 `understand:generate-ai-input` 和 `knowledge:extract` 仅 standard/complex 触发。
+**standard/complex 正常流程**：走完整步骤，其中 `knowledge:extract` 仅 standard/complex 触发。
 
 当同时存在待 CR、待返修和待编码任务时，优先清空 review / rework backlog，再进入新 coding。
 
@@ -168,7 +166,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 
 确认清理范围后再执行不带 `--dry-run` 的命令。rollback 只清理白名单内的 chisel 运行态产物。
 
-支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`understand:generate-ai-input`、`clarify:requirement`、`plan:design`、`plan:confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`knowledge:extract`。
+支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`clarify:requirement`、`plan:design`、`plan:confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`knowledge:extract`。
 
 ---
 
