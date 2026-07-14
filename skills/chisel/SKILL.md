@@ -15,13 +15,13 @@ disable-model-invocation: true
 
 ## 当前工作流状态
 
-!`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+!`node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
 
 ---
 
 ## 启动
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/orchestration.yaml`
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/orchestration.yaml`
 2. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
 3. 设 `{IDEA_DIR}` = `.chisel/<idea-name>/`
 4. 如果目录不存在，设 idea-dir = `none`
@@ -140,7 +140,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `blocked` | 停止，报告阻塞原因 | — |
 | `done` | Read `${REF}/phase-confirm-details.md`；按其完成后合并流程执行 | — |
 
-> `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references`
+> `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references`
 > 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
 > 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `clarification-complete` | `quick-dev-ready` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `knowledge-candidates-exists` | `knowledge-extracted` | `done`。不要发明其他 gate 名称。
 
@@ -172,4 +172,4 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 
 ## 阶段详细行为
 
-当进入 `understand:confirm` / `plan:confirm` / `final:summary` / `done` 步骤时，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/phase-confirm-details.md` 获取详细执行指南。实时知识捕获规则也在该文件中。
+当进入 `understand:confirm` / `plan:confirm` / `final:summary` / `done` 步骤时，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references/phase-confirm-details.md` 获取详细执行指南。实时知识捕获规则也在该文件中。

@@ -5,8 +5,6 @@ model: sonnet
 effort: high
 maxTurns: 20
 tools: Read, Write, Glob, Bash
-skills:
-  - chisel-agent-rules
 ---
 
 # 人类文档生成 Agent

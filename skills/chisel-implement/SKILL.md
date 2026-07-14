@@ -2,6 +2,7 @@
 name: chisel-implement
 description: 当 chisel 编排器进入 implement:code 或 repair:code 阶段时触发。
 argument-hint: "<idea-name>"
+user-invocable: false
 ---
 
 # chisel-implement
@@ -10,7 +11,7 @@ argument-hint: "<idea-name>"
 
 ## 当前工作流状态
 
-!`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+!`node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
 
 ## 执行流程
 

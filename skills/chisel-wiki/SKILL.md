@@ -2,6 +2,7 @@
 name: chisel-wiki
 description: 当用户想管理 wiki 知识、查看禁区/包袱/术语/坏味道、添加新知识条目、或检查 wiki 健康状态时触发。不需要启动 /chisel 主流程即可使用。
 argument-hint: "<init|feed|query|health|list|import> [参数]"
+allowed-tools: Bash, Read, Write, Glob
 ---
 
 # chisel-wiki — 独立知识管理
@@ -92,7 +93,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --init . ${CLAUDE_PLUGIN_ROOT
 
 前缀规则：`forbidden_zone` -> `fz`、`weird_but_intentional` -> `wbi`、`smell` -> `dnr`、`glossary` -> `term`。
 
-JSON 格式（Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-help/references/knowledge-candidates-template.md` 获取完整模板）：
+JSON 格式（Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references/knowledge-candidates-template.md` 获取完整模板）：
 
 ```json
 {

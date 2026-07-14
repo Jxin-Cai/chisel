@@ -2,6 +2,7 @@
 name: chisel-review
 description: 当 chisel 编排器进入 review:cr 阶段时触发。
 argument-hint: "<idea-name>"
+user-invocable: false
 ---
 
 # chisel-review
@@ -10,7 +11,7 @@ argument-hint: "<idea-name>"
 
 ## 当前工作流状态
 
-!`node ${CLAUDE_PLUGIN_ROOT}/hooks/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+!`node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
 
 ## Trivial 快速路径（review:cr-light）
 

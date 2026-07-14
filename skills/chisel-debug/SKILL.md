@@ -2,6 +2,7 @@
 name: chisel-debug
 description: 当 task 返修次数 ≥ 2 且 CR 仍未通过时触发。
 argument-hint: "<idea-name> <task-id>"
+user-invocable: false
 ---
 
 # chisel-debug

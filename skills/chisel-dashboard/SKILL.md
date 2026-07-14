@@ -2,6 +2,7 @@
 name: chisel-dashboard
 description: 生成工作流可视化仪表板。当用户说"dashboard"、"仪表板"、"看板"、"可视化"、"进度"时触发。
 argument-hint: "<idea-name>"
+allowed-tools: Bash, Read
 ---
 
 # chisel-dashboard

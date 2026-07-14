@@ -4,8 +4,6 @@ description: 通用 CR agent，按指定维度审查代码变更
 model: opus
 maxTurns: 15
 tools: Read, Write, Glob, Grep, Bash
-skills:
-  - chisel-agent-rules
 ---
 
 # 通用 CR Agent
