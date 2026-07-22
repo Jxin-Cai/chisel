@@ -23,6 +23,24 @@ user-invocable: false
 
 ---
 
+### Phase 0.5: Wiki 知识预加载
+
+在启动 Plan subagent 之前，查询 wiki 获取与当前需求相关的已有知识：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "$(head -c 500 {idea_dir}/requirement.md)" --min-score 2 --load-plan --limit 5
+```
+
+如果返回 matches：
+- 将匹配条目作为 "## Prior Knowledge (from wiki)" 段落注入 Plan subagent prompt 末尾
+- forbidden_zone 类型 → 在 Plan prompt 中强调"禁止修改该区域"
+- glossary 类型 → 在 Plan prompt 中要求使用正确术语
+- weird_but_intentional 类型 → 提醒 Plan 不要将其当作 bug 修复
+
+如果无匹配或 wiki 不存在 → 跳过，不阻塞。
+
+---
+
 ### Phase 1: 方案框架设计
 
 <HARD-GATE>

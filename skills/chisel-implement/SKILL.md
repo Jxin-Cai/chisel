@@ -61,6 +61,21 @@ digraph implement_flow {
      - **BLOCKED** → 向用户报告阻塞原因，等待用户决策
 4. **多 task** → Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/phase-parallel-coding.md`，按其流程并行执行
 
+### Post-coding Build Verification
+
+当所有 task 的 `--finish-task coded` 成功后（进入 review 前），执行构建验证：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} .
+```
+
+读取 `{IDEA_DIR}/verify-result.json`：
+- `status: "pass"` 或 `status: "skip"` → 正常流转，等待 orchestration-status 派发 review
+- `status: "fail"` → 检查 output 中的错误信息：
+  - 如果是编译/类型错误且涉及本次修改的文件 → 直接修复（不启动新 coder agent）
+  - 修复后重新运行 `verify-run.mjs`
+  - 最多尝试修复 2 次，仍失败则继续进入 CR（CR 阶段会捕获问题）
+
 <HARD-GATE>
 只有 `--next-tasks` 返回的 task 才能启动。
 有依赖的 task 必须串行。

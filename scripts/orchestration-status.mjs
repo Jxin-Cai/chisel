@@ -269,6 +269,83 @@ function main() {
     return;
   }
 
+  // === MODERATE PATH ===
+  if (complexity === 'moderate') {
+    if (!checkGate(IDEA_DIR, 'clarification-complete').pass) {
+      emit('clarify:requirement', 'moderate clarification needed (4 dimensions: functional_scope, acceptance_criteria, compatibility_constraints, priority)', { complexity });
+      return;
+    }
+    if (!checkGate(IDEA_DIR, 'to-be-exists').pass) {
+      emit('plan:design', 'lightweight plan needed (moderate: no impact-risk-report)', { complexity });
+      return;
+    }
+    if (!checkGate(IDEA_DIR, 'to-be-confirmed').pass) {
+      emit('plan:confirm', 'plan confirmation is missing', { complexity });
+      return;
+    }
+    if (!checkGate(IDEA_DIR, 'worktree-decided').pass) {
+      emit('worktree:setup', 'worktree decision has not been made', { complexity });
+      return;
+    }
+    if (!has('task-workflow-state.yaml')) {
+      emit('tasks:init', 'task workflow state does not exist', { complexity });
+      return;
+    }
+    const staleTasks = getStaleCodingTasks(IDEA_DIR);
+    if (staleTasks.length > 0) {
+      emit('implement:code', 'stale coding tasks detected', { stale_tasks: staleTasks.map(t => t.taskId), complexity });
+      return;
+    }
+    const blocked = getBlockedReworkTasks(IDEA_DIR);
+    if (blocked.length > 0) {
+      emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
+      return;
+    }
+    const repairingTasks = getRepairingTasks(IDEA_DIR);
+    if (repairingTasks.length > 0) {
+      emit('repair:code', 'tasks are already being repaired', { in_progress_tasks: repairingTasks, complexity });
+      return;
+    }
+    const reworkTasks = getReworkTasks(IDEA_DIR);
+    if (reworkTasks.length > 0) {
+      emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
+      return;
+    }
+    const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
+    if (reviewTasks.length > 0) {
+      emit('review:cr-moderate', 'tasks are ready or already in review (moderate: spec+D3+D4+D5)', { next_tasks: reviewTasks, complexity });
+      return;
+    }
+    const codingTasks = getCodingTasks(IDEA_DIR);
+    if (codingTasks.length > 0) {
+      emit('implement:code', 'tasks are already being coded', { in_progress_tasks: codingTasks, complexity });
+      return;
+    }
+    const codeTasks = getNextTasks(IDEA_DIR);
+    if (codeTasks.length > 0) {
+      emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
+      return;
+    }
+    if (allTasksApproved(IDEA_DIR)) {
+      const traceGate = checkGate(IDEA_DIR, 'traceability-complete');
+      if (!traceGate.pass && !traceGate.skipped) {
+        emit('blocked', 'traceability incomplete', { complexity, trace_reason: traceGate.reason });
+        return;
+      }
+      if (!checkGate(IDEA_DIR, 'done').pass) {
+        emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
+        return;
+      }
+    }
+    if (checkGate(IDEA_DIR, 'done').pass) {
+      emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
+      return;
+    }
+    const state = readTaskState(taskStateFile(IDEA_DIR));
+    emit('blocked', 'no executable next step found (moderate)', { task_count: Object.keys(state.tasks).length, complexity });
+    return;
+  }
+
   // === STANDARD / COMPLEX PATH ===
   const asIsGate = checkGate(IDEA_DIR, 'as-is-complete');
   if (!asIsGate.pass) {

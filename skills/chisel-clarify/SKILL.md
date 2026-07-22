@@ -39,9 +39,10 @@ user-invocable: false
 | 复杂度 | 必须覆盖的维度 |
 |--------|--------------|
 | trivial | 功能范围、验收标准细化（2 维度） |
+| moderate | 功能范围、验收标准细化、兼容性约束、优先级（4 维度） |
 | standard / complex | 全部 7 维度 |
 
-复杂度由 `requirement.md` 自动判定（显式标注 `## 复杂度: trivial/standard/complex`，或基于涉及范围条目数推断）。
+复杂度由 `requirement.md` 自动判定（显式标注 `## 复杂度: trivial/moderate/standard/complex`，或基于涉及范围条目数推断）。
 
 ## 执行流程
 

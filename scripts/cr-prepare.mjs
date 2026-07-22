@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
@@ -58,13 +58,37 @@ function queryWiki(projectRoot, text) {
   }
 }
 
+function computeRepairDiffFiles(ideaDir, currentChangedFiles) {
+  const prevPath = join(ideaDir, 'cr', 'cr-context-prev.json');
+  if (!existsSync(prevPath)) return currentChangedFiles;
+  try {
+    const prev = JSON.parse(readFileSync(prevPath, 'utf8'));
+    const prevFiles = new Set(Object.values(prev.tasks || {}).flatMap(t => t.changed_files || []));
+    return currentChangedFiles.filter(f => !prevFiles.has(f));
+  } catch {
+    return currentChangedFiles;
+  }
+}
+
+function computeReworkCycle(ideaDir) {
+  const prevPath = join(ideaDir, 'cr', 'cr-context-prev.json');
+  if (!existsSync(prevPath)) return 0;
+  try {
+    const prev = JSON.parse(readFileSync(prevPath, 'utf8'));
+    return (prev.rework_cycle || 0) + 1;
+  } catch {
+    return 0;
+  }
+}
+
 function main() {
   const ideaDir = process.argv[2];
   const baseRef = process.argv[3] || '';
   const projectRoot = process.argv[4] || '.';
   const pathsOnly = process.argv.includes('--paths-only');
+  const compactMode = process.argv.includes('--compact');
 
-  if (!ideaDir) fail('用法: cr-prepare.mjs <idea-dir> [base-ref] [project-root] [--paths-only]');
+  if (!ideaDir) fail('用法: cr-prepare.mjs <idea-dir> [base-ref] [project-root] [--paths-only] [--compact]');
 
   const state = readTaskState(taskStateFile(ideaDir));
   const taskIds = Object.entries(state.tasks)
@@ -120,7 +144,7 @@ function main() {
 
   const context = {
     schema_version: 1,
-    mode: pathsOnly ? 'paths-only' : 'inline',
+    mode: compactMode ? 'compact' : pathsOnly ? 'paths-only' : 'inline',
     generated_at: new Date().toISOString(),
     idea_dir: ideaDir,
     base_ref: baseRef,
@@ -134,8 +158,51 @@ function main() {
   const crDir = join(ideaDir, 'cr');
   mkdirSync(crDir, { recursive: true });
   const outPath = join(crDir, 'cr-context.json');
+
+  // Incremental review: save previous context before overwriting
+  if (existsSync(outPath)) {
+    try {
+      renameSync(outPath, join(crDir, 'cr-context-prev.json'));
+    } catch { /* non-critical: full re-review if rename fails */ }
+  }
+
+  // Compute incremental review fields
+  const reworkCycle = computeReworkCycle(ideaDir);
+  const allChangedFilesList = [...allChangedFiles];
+  const repairDiffFiles = reworkCycle > 0 ? computeRepairDiffFiles(ideaDir, allChangedFilesList) : [];
+
+  context.rework_cycle = reworkCycle;
+  context.repair_diff_files = repairDiffFiles;
+
+  // Compact mode: trim verbose content to save tokens
+  if (compactMode || JSON.stringify(context).length > 50 * 1024) {
+    context.mode = 'compact';
+    for (const [id, t] of Object.entries(context.tasks)) {
+      if (t.task_content) {
+        const fmMatch = t.task_content.match(/^---\n([\s\S]*?)\n---/);
+        t.task_content = fmMatch ? `---\n${fmMatch[1]}\n---` : '';
+      }
+      if (t.report_content) {
+        const fmMatch = t.report_content.match(/^---\n([\s\S]*?)\n---/);
+        const statusMatch = t.report_content.match(/## Completion Status[\s\S]*?(?=\n## |$)/);
+        t.report_content = (fmMatch ? `---\n${fmMatch[1]}\n---\n` : '') + (statusMatch ? statusMatch[0] : '');
+      }
+    }
+    if (context.unified_diff && context.unified_diff.length > 20 * 1024) {
+      const lines = context.unified_diff.split('\n');
+      const summary = lines.filter(l => l.startsWith('diff --git') || l.startsWith('+++'))
+        .map(l => l.replace('diff --git a/', '').replace(/ b\/.*/, ''))
+        .filter(l => l.startsWith('+++'))
+        .map(l => l.replace('+++ b/', ''));
+      context.unified_diff = `[compact: ${summary.length} files, full diff ${Math.round(context.unified_diff.length/1024)}KB — use git diff to read]\n` + summary.map(f => `+++ ${f}`).join('\n');
+    }
+    if (context.wiki_query?.matches) {
+      context.wiki_query.matches = context.wiki_query.matches.map(m => ({ id: m.id, score: m.score, category: m.category }));
+    }
+  }
+
   writeFileSync(outPath, JSON.stringify(context, null, 2));
-  console.log(JSON.stringify({ status: 'ok', path: outPath, task_count: taskIds.length, diff_lines: diff.split('\n').length }));
+  console.log(JSON.stringify({ status: 'ok', path: outPath, task_count: taskIds.length, diff_lines: diff.split('\n').length, rework_cycle: reworkCycle, repair_diff_files_count: repairDiffFiles.length }));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

@@ -70,10 +70,10 @@ digraph chisel_flow {
   done [label="done"];
 
   receive -> explore [label="standard/complex"];
-  receive -> clarify [label="trivial"];
+  receive -> clarify [label="trivial/moderate"];
   explore -> u_confirm -> clarify;
   clarify -> quickdev [label="trivial"];
-  clarify -> design [label="standard/complex"];
+  clarify -> design [label="moderate/standard/complex"];
   quickdev -> implement;
   design -> p_confirm -> knowledge;
   knowledge -> worktree -> tasks;
@@ -126,6 +126,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `task-report-exists` |
 | `review:cr` | `/chisel-review <idea-name>`；`cr-complete` 检查 `dim-spec-cr.md` 与 D2-D8 维度 CR。spec fail 可只完成 spec CR 并进入 repair；spec pass 后才要求 D2-D8 全部完成并聚合。 | `cr-complete` |
+| `review:cr-moderate` | `/chisel-review <idea-name>`（moderate only：运行 spec + D3 + D4 + D5，D2/D6/D7/D8 auto-pass） | `cr-complete` |
 | `review:cr-light` | `/chisel-review <idea-name>`（trivial only：只运行 spec 维度，pass → approved，fail → needs_rework） | `cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `task-report-exists` |
 | `final:summary` | Read `${REF}/phase-confirm-details.md`；按其 final:summary 详细行为执行 | `done` |

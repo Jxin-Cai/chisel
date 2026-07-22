@@ -3,6 +3,7 @@
 // If not, injects corrective context for the next turn.
 // Silent exit (no output) when no active workflow or gate passes.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { checkGate } from '../scripts/gate-check.mjs';
 
@@ -20,6 +21,7 @@ const STEP_GATE_MAP = {
   'repair:code': 'task-report-exists',
   'review:cr': 'cr-complete',
   'review:cr-light': 'cr-complete',
+  'review:cr-moderate': 'cr-complete',
   'knowledge:extract': 'knowledge-extracted',
   'final:summary': 'done'
 };
@@ -59,7 +61,37 @@ function main() {
   if (!gateId) return;
 
   const result = checkGate(active.ideaDir, gateId);
-  if (result.pass) return;
+  if (result.pass) {
+    // Empty-diff guard: block stop if implement/repair step has no actual code changes
+    if (['implement:code', 'repair:code'].includes(active.step)) {
+      try {
+        const diffStat = execSync('git diff --stat HEAD', { encoding: 'utf8', timeout: 5000 }).trim();
+        const untracked = execSync('git ls-files --others --exclude-standard', { encoding: 'utf8', timeout: 5000 }).trim();
+        if (!diffStat && !untracked) {
+          const stateFile = join(active.ideaDir, 'task-workflow-state.yaml');
+          if (existsSync(stateFile)) {
+            const stateText = readFileSync(stateFile, 'utf8');
+            const hasCodingTask = /status:\s*(coding|repairing)/m.test(stateText);
+            if (hasCodingTask) {
+              const reqPath = join(active.ideaDir, 'requirement.md');
+              const isRemoval = existsSync(reqPath) && /task_type:\s*removal/i.test(readFileSync(reqPath, 'utf8'));
+              if (!isRemoval) {
+                const guard = {
+                  hookSpecificOutput: {
+                    hookEventName: 'Stop',
+                    additionalContext: `[chisel empty-diff-guard] 当前步骤 "${active.step}" 检测到 git diff 为空（无实际代码变更），但仍有 coding/repairing 状态的 task。请继续编码实现，确保有实际代码产出后再完成。如果本 task 确实无需代码修改（如纯删除），请在 requirement.md 中标记 "task_type: removal"。`
+                  }
+                };
+                console.log(JSON.stringify(guard));
+                return;
+              }
+            }
+          }
+        }
+      } catch { /* git command failure is non-critical, allow stop */ }
+    }
+    return;
+  }
 
   const output = {
     hookSpecificOutput: {

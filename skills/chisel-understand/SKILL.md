@@ -27,7 +27,22 @@ user-invocable: false
 
 ---
 
-### Phase 0: 代码地图 + 债务扫描
+### Phase 0: 代码地图 + 债务扫描 + Wiki 预加载
+
+**Wiki 预加载**（非阻塞）：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "$(head -c 500 {idea_dir}/requirement.md)" --min-score 2 --limit 10 2>/dev/null
+```
+
+如果返回 matches，将其作为 Explore subagent 上下文：
+- forbidden_zone → 在侦察时避开该区域，不在 overview 中建议修改该区域
+- glossary → 使用正确术语
+- weird_but_intentional → 不将其标记为异常
+
+如果无匹配或 wiki 不存在 → 跳过。
+
+**代码地图生成**：
 
 <HARD-GATE>
 运行 repo-map 脚本生成代码地图：

@@ -21,6 +21,24 @@ user-invocable: false
 - Spec fail → `--mark-cr-requirement needs_rework`，流程结束
 - **不进入第二步和第三步（D2-D8 并行审查）**
 
+## Moderate 路径（review:cr-moderate）
+
+如果当前需求复杂度为 `moderate`，则：
+- **执行第一步（Spec 门槛）**——与 standard 相同
+- Spec fail → `--mark-cr-requirement needs_rework`，流程结束
+- Spec pass → **只启动 D3 + D4 + D5 三个维度**（去重、设计原则、风格一致性）
+- **D2/D6/D7/D8 不启动**——自动写入对应 `cr/dim-{dim}-cr.md`：
+  ```yaml
+  dimension: {dim}
+  result: pass
+  affected_tasks: []
+  rework_count: 0
+  ```
+  理由: "moderate 路径仅审查 spec+D3+D4+D5，本维度自动跳过"
+- D3/D4/D5 全部 pass → `--mark-cr-requirement approved`
+- 任一 fail → 聚合 affected_tasks → `--mark-cr-requirement needs_rework <tasks>`
+- **不执行验证子阶段**（moderate 的 fail 直接生效，不需 sonnet 二次验证）
+
 ## 核心理念
 
 CR diff loop 是 chisel 的质量保障核心：审查 → 返修 → 再审查，直到通过。
@@ -135,7 +153,51 @@ if (d.schema_version === 2 && Array.isArray(d.repos)) {
 
    后续 D2-D8 agent 优先从 cr-context.json 读取，避免重复计算。
 
-### 第二步：条件激活 + D2-D8 并行质量审查
+### 第二步（Rework Cycle Optimization）：增量复审判断
+
+当 `cr-context.json` 中 `rework_cycle > 0` 时，在条件激活之前执行增量复审优化：
+
+1. 读取 `cr/cr-context-prev.json`（上一轮的 cr-context 快照）
+2. 读取 `cr-context.json` 中的 `repair_diff_files`（本次 repair 新增/变更的文件列表）
+3. 对每个 D2-D8 维度，判断是否可以使用缓存结果（`pass-cached`）：
+
+| 条件 | 全部满足则写 pass-cached | 任一不满足则正常激活 |
+|------|-------------------------|---------------------|
+| 上轮该维度 `result: pass` | 读取 `cr/dim-{dim}-cr.md` frontmatter | — |
+| `repair_diff_files` 与该维度上轮审查的 `changed_files` 无交集 | 对比 cr-context-prev 中各 task 的 changed_files | — |
+| 本轮无新增文件（相对于上轮） | 对比 allChangedFiles 与 prev allChangedFiles | — |
+
+满足条件时，写入 `cr/dim-{dim}-cr.md`：
+```yaml
+---
+dimension: {dim}
+result: pass-cached
+cached_from_cycle: {rework_cycle - 1}
+affected_tasks: []
+rework_count: {current_rework_count}
+---
+## 结论
+pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮结论。
+
+## 检查结果
+（缓存自第 {rework_cycle - 1} 轮）
+
+## Scope Check Proof
+（缓存自上轮，repair 文件未触及本维度关注范围）
+
+## Rework Items
+无
+```
+
+**保守兜底规则**：
+- `cr-context-prev.json` 不存在或解析失败 → 全量重跑所有维度
+- 本轮出现任何新增文件（prev 中不存在的 changed_file）→ 全量重跑
+- spec 维度永远重跑，不使用缓存
+- 条件激活维度（D2/D7/D8）若本轮激活条件不满足，仍按原逻辑写 auto-pass（非 pass-cached）
+
+完成增量判断后，对未命中缓存的已激活维度，进入正常的条件激活流程：
+
+### 第二步（续）：条件激活 + D2-D8 并行质量审查
 
 在发起 D2-D8 之前，分析变更文件特征，决定哪些维度需要激活：
 

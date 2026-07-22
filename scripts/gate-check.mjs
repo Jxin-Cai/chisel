@@ -551,7 +551,8 @@ function validateDimensionCrFile(ideaDir, dimension) {
   const text = readText(crPath);
   const fm = readFrontmatter(text);
   if (fm.dimension !== dimension) return { valid: false, reason: `cr/dim-${dimension}-cr.md dimension must be ${dimension}` };
-  if (!['pass', 'fail'].includes(fm.result)) return { valid: false, reason: `cr/dim-${dimension}-cr.md result must be pass/fail` };
+  if (!['pass', 'fail', 'pass-cached'].includes(fm.result)) return { valid: false, reason: `cr/dim-${dimension}-cr.md result must be pass/fail/pass-cached` };
+  if (fm.result === 'pass-cached' && !Number.isFinite(Number(fm.cached_from_cycle))) return { valid: false, reason: `cr/dim-${dimension}-cr.md pass-cached result requires numeric cached_from_cycle` };
   if (!Array.isArray(fm.affected_tasks)) return { valid: false, reason: `cr/dim-${dimension}-cr.md affected_tasks must be an array` };
   if (!Number.isFinite(Number(fm.rework_count || 0))) return { valid: false, reason: `cr/dim-${dimension}-cr.md rework_count must be numeric` };
 
@@ -1163,7 +1164,7 @@ export function checkGate(ideaDir, gateId) {
       const tasksReason = validateTasksJsonAgainstTraceability(ideaDir);
       if (tasksReason) return result(gateId, false, tasksReason);
       const toBeComplexity = detectComplexity(ideaDir);
-      if (toBeComplexity !== 'trivial') {
+      if (toBeComplexity !== 'trivial' && toBeComplexity !== 'moderate') {
         const irReason = validateImpactRiskReport(ideaDir);
         if (irReason) return result(gateId, false, irReason);
       }
@@ -1205,6 +1206,34 @@ export function checkGate(ideaDir, gateId) {
     case 'cr-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
       const crComplexity = detectComplexity(ideaDir);
+      if (crComplexity === 'moderate') {
+        const hasAnyDimCr = REVIEW_DIMENSIONS.some(d => existsSync(dimensionCrPath(ideaDir, d)));
+        if (!hasAnyDimCr) return validateLegacyRequirementCr(ideaDir, gateId);
+        const spec = validateDimensionCrFile(ideaDir, 'spec');
+        if (!spec.valid) return result(gateId, false, spec.reason);
+        if (spec.fm.result === 'fail') {
+          const specAffected = affectedTasks(spec.fm);
+          if (specAffected.length === 0) return result(gateId, false, 'dim-spec fail must include affected_tasks');
+          const statusReason = validateAffectedTaskStatuses(ideaDir, specAffected, ['needs_rework', 'blocked']);
+          return statusReason ? result(gateId, false, statusReason) : result(gateId, true, '', { review_result: 'needs_rework', dimensions: ['spec'] });
+        }
+        const moderateDims = ['d3', 'd4', 'd5'];
+        for (const dim of moderateDims) {
+          const parsed = validateDimensionCrFile(ideaDir, dim);
+          if (!parsed.valid) return result(gateId, false, parsed.reason);
+        }
+        const allParsed = [spec, ...moderateDims.map(d => validateDimensionCrFile(ideaDir, d))];
+        const failed = allParsed.filter(p => p.fm?.result === 'fail');
+        if (failed.length === 0) {
+          return allTasksApproved(ideaDir)
+            ? result(gateId, true, '', { review_result: 'approved', dimensions: ['spec', ...moderateDims] })
+            : result(gateId, false, 'all moderate CRs passed but not all tasks are approved');
+        }
+        const failedTasks = [...new Set(failed.flatMap(p => affectedTasks(p.fm)))];
+        if (failedTasks.length === 0) return result(gateId, false, 'failed dimension CRs must include affected_tasks');
+        const statusReason = validateAffectedTaskStatuses(ideaDir, failedTasks, ['needs_rework', 'blocked']);
+        return statusReason ? result(gateId, false, statusReason) : result(gateId, true, '', { review_result: 'needs_rework', dimensions: ['spec', ...moderateDims] });
+      }
       if (crComplexity === 'trivial') {
         const hasAnyDimCr = REVIEW_DIMENSIONS.some(d => existsSync(dimensionCrPath(ideaDir, d)));
         if (!hasAnyDimCr) return validateLegacyRequirementCr(ideaDir, gateId);
@@ -1251,7 +1280,9 @@ export function checkGate(ideaDir, gateId) {
       const complexity = detectComplexity(ideaDir);
       const requiredDimensions = ['hotfix', 'minor', 'trivial'].includes(complexity)
         ? ['functional_scope', 'acceptance_criteria']
-        : ['functional_scope', 'impact_analysis', 'compatibility_constraints', 'non_functional', 'priority', 'acceptance_criteria', 'risk_tolerance'];
+        : complexity === 'moderate'
+          ? ['functional_scope', 'acceptance_criteria', 'compatibility_constraints', 'priority']
+          : ['functional_scope', 'impact_analysis', 'compatibility_constraints', 'non_functional', 'priority', 'acceptance_criteria', 'risk_tolerance'];
       const missingDimensions = requiredDimensions.filter(d => !doc.dimensions[d]);
       if (missingDimensions.length > 0) return result(gateId, false, `missing dimensions: ${missingDimensions.join(', ')}`);
       if (!Array.isArray(doc.dimensions.acceptance_criteria) || doc.dimensions.acceptance_criteria.length === 0)
