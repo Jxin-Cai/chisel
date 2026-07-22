@@ -21,6 +21,7 @@
 
 ## 实现步骤
 
+0. **检查不变量** — 若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束（这些是从历史 CR 返修中提取的失败模式，必须避免重犯）。
 1. **Wiki 查询** — 按 agent-shared-rules §1 执行查询
 2. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
 3. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。

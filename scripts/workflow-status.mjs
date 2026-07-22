@@ -120,6 +120,13 @@ export async function main(argv) {
         if (!taskId || !result) fail('--mark-cr 需要 task-id 和 approved|needs_rework|blocked');
         if (!['approved', 'needs_rework', 'blocked'].includes(result)) fail('--mark-cr 仅支持 approved|needs_rework|blocked');
         const task = markCr(ideaDir, taskId, result);
+        if (task.status === 'needs_rework' || task.status === 'blocked') {
+          try {
+            const { execFileSync } = await import('node:child_process');
+            const scriptDir = new URL('.', import.meta.url).pathname;
+            execFileSync('node', [`${scriptDir}extract-invariant.mjs`, ideaDir, taskId], { stdio: 'ignore', timeout: 10000 });
+          } catch { /* non-critical: invariant extraction failure does not block workflow */ }
+        }
         print({ updated: true, task_id: taskId, status: task.status, rework_count: task.rework_count || 0 });
         break;
       }
@@ -130,6 +137,15 @@ export async function main(argv) {
         const affectedRaw = argv[3] || '';
         const affectedTasks = affectedRaw ? affectedRaw.split(',').filter(Boolean) : [];
         const results = markCrRequirement(ideaDir, result, affectedTasks);
+        if (result === 'needs_rework' && affectedTasks.length > 0) {
+          try {
+            const { execFileSync } = await import('node:child_process');
+            const scriptDir = new URL('.', import.meta.url).pathname;
+            for (const tid of affectedTasks) {
+              execFileSync('node', [`${scriptDir}extract-invariant.mjs`, ideaDir, tid], { stdio: 'ignore', timeout: 10000 });
+            }
+          } catch { /* non-critical */ }
+        }
         print({ updated: true, review_level: 'requirement', result, task_updates: results });
         break;
       }

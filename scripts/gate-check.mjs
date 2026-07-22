@@ -1,25 +1,10 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { MAX_REWORK_COUNT, allTasksApproved, readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
+import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { validateTasksDocument } from './task-init.mjs';
 
 import { getTaskScope } from './scope-check.mjs';
-
-function detectComplexity(ideaDir) {
-  const reqPath = join(ideaDir, 'requirement.md');
-  if (!existsSync(reqPath)) return 'standard';
-  const text = readFileSync(reqPath, 'utf8');
-  const explicitMatch = text.match(/^##\s*复杂度[：:]\s*(trivial|standard|complex)\s*$/m);
-  if (explicitMatch) return explicitMatch[1];
-  const scopeSection = text.split('## 涉及范围')[1]?.split('##')[0] || '';
-  const scopeItems = scopeSection.split('\n').filter(l => /^-\s+\S/.test(l)).length;
-  const hasNewTable = /新增.*表|新.*table|create.*table|DDL/i.test(text);
-  const hasNewApi = /新增.*接口|new.*api|新.*endpoint/i.test(text);
-  if (scopeItems <= 2 && !hasNewTable && !hasNewApi) return 'trivial';
-  if (scopeItems > 5) return 'complex';
-  return 'standard';
-}
 
 function hasSection(text, heading) {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1264,7 +1249,7 @@ export function checkGate(ideaDir, gateId) {
       if (!doc.clarified_at) return result(gateId, false, 'missing clarified_at');
       if (!doc.dimensions || typeof doc.dimensions !== 'object') return result(gateId, false, 'missing dimensions');
       const complexity = detectComplexity(ideaDir);
-      const requiredDimensions = complexity === 'trivial'
+      const requiredDimensions = ['hotfix', 'minor', 'trivial'].includes(complexity)
         ? ['functional_scope', 'acceptance_criteria']
         : ['functional_scope', 'impact_analysis', 'compatibility_constraints', 'non_functional', 'priority', 'acceptance_criteria', 'risk_tolerance'];
       const missingDimensions = requiredDimensions.filter(d => !doc.dimensions[d]);

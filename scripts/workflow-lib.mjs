@@ -806,3 +806,34 @@ export function resolveProjectName(projectRoot) {
     return basename(projectRoot);
   }
 }
+
+export function detectComplexity(ideaDir) {
+  const reqPath = join(ideaDir, 'requirement.md');
+  if (!existsSync(reqPath)) return 'standard';
+  const text = readFileSync(reqPath, 'utf8');
+  const explicitMatch = text.match(/^##\s*复杂度[：:]\s*(hotfix|minor|trivial|standard|complex)\s*$/m);
+  if (explicitMatch) return explicitMatch[1];
+  const scopeSection = text.split('## 涉及范围')[1]?.split('##')[0] || '';
+  const scopeItems = scopeSection.split('\n').filter(l => /^-\s+\S/.test(l)).length;
+  const hasNewTable = /新增.*表|新.*table|create.*table|DDL/i.test(text);
+  const hasNewApi = /新增.*接口|new.*api|新.*endpoint/i.test(text);
+  if (scopeItems <= 2 && !hasNewTable && !hasNewApi) {
+    const repoMapPath = join(ideaDir, 'as-is/repo-map.json');
+    if (existsSync(repoMapPath)) {
+      try {
+        const repoMap = JSON.parse(readFileSync(repoMapPath, 'utf8'));
+        const topDirs = [...new Set(
+          (repoMap.directory_summary || [])
+            .filter(d => d.role === 'source')
+            .map(d => d.path.split('/')[0].toLowerCase())
+        )];
+        const scopeTextLower = scopeSection.toLowerCase();
+        const hitDirs = topDirs.filter(d => d.length >= 2 && scopeTextLower.includes(d));
+        if (hitDirs.length >= 3) return 'standard';
+      } catch { /* ignore parse errors */ }
+    }
+    return 'trivial';
+  }
+  if (scopeItems > 5) return 'complex';
+  return 'standard';
+}

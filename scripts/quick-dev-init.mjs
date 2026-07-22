@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { initTaskState, atomicWriteFile, ensureDir } from './workflow-lib.mjs';
+import { detectComplexity, initTaskState, atomicWriteFile, ensureDir } from './workflow-lib.mjs';
 
 const IDEA_DIR = process.argv[2];
 
@@ -44,11 +44,14 @@ function main() {
 
   const acSection = acceptanceCriteria.map(ac => `- ${ac.id || 'AC'}: ${ac.description || ''} (${ac.verification_method || 'manual'})`).join('\n');
 
+  const complexity = detectComplexity(IDEA_DIR);
+  const complexityLabel = complexity === 'hotfix' ? 'Hotfix' : complexity === 'minor' ? 'Minor' : 'Trivial';
+
   const taskMd = `---
 task_id: ${taskId}
-title: "Trivial: ${goal.slice(0, 60)}"
+title: "${complexityLabel}: ${goal.slice(0, 60)}"
 risk_level: low
-task_complexity: trivial
+task_complexity: ${complexity}
 expected_files: []
 trace_refs: [${traceRefs.join(', ')}]
 ---
@@ -109,7 +112,7 @@ ${acSection}
     schema_version: 1,
     decision: 'current-branch',
     decided_at: new Date().toISOString(),
-    reason: 'trivial complexity — always current-branch'
+    reason: `${complexity} complexity — always current-branch`
   };
   atomicWriteFile(join(IDEA_DIR, 'worktree-decision.json'), JSON.stringify(worktreeDecision, null, 2));
 

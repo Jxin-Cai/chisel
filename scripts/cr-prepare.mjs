@@ -62,8 +62,9 @@ function main() {
   const ideaDir = process.argv[2];
   const baseRef = process.argv[3] || '';
   const projectRoot = process.argv[4] || '.';
+  const pathsOnly = process.argv.includes('--paths-only');
 
-  if (!ideaDir) fail('用法: cr-prepare.mjs <idea-dir> [base-ref] [project-root]');
+  if (!ideaDir) fail('用法: cr-prepare.mjs <idea-dir> [base-ref] [project-root] [--paths-only]');
 
   const state = readTaskState(taskStateFile(ideaDir));
   const taskIds = Object.entries(state.tasks)
@@ -84,25 +85,42 @@ function main() {
 
     const scopeResult = checkScope(ideaDir, taskId, projectRoot);
 
-    tasks[taskId] = {
-      task_content: taskFile?.content || '',
-      report_content: report?.content || '',
-      changed_files: changedFiles,
-      rework_count: taskFile?.rework_count || 0,
-      scope_check: scopeResult
-    };
+    if (pathsOnly) {
+      const taskState = state.tasks[taskId];
+      const taskFilePath = taskState ? join(ideaDir, taskState.file) : '';
+      const reportFilePath = join(ideaDir, 'task-reports', `${taskId}-report.md`);
+      tasks[taskId] = {
+        task_file_path: taskFilePath,
+        report_file_path: reportFilePath,
+        changed_files: changedFiles,
+        rework_count: taskFile?.rework_count || 0,
+        scope_check: scopeResult
+      };
+    } else {
+      tasks[taskId] = {
+        task_content: taskFile?.content || '',
+        report_content: report?.content || '',
+        changed_files: changedFiles,
+        rework_count: taskFile?.rework_count || 0,
+        scope_check: scopeResult
+      };
+    }
   }
 
   const diff = computeDiff(baseRef, [...allChangedFiles], projectRoot);
 
   const wikiText = taskIds.map(id => {
-    const fm = tasks[id].task_content.split('---')[1] || '';
+    const content = pathsOnly
+      ? (tasks[id].task_file_path && existsSync(tasks[id].task_file_path) ? readFileSync(tasks[id].task_file_path, 'utf8') : '')
+      : (tasks[id].task_content || '');
+    const fm = content.split('---')[1] || '';
     return fm;
   }).join(' ');
   const wikiResult = queryWiki(projectRoot, wikiText.slice(0, 500));
 
   const context = {
     schema_version: 1,
+    mode: pathsOnly ? 'paths-only' : 'inline',
     generated_at: new Date().toISOString(),
     idea_dir: ideaDir,
     base_ref: baseRef,

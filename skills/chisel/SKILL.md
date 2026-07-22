@@ -96,15 +96,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 ```
 只执行脚本返回的 `resume_step`。
 
-合理化预防表：
-
-| 你的想法 | 现实 |
-|---------|------|
-| "需求很简单，直接编码" | 简单需求也可能有隐藏约束，as-is 不可跳 |
-| "上次 as-is 还有效" | 代码可能已变，必须重新探索 |
-| "用户催得急，先写代码" | 返工成本远高于前期理解成本 |
-| "这个确认环节用户肯定会同意" | 用户确认是质量门禁，不可代替 |
-| "需求已经很清楚了，直接开始编码" | 这是跳步违规——上下文变长后最常见的合理化冲动 |
+合理化预防：任何"跳过当前步骤直接做下一步"的冲动都是违规。典型表现及应对见 `iron-rules.md` §8。
 </HARD-GATE>
 
 <HARD-GATE>
@@ -146,11 +138,19 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 ### Complexity 分级
 
-`orchestration-status.mjs` 的 emit 输出包含 `complexity` 字段（`trivial` | `standard` | `complex`）。
+`orchestration-status.mjs` 的 emit 输出包含 `complexity` 字段（`hotfix` | `minor` | `trivial` | `standard` | `complex`）。
 
-**trivial 快速通道**：当 `complexity = trivial` 时，整个流程缩短为：
-- `receive-requirement` → `clarify:requirement`（只需 2 维度） → `quick-dev:init` → `implement:code` → `review:cr-light`（spec-only） → `final:summary` → `done`
-- 跳过：`understand:explore`、`understand:confirm`、`plan:design`、`plan:confirm`、`knowledge:extract`、`worktree:setup`、`tasks:init`、D2-D8 CR
+| complexity | 路径 | 判定条件 |
+|---|---|---|
+| `hotfix` | `receive-requirement` → `quick-dev:init` → `implement:code` → `review:cr-light`(spec-only) → `done` | 显式标记 `## 复杂度: hotfix` |
+| `minor` | `receive-requirement` → `clarify:requirement`(2维度) → `quick-dev:init` → `implement:code` → `review:cr-light` → `done` | 显式标记 `## 复杂度: minor` |
+| `trivial` | `receive-requirement` → `clarify:requirement`(2维度) → `quick-dev:init` → `implement:code` → `review:cr-light`(spec-only) → `done` | 自动检测：≤2 scope items，无新表/接口 |
+| `standard` | 完整流程 | 默认 |
+| `complex` | 完整流程 + spike | >5 scope items |
+
+**hotfix**：无 clarify，直接进入 quick-dev:init 生成 task 并实现。适用于单文件 ≤5 行的明确修复。
+**minor**：需要轻量 clarify（2 维度），其余与 trivial 相同。适用于 ≤2 文件、有现成模式可循的改动。
+**trivial/standard/complex**：行为不变。
 
 **standard/complex 正常流程**：走完整步骤，其中 `knowledge:extract` 仅 standard/complex 触发。
 
