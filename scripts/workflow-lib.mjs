@@ -84,7 +84,7 @@ export function parseTaskSpec(spec) {
 function parseScalar(value) {
   const trimmed = String(value || '').trim();
   if (trimmed.startsWith('[')) return parseList(trimmed);
-  if (trimmed.startsWith('{')) return JSON.parse(trimmed);
+  if (trimmed.startsWith('{')) { try { return JSON.parse(trimmed); } catch { return trimmed; } }
   if (/^-?\d+$/.test(trimmed)) return Number(trimmed);
   if (trimmed === 'true') return true;
   if (trimmed === 'false') return false;
@@ -265,6 +265,7 @@ const STEP_TO_PHASE = {
   'repair:code': 'implement',
   'review:cr': 'review',
   'review:cr-light': 'review',
+  'review:cr-moderate': 'review',
   'knowledge:extract': 'knowledge',
   'final:summary': 'final'
 };
@@ -433,7 +434,7 @@ export function markCr(ideaDir, taskId, result) {
   const task = state.tasks[taskId];
   if (!task) throw new Error(`unknown task: ${taskId}`);
   const current = task.status;
-  if (task.status !== 'reviewing' && task.status !== 'coded' && task.status !== status) {
+  if (task.status !== 'reviewing' && task.status !== 'coded') {
     throw new Error(`task ${taskId} is not reviewable from ${task.status}`);
   }
   if (result === 'needs_rework') task.rework_count = Number(task.rework_count || 0) + 1;
@@ -759,6 +760,7 @@ export function rollbackTask(ideaDir, taskId, { dryRun = false } = {}) {
   task.loc_added = 0;
   task.loc_deleted = 0;
   task.started_at = undefined;
+  task.rework_count = 0;
   writeTaskState(file, state);
   return { rolled_back: true, dry_run: false, task_id: taskId, from: current, to: 'confirmed', removed: toRemove };
 }

@@ -67,7 +67,8 @@ function main() {
       try {
         const diffStat = execSync('git diff --stat HEAD', { encoding: 'utf8', timeout: 5000 }).trim();
         const untracked = execSync('git ls-files --others --exclude-standard', { encoding: 'utf8', timeout: 5000 }).trim();
-        if (!diffStat && !untracked) {
+        const unpushed = execSync('git log --oneline @{push}..HEAD 2>/dev/null || git log --oneline --not --remotes --max-count=1 2>/dev/null || true', { encoding: 'utf8', timeout: 5000 }).trim();
+        if (!diffStat && !untracked && !unpushed) {
           const stateFile = join(active.ideaDir, 'task-workflow-state.yaml');
           if (existsSync(stateFile)) {
             const stateText = readFileSync(stateFile, 'utf8');

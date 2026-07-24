@@ -504,7 +504,7 @@ function validateCrFile(crPath, status, behaviorInvariants = []) {
   const missing = required.filter(section => !hasSection(text, section));
   if (missing.length > 0) return `missing sections: ${missing.join(', ')}`;
   const reworkCount = Number(readFrontmatter(text).rework_count || 0);
-  if (reworkCount > 0 && !hasSection(text, 'Rework Verification'))
+  if (reworkCount > 0 && !hasSection(text, '## Rework Verification'))
     return 'CR with rework_count > 0 must include ## Rework Verification section';
   const wikiProofReason = validateWikiLoadProof(text);
   if (wikiProofReason) return wikiProofReason;
@@ -569,7 +569,7 @@ function validateDimensionCrFile(ideaDir, dimension) {
   if (scopeProofReason) return { valid: false, reason: `cr/dim-${dimension}-cr.md ${scopeProofReason}` };
 
   const reworkCount = Number(fm.rework_count || 0);
-  if (reworkCount > 0 && !hasSection(text, 'Rework Verification')) {
+  if (reworkCount > 0 && !hasSection(text, '## Rework Verification')) {
     return { valid: false, reason: `cr/dim-${dimension}-cr.md with rework_count > 0 must include ## Rework Verification section` };
   }
   if (fm.result === 'fail') {
@@ -591,7 +591,7 @@ function validateLegacyRequirementCr(ideaDir, gateId) {
   const missing = required.filter(section => !crText.includes(section));
   if (missing.length > 0) return result(gateId, false, `requirement-cr.md missing sections: ${missing.join(', ')}`);
   const reworkCount = Number(crFm.rework_count || 0);
-  if (reworkCount > 0 && !hasSection(crText, 'Rework Verification'))
+  if (reworkCount > 0 && !hasSection(crText, '## Rework Verification'))
     return result(gateId, false, 'CR with rework_count > 0 must include ## Rework Verification section');
   return result(gateId, true, '', { legacy: true });
 }
@@ -1191,6 +1191,7 @@ export function checkGate(ideaDir, gateId) {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
       const invalid = taskEntries(ideaDir).map(([taskId, task]) => {
         if (!['coded', 'reviewing', 'approved', 'needs_rework', 'blocked'].includes(task.status)) return '';
+        if (!task.report_file) return taskId;
         const reportPath = join(ideaDir, task.report_file);
         if (!has(ideaDir, task.report_file)) return taskId;
         const { behaviorInvariants } = getTaskScope(ideaDir, taskId);

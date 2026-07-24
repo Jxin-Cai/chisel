@@ -133,8 +133,6 @@ function main() {
         emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
         return;
       }
-    }
-    if (checkGate(IDEA_DIR, 'done').pass) {
       emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
       return;
     }
@@ -193,8 +191,6 @@ function main() {
         emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
         return;
       }
-    }
-    if (checkGate(IDEA_DIR, 'done').pass) {
       emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
       return;
     }
@@ -259,8 +255,6 @@ function main() {
         emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
         return;
       }
-    }
-    if (checkGate(IDEA_DIR, 'done').pass) {
       emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
       return;
     }
@@ -336,8 +330,6 @@ function main() {
         emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
         return;
       }
-    }
-    if (checkGate(IDEA_DIR, 'done').pass) {
       emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
       return;
     }
