@@ -263,7 +263,7 @@ function normalizeTraceType(type, id = '') {
   if (['acceptance_criteria', 'acceptance', 'ac'].includes(raw)) return 'acceptance_criteria';
   if (['verification', 'verification_condition', 'vc', 'ver'].includes(raw)) return 'verification';
   if (['constraint', 'clarification', 'decision', 'c'].includes(raw)) return 'constraint';
-  if (['risk', 'risk_mitigation', 'mitigation'].includes(raw)) return raw;
+  if (['risk', 'risk_mitigation', 'mitigation'].includes(raw)) return raw === 'mitigation' ? 'risk_mitigation' : raw;
   return inferTraceType(id);
 }
 
@@ -1158,7 +1158,7 @@ function renderCoverageMatrix(matrix) {
 function detectComplexity(ideaDir) {
   const req = readMd(ideaDir, 'requirement.md');
   if (!req) return 'standard';
-  const m = req.match(/^##\s*复杂度[：:]\s*(trivial|standard|complex)\s*$/m);
+  const m = req.match(/^##\s*复杂度[：:]\s*(hotfix|minor|trivial|moderate|standard|complex)\s*$/m);
   if (m) return m[1];
   return 'standard';
 }

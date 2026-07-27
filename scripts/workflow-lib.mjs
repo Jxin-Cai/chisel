@@ -11,6 +11,7 @@ const VALID_TRANSITIONS = new Set([
   'coding:coded',
   'coding:failed',
   'failed:confirmed',
+  'failed:coding',
   'coded:reviewing',
   'reviewing:approved',
   'reviewing:needs_rework',
@@ -270,7 +271,9 @@ const STEP_TO_PHASE = {
   'final:summary': 'final'
 };
 
-export function updateWorkflowPhase(ideaDir, stepId) {
+const PHASE_ORDER = ['requirement', 'understand', 'clarify', 'plan', 'tasks', 'implement', 'review', 'knowledge', 'final'];
+
+export function updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases = false } = {}) {
   const file = workflowStateFile(ideaDir);
   if (!existsSync(file)) return;
   let text = readFileSync(file, 'utf8');
@@ -281,6 +284,14 @@ export function updateWorkflowPhase(ideaDir, stepId) {
   const phase = STEP_TO_PHASE[stepId];
   if (phase) {
     text = text.replace(new RegExp(`^(  ${phase}:).*$`, 'm'), `$1 in_progress`);
+    if (resetLaterPhases) {
+      const phaseIdx = PHASE_ORDER.indexOf(phase);
+      if (phaseIdx >= 0) {
+        for (const laterPhase of PHASE_ORDER.slice(phaseIdx + 1)) {
+          text = text.replace(new RegExp(`^(  ${laterPhase}:).*$`, 'm'), `$1 pending`);
+        }
+      }
+    }
   }
 
   const history = parseWorkflowStepHistory(text);
@@ -740,7 +751,7 @@ export function rollbackWorkflow(ideaDir, stepId, { dryRun = false } = {}) {
     rmSync(join(ideaDir, rel), { recursive: true, force: true });
   }
   applyTaskResets(ideaDir, plan.task_resets);
-  updateWorkflowPhase(ideaDir, stepId);
+  updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases: true });
   return { rolled_back: true, dry_run: false, ...plan };
 }
 

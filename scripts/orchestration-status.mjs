@@ -430,11 +430,6 @@ function main() {
     }
   }
 
-  if (checkGate(IDEA_DIR, 'done').pass) {
-    emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
-    return;
-  }
-
   const state = readTaskState(taskStateFile(IDEA_DIR));
   emit('blocked', 'no executable next step found', { task_count: Object.keys(state.tasks).length, complexity });
 }

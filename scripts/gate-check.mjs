@@ -1083,7 +1083,8 @@ function validateFinalSummary(ideaDir) {
   const summaryPath = join(ideaDir, 'final-summary.md');
   if (!existsSync(summaryPath)) return 'final-summary.md missing';
   const text = readText(summaryPath);
-  const knowledgeOff = isKnowledgeOptedOut(ideaDir);
+  const complexity = detectComplexity(ideaDir);
+  const knowledgeOff = isKnowledgeOptedOut(ideaDir) || ['hotfix', 'minor', 'trivial', 'moderate'].includes(complexity);
   const requiredSections = knowledgeOff
     ? ['## 变更摘要', '## Scope Control Summary']
     : ['## 变更摘要', '## Scope Control Summary', '## Knowledge Candidates', '## Wiki Updates'];

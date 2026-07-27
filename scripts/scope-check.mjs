@@ -168,7 +168,7 @@ function matchOne(file, item) {
   if (!pattern) return null;
   if (file === pattern) return { pattern, source, match_type: 'exact' };
   if (pattern.endsWith('/') && file.startsWith(pattern)) return { pattern, source, match_type: 'prefix_slash' };
-  if (pattern.endsWith('/*') && file.startsWith(pattern.slice(0, -1))) return { pattern, source, match_type: 'glob_star' };
+  if (pattern.endsWith('/*') && file.startsWith(pattern.slice(0, -1)) && !file.slice(pattern.length - 1).includes('/')) return { pattern, source, match_type: 'glob_star' };
   if (pattern.endsWith('/**') && file.startsWith(pattern.slice(0, -2))) return { pattern, source, match_type: 'glob_double_star' };
   return null;
 }

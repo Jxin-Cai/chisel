@@ -2,6 +2,7 @@
 import { existsSync } from 'node:fs';
 import {
   allTasksApproved,
+  MAX_REWORK_COUNT,
   getBlockedReworkTasks,
   getReviewBacklogTasks,
   getNextTasks,
@@ -92,7 +93,12 @@ export async function main(argv) {
         const taskId = argv[2];
         if (!taskId) fail('--start-task 需要 task-id');
         const state = readTaskState(taskStateFile(ideaDir));
-        const current = state.tasks[taskId]?.status;
+        const task = state.tasks[taskId];
+        if (!task) fail(`unknown task: ${taskId}`);
+        const current = task.status;
+        if (current === 'needs_rework' && Number(task.rework_count || 0) >= MAX_REWORK_COUNT) {
+          fail(`task ${taskId} has reached max rework count (${task.rework_count}), use --rollback-task to reset`);
+        }
         const next = ['needs_rework', 'repairing'].includes(current) ? 'repairing' : 'coding';
         updateTaskStatus(ideaDir, taskId, next);
         print({ updated: true, task_id: taskId, status: next });

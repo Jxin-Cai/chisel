@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { detectComplexity, initTaskState, atomicWriteFile, ensureDir } from './workflow-lib.mjs';
 
@@ -45,7 +45,7 @@ function main() {
   const acSection = acceptanceCriteria.map(ac => `- ${ac.id || 'AC'}: ${ac.description || ''} (${ac.verification_method || 'manual'})`).join('\n');
 
   const complexity = detectComplexity(IDEA_DIR);
-  const complexityLabel = complexity === 'hotfix' ? 'Hotfix' : complexity === 'minor' ? 'Minor' : 'Trivial';
+  const complexityLabel = complexity === 'hotfix' ? 'Hotfix' : complexity === 'minor' ? 'Minor' : complexity === 'trivial' ? 'Trivial' : complexity.charAt(0).toUpperCase() + complexity.slice(1);
 
   const taskMd = `---
 task_id: ${taskId}
@@ -93,7 +93,7 @@ ${acSection}
 - existing functionality unchanged
 `;
 
-  writeFileSync(taskPath, taskMd);
+  atomicWriteFile(taskPath, taskMd);
 
   const ideaName = IDEA_DIR.split('/').filter(Boolean).pop() || 'unknown';
   initTaskState(IDEA_DIR, ideaName, [{

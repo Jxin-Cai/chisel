@@ -369,7 +369,7 @@ export function computeScore(ideaDir, options = {}) {
   const dimensionFailures = Object.entries(dimensions)
     .filter(([dim, data]) => {
       if (dim === 'risk_awareness' && options.complexity === 'standard') return false;
-      return data.score < MIN_DIMENSION_SCORE;
+      return data.score < minDimScore;
     });
 
   return {

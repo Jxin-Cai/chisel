@@ -65,7 +65,6 @@ function parseDimCrResult(crFilePath, dimension) {
 
 function main() {
   const args = process.argv.slice(2);
-  const typeIdx = args.indexOf('--type');
   const dimIdx = args.indexOf('--dim');
   let type = 'cr';
   let dim = null;
@@ -74,6 +73,7 @@ function main() {
     dim = args[dimIdx + 1] || '';
     args.splice(dimIdx, 2);
   }
+  const typeIdx = args.indexOf('--type');
   if (typeIdx !== -1) {
     type = args[typeIdx + 1] || 'cr';
     args.splice(typeIdx, 2);

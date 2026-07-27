@@ -2,7 +2,6 @@
 import { existsSync, readdirSync, statSync, readFileSync } from 'node:fs';
 import { join, resolve, basename, relative } from 'node:path';
 import { execSync } from 'node:child_process';
-import { atomicWriteFile } from './workflow-lib.mjs';
 
 const USAGE = `用法:
   node multi-repo-worktree.mjs --detect <workspace-root>
