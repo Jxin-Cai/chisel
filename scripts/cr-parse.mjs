@@ -6,7 +6,7 @@ import { readFrontmatter } from './workflow-lib.mjs';
 const VALID_RESULTS = ['approved', 'needs_rework', 'blocked'];
 const VALID_SPEC_RESULTS = ['pass', 'fail'];
 const VALID_DIM_RESULTS = ['pass', 'fail'];
-const VALID_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8'];
+const VALID_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'];
 
 function parseCrResult(crFilePath) {
   if (!existsSync(crFilePath)) return { error: `file not found: ${crFilePath}` };

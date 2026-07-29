@@ -1,5 +1,17 @@
 # Chisel 架构详细说明
 
+## 设计原则
+
+所有执法机制均派生自 5 条不可违反的设计原则（详见 `_shared/references/iron-rules.md`）：
+
+- **P1 穷举枚举**：有限域路由表必须覆盖全部变体，新增变体原子更新所有消费者
+- **P2 状态转移完整性**：状态变更经唯一正规函数，附带全部副作用
+- **P3 边界快速失败**：外部输入在入口点即校验
+- **P4 副作用一致性**：修改可观测状态时更新所有下游消费者
+- **P5 唯一正规来源**：同一知识只定义一次，其他处导入
+
+原则到执法机制的完整映射见 `_shared/references/principle-enforcement-map.md`。
+
 ## 架构要点
 
 - 单一插件 `chisel`，主入口 skill 是 `/chisel`。
@@ -18,6 +30,8 @@
 - `scripts/traceability-check.mjs` 需求→task 可追溯性验证，final 阶段前确认所有 AC 被覆盖实现。
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check/wiki 数据写入 `cr-context.json`，D2-D8 agent 共用。
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
+- `scripts/session-metrics.mjs` 记录每个 idea 的步骤耗时、agent 调用次数、返修轮次等效率指标。
+- `scripts/checkpoint.mjs` 关键阶段自动保存快照（workflow-state + task-state + git tag），支持恢复到历史快照。
 - **理解阶段**（`chisel-understand`）由主编排器直接执行：先调用原生 Explore subagent 侦察定位文件，然后主编排器（真身）深度走查产出结构化数据（evidence-ledger.json + coverage-matrix.json + ai-input/*.md），最后调用 `agent-chisel-writer`(sonnet) 从结构化数据生成面向人类的图文文档。
 - **规划阶段**（`chisel-plan`）由主编排器直接执行：先调用原生 Plan subagent 设计方案框架，然后主编排器精化并写入 JSON 产物（tasks.json + traceability-matrix.json + impact-risk-report.json）+ 执行 6 步变更完整性自检，最后调用 `agent-chisel-writer`(sonnet) 生成 implementation-plan.md。
 - `agent-chisel-writer` 从结构化产物（JSON/md 表格）生成面向人类的图文中文文档（含 Mermaid），不探索代码、不做设计决策。支持 as-is 和 to-be 两种模式。

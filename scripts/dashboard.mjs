@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join, basename, resolve } from 'node:path';
-import { atomicWriteFile, readTaskState, taskStateFile, readFrontmatter } from './workflow-lib.mjs';
+import { atomicWriteFile, readTaskState, taskStateFile, readFrontmatter, detectComplexity } from './workflow-lib.mjs';
 
 // --- Data collection ---
 
@@ -1155,13 +1155,7 @@ function renderCoverageMatrix(matrix) {
 
 // --- Utility functions (exported for testing) ---
 
-function detectComplexity(ideaDir) {
-  const req = readMd(ideaDir, 'requirement.md');
-  if (!req) return 'standard';
-  const m = req.match(/^##\s*复杂度[：:]\s*(hotfix|minor|trivial|moderate|standard|complex)\s*$/m);
-  if (m) return m[1];
-  return 'standard';
-}
+// detectComplexity imported from workflow-lib.mjs [P5: 唯一正规来源]
 
 // --- Step Outputs ---
 

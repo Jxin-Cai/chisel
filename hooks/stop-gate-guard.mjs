@@ -6,25 +6,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { checkGate } from '../scripts/gate-check.mjs';
-
-const STEP_GATE_MAP = {
-  'receive-requirement': 'requirement-exists',
-  'understand:explore': 'as-is-complete',
-  'understand:confirm': 'as-is-confirmed',
-  'clarify:requirement': 'clarification-complete',
-  'plan:design': 'to-be-exists',
-  'plan:confirm': 'to-be-confirmed',
-  'worktree:setup': 'worktree-decided',
-  'tasks:init': 'task-workflow-exists',
-  'quick-dev:init': 'task-workflow-exists',
-  'implement:code': 'task-report-exists',
-  'repair:code': 'task-report-exists',
-  'review:cr': 'cr-complete',
-  'review:cr-light': 'cr-complete',
-  'review:cr-moderate': 'cr-complete',
-  'knowledge:extract': 'knowledge-extracted',
-  'final:summary': 'done'
-};
+import { STEP_GATE_MAP } from '../scripts/workflow-lib.mjs';
 
 function findActiveWorkflow(chiselDir) {
   if (!existsSync(chiselDir)) return null;

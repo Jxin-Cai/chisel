@@ -4,6 +4,26 @@ import { basename, dirname, join } from 'node:path';
 
 export const TASK_STATES = ['pending', 'confirmed', 'coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'];
 export const MAX_REWORK_COUNT = 3;
+export const ALL_COMPLEXITIES = ['hotfix', 'minor', 'trivial', 'moderate', 'standard', 'complex'];
+
+export const STEP_GATE_MAP = {
+  'receive-requirement': 'requirement-exists',
+  'understand:explore': 'as-is-complete',
+  'understand:confirm': 'as-is-confirmed',
+  'clarify:requirement': 'clarification-complete',
+  'plan:design': 'to-be-exists',
+  'plan:confirm': 'to-be-confirmed',
+  'worktree:setup': 'worktree-decided',
+  'tasks:init': 'task-workflow-exists',
+  'quick-dev:init': 'task-workflow-exists',
+  'implement:code': 'task-report-exists',
+  'repair:code': 'task-report-exists',
+  'review:cr': 'cr-complete',
+  'review:cr-light': 'cr-complete',
+  'review:cr-moderate': 'cr-complete',
+  'knowledge:extract': 'knowledge-extracted',
+  'final:summary': 'done'
+};
 
 const VALID_TRANSITIONS = new Set([
   'pending:confirmed',
@@ -247,7 +267,7 @@ function replaceWorkflowStepHistory(text, history) {
   return `${base}${historyYaml ? `\n${historyYaml}` : ''}\n`;
 }
 
-const STEP_TO_PHASE = {
+export const STEP_TO_PHASE = {
   'receive-requirement': 'requirement',
   'understand:explore': 'understand',
   'understand:confirm': 'understand',
@@ -809,6 +829,27 @@ export function getStaleCodingTasks(ideaDir, thresholdMs = 30 * 60 * 1000) {
       return now - new Date(task.started_at).getTime() > thresholdMs;
     })
     .map(([taskId, task]) => ({ taskId, status: task.status, started_at: task.started_at }));
+}
+
+export function detectRepairStall(ideaDir) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  const stalled = [];
+  for (const [taskId, task] of Object.entries(state.tasks)) {
+    if (task.status !== 'repairing') continue;
+    if ((task.rework_count || 0) < 2) continue;
+    const reportPath = join(ideaDir, 'task-reports', `${taskId}-report.md`);
+    if (!existsSync(reportPath)) continue;
+    const crDir = join(ideaDir, 'cr');
+    if (!existsSync(crDir)) continue;
+    stalled.push({
+      taskId,
+      rework_count: task.rework_count || 0,
+      suggestion: task.rework_count >= 3
+        ? 'mark_blocked'
+        : 'consider splitting task or requesting human assistance',
+    });
+  }
+  return stalled;
 }
 
 export function resolveProjectName(projectRoot) {

@@ -18,6 +18,6 @@
    node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} task-integrity
    ```
 
-<HARD-GATE>
+<HARD-GATE principle="P2">
 不要手工搬运 task 到 workflow-status.mjs。缺字段时回到 plan 阶段修正。已存在 task 文件时默认拒绝覆盖，需用户明确要求 `--force`。
 </HARD-GATE>

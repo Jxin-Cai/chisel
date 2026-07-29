@@ -31,7 +31,7 @@ disable-model-invocation: true
 
 ## 铁律
 
-<HARD-GATE>
+<HARD-GATE principle="P2,P4">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`，严格遵守其中所有条目（含合理化预防）。
 
 核心摘要（compaction 后仍必须遵守）：
@@ -89,7 +89,7 @@ digraph chisel_flow {
 }
 ```
 
-<HARD-GATE>
+<HARD-GATE principle="P2">
 每轮必须调用：
 ```
 node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
@@ -99,7 +99,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 合理化预防：任何"跳过当前步骤直接做下一步"的冲动都是违规。典型表现及应对见 `iron-rules.md` §8。
 </HARD-GATE>
 
-<HARD-GATE>
+<HARD-GATE principle="P2,P4">
 **仪表盘确认协议**（每次步骤切换后强制执行）：
 
 当 `orchestration-status.mjs` 输出包含 `dashboard_opened: true` 时，说明发生了步骤切换且仪表盘已在浏览器中打开。此时必须：
@@ -114,7 +114,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
 
 | resume_step | 动作 | postcondition |
 |---|---|---|
-| `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md` | `requirement-exists` |
+| `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md`。若用户输入包含图片路径（.png/.jpg/.jpeg/.webp），用 Read tool 加载图片提取 UI 布局描述，写入 `{IDEA_DIR}/as-is/ui-snapshot.md` 作为需求补充上下文 | `requirement-exists` |
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
 | `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-confirmed` |
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |

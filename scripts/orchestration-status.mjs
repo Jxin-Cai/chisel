@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   allTasksApproved,
   detectComplexity,
+  detectRepairStall,
   getBlockedReworkTasks,
   getCodingTasks,
   getRepairingTasks,
@@ -18,12 +19,15 @@ import {
   updateWorkflowPhase
 } from './workflow-lib.mjs';
 import { checkGate } from './gate-check.mjs';
+import { recordStepStart, recordStepFinish } from './session-metrics.mjs';
+import { createSnapshot } from './checkpoint.mjs';
 
 const IDEA_DIR = process.argv[2];
 const compact = process.argv.includes('--compact');
+const dryRun = process.argv.includes('--dry-run');
 
 if (!IDEA_DIR) {
-  process.stderr.write('用法: node orchestration-status.mjs <idea-dir|none>\n');
+  process.stderr.write('用法: node orchestration-status.mjs <idea-dir|none> [--compact] [--dry-run]\n');
   process.exit(1);
 }
 
@@ -51,6 +55,11 @@ function emit(resumeStep, reason, phaseDetail = {}) {
   }
   if (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)) {
     const prevStep = readPreviousStep(IDEA_DIR);
+    if (prevStep && prevStep !== resumeStep) {
+      try { recordStepFinish(IDEA_DIR, prevStep); } catch { /* non-critical */ }
+      try { createSnapshot(IDEA_DIR); } catch { /* non-critical */ }
+    }
+    try { recordStepStart(IDEA_DIR, resumeStep); } catch { /* non-critical */ }
     updateWorkflowPhase(IDEA_DIR, resumeStep);
     const shouldOpen = prevStep !== resumeStep;
     try {
@@ -75,7 +84,95 @@ function isInWorktree() {
   } catch { return false; }
 }
 
+function dryRunPlan() {
+  const complexity = (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR))
+    ? detectComplexity(IDEA_DIR) : 'standard';
+
+  const PATHS = {
+    hotfix: [
+      { step: 'receive-requirement', phase: 'requirement' },
+      { step: 'quick-dev:init', phase: 'tasks' },
+      { step: 'implement:code', phase: 'implement' },
+      { step: 'review:cr-light', phase: 'review' },
+      { step: 'final:summary', phase: 'final' },
+    ],
+    minor: [
+      { step: 'receive-requirement', phase: 'requirement' },
+      { step: 'clarify:requirement', phase: 'clarify', note: '2 dimensions: functional_scope + acceptance_criteria' },
+      { step: 'quick-dev:init', phase: 'tasks' },
+      { step: 'implement:code', phase: 'implement' },
+      { step: 'review:cr-light', phase: 'review' },
+      { step: 'final:summary', phase: 'final' },
+    ],
+    trivial: [
+      { step: 'receive-requirement', phase: 'requirement' },
+      { step: 'clarify:requirement', phase: 'clarify', note: '2 dimensions: functional_scope + acceptance_criteria' },
+      { step: 'quick-dev:init', phase: 'tasks' },
+      { step: 'implement:code', phase: 'implement' },
+      { step: 'review:cr-light', phase: 'review' },
+      { step: 'final:summary', phase: 'final' },
+    ],
+    moderate: [
+      { step: 'receive-requirement', phase: 'requirement' },
+      { step: 'clarify:requirement', phase: 'clarify', note: '4 dimensions' },
+      { step: 'plan:design', phase: 'plan', note: 'no impact-risk-report' },
+      { step: 'plan:confirm', phase: 'plan' },
+      { step: 'worktree:setup', phase: 'plan' },
+      { step: 'tasks:init', phase: 'tasks' },
+      { step: 'implement:code', phase: 'implement' },
+      { step: 'review:cr-moderate', phase: 'review', note: 'spec + D3 + D4 + D5' },
+      { step: 'final:summary', phase: 'final' },
+    ],
+    standard: [
+      { step: 'receive-requirement', phase: 'requirement' },
+      { step: 'understand:explore', phase: 'understand' },
+      { step: 'understand:confirm', phase: 'understand' },
+      { step: 'clarify:requirement', phase: 'clarify', note: '7 dimensions' },
+      { step: 'plan:design', phase: 'plan' },
+      { step: 'plan:confirm', phase: 'plan' },
+      { step: 'worktree:setup', phase: 'plan' },
+      { step: 'tasks:init', phase: 'tasks' },
+      { step: 'implement:code', phase: 'implement' },
+      { step: 'review:cr', phase: 'review', note: 'spec gate + D2-D8' },
+      { step: 'knowledge:extract', phase: 'knowledge', note: 'parallel side-branch' },
+      { step: 'final:summary', phase: 'final' },
+    ],
+    complex: [
+      { step: 'receive-requirement', phase: 'requirement' },
+      { step: 'understand:explore', phase: 'understand' },
+      { step: 'understand:confirm', phase: 'understand' },
+      { step: 'clarify:requirement', phase: 'clarify', note: '7 dimensions' },
+      { step: 'plan:design', phase: 'plan' },
+      { step: 'plan:confirm', phase: 'plan' },
+      { step: 'worktree:setup', phase: 'plan' },
+      { step: 'tasks:init', phase: 'tasks' },
+      { step: 'implement:code', phase: 'implement' },
+      { step: 'review:cr', phase: 'review', note: 'spec gate + D2-D8' },
+      { step: 'knowledge:extract', phase: 'knowledge', note: 'parallel side-branch' },
+      { step: 'final:summary', phase: 'final' },
+    ],
+  };
+
+  const steps = PATHS[complexity] || PATHS.standard;
+  const currentStep = readPreviousStep(IDEA_DIR);
+
+  const output = {
+    dry_run: true,
+    complexity,
+    current_step: currentStep || 'none',
+    steps: steps.map(s => ({
+      step: s.step,
+      phase: s.phase,
+      ...(s.note ? { note: s.note } : {}),
+      ...(currentStep && s.step === currentStep ? { current: true } : {}),
+    })),
+  };
+  console.log(JSON.stringify(output, null, 2));
+}
+
 function main() {
+  if (dryRun) { dryRunPlan(); return; }
+
   if (IDEA_DIR === 'none' || !existsSync(IDEA_DIR)) {
     emit('receive-requirement', 'idea directory does not exist');
     return;
@@ -385,7 +482,13 @@ function main() {
 
   const repairingTasks = getRepairingTasks(IDEA_DIR);
   if (repairingTasks.length > 0) {
-    emit('repair:code', 'tasks are already being repaired', { in_progress_tasks: repairingTasks, complexity });
+    const stallInfo = detectRepairStall(IDEA_DIR);
+    const detail = { in_progress_tasks: repairingTasks, complexity };
+    if (stallInfo.length > 0) {
+      detail.stall_detected = true;
+      detail.stall_suggestions = stallInfo.map(s => `${s.taskId}: ${s.suggestion}`);
+    }
+    emit('repair:code', 'tasks are already being repaired', detail);
     return;
   }
 
@@ -428,6 +531,8 @@ function main() {
       emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
       return;
     }
+    emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
+    return;
   }
 
   const state = readTaskState(taskStateFile(IDEA_DIR));

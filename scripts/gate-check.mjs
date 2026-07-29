@@ -5,6 +5,7 @@ import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, 
 import { validateTasksDocument } from './task-init.mjs';
 
 import { getTaskScope } from './scope-check.mjs';
+import { validateJsonFile } from './schemas/validate.mjs';
 
 function hasSection(text, heading) {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -515,8 +516,8 @@ function validateCrFile(crPath, status, behaviorInvariants = []) {
   return '';
 }
 
-const REVIEW_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8'];
-const QUALITY_REVIEW_DIMENSIONS = ['d2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8'];
+const REVIEW_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'];
+const QUALITY_REVIEW_DIMENSIONS = ['d2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'];
 
 function dimensionCrPath(ideaDir, dimension) {
   return join(ideaDir, `cr/dim-${dimension}-cr.md`);
@@ -1169,6 +1170,11 @@ export function checkGate(ideaDir, gateId) {
         const irReason = validateImpactRiskReport(ideaDir);
         if (irReason) return result(gateId, false, irReason);
       }
+      // Schema validation for structured artifacts
+      const tasksSchemaResult = validateJsonFile(join(ideaDir, 'to-be/tasks.json'), 'tasks-json');
+      if (!tasksSchemaResult.valid && !tasksSchemaResult.note) return result(gateId, false, `tasks.json schema: ${tasksSchemaResult.errors[0]}`);
+      const traceSchemaResult = validateJsonFile(join(ideaDir, 'to-be/traceability-matrix.json'), 'traceability-matrix');
+      if (!traceSchemaResult.valid && !traceSchemaResult.note) return result(gateId, false, `traceability-matrix.json schema: ${traceSchemaResult.errors[0]}`);
       return result(gateId, true);
     }
     case 'to-be-confirmed': {

@@ -66,7 +66,7 @@ user-invocable: false
 ## 建议
 ```
 
-<HARD-GATE>
+<HARD-GATE principle="P2">
 调试阶段不直接修改业务代码。
 3 轮修复失败后应质疑 task 边界或 to-be 方案本身，而不是继续在同一方向上尝试。
 如果根因是方案级问题，建议 blocked 并回退到 plan 阶段。

@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "required": ["tasks"],
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "id": { "type": "string" },
+          "task_id": { "type": "string" },
+          "title": { "type": "string" },
+          "goal": { "type": "string" },
+          "description": { "type": "string" },
+          "task_complexity": { "type": "string" },
+          "acceptance_criteria": { "type": "array" },
+          "file_plan": { "type": "array" },
+          "dependencies": { "type": "array" },
+          "depends_on": { "type": "array" }
+        }
+      }
+    }
+  }
+}

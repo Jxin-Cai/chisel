@@ -43,7 +43,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "$(head -c 5
 
 ### Phase 1: 方案框架设计
 
-<HARD-GATE>
+<HARD-GATE principle="P4">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/plan-prompt-guide.md`，基于需求特征构建 Plan prompt。
 </HARD-GATE>
 
@@ -83,7 +83,7 @@ Plan agent 返回结构化方案分析结果。
 
 #### 2.3 写入结构化产物
 
-<HARD-GATE>
+<HARD-GATE principle="P5">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/to-be-template.md`（了解最终人类文档格式）。
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md`（了解 design-notes.json 格式）。
 </HARD-GATE>
@@ -103,7 +103,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 
 ### Phase 3: 变更完整性自检
 
-<HARD-GATE>
+<HARD-GATE principle="P1,P4">
 全部产物写完后，主编排器执行以下 6 步自检。发现遗漏则就地修补（追加 task / 补充 CP / 更新文件），不可跳过。
 
 #### 1. 伴生变更推断
@@ -162,7 +162,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 
 ### Phase 4: 人类文档生成
 
-<HARD-GATE>
+<HARD-GATE principle="P5">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/writer-to-be-task.md`，按其 TASK 结构启动 writer。
 </HARD-GATE>
 
@@ -194,7 +194,7 @@ Writer 产出 `to-be/implementation-plan.md`。
 
 ## 最终产物检查
 
-<HARD-GATE>
+<HARD-GATE principle="P1,P4">
 一次性产出完整方案，包含：
 - `to-be/tasks.json` — task 拆分（每 task 含 change_point_refs + file_plan）
 - `to-be/traceability-matrix.json` — 需求到 task 追溯

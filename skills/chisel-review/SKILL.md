@@ -242,14 +242,22 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 7. 等待所有 Agent 返回后，逐个运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-parse.mjs {IDEA_DIR} --dim <dimension>` 解析结果
 
 8. **验证子阶段**（仅当存在 fail 维度时执行）：
-   对每个 fail 维度的 CR 文件中的 Rework Items，启动 **sonnet** 验证 agent（非 opus，降本）：
-   - 验证 agent 获取：PR diff（`git diff {BASE_REF}...HEAD`）+ Rework Item 描述
-   - 验证 agent 独立确认该问题是否为真实问题
-   - 未通过验证的 item → 从 Rework Items 移到 Observations (non-blocking)
+
+   **Standard/Complex 模式（对抗性验证 — 3-agent 投票）：**
+   对每个 fail 维度的 CR 文件中的 Rework Items（置信度 ≥ 80），启动 **3 个独立 sonnet skeptic agent**：
+   - Skeptic A（代码语义角度）：尝试证明该 finding 是误报——代码语义上不构成问题
+   - Skeptic B（运行时行为角度）：尝试证明该 finding 在运行时不会触发
+   - Skeptic C（设计意图角度）：尝试证明该 finding 符合设计意图而非缺陷
+   - 每个 skeptic 获取：PR diff + Rework Item 描述 + 相关文件上下文
+   - 每个 skeptic maxTurns=5，只读模式
+   - 投票规则：≥2/3 认为是真实问题 → 保留为 Rework Item；否则 → 降级为 Observation
    - 全部 Rework Items 被否决 → 该维度的 result 改为 pass
    - 验证后更新 CR 文件的 frontmatter 和 Rework Items 表
 
-   每个 fail item 一个独立验证 agent，可并行发起。
+   **Trivial/Moderate 模式（单次验证）：**
+   对每个 fail item 启动单个 sonnet 验证 agent 确认是否为真实问题（旧行为，降本）。
+
+   每个 fail item 的 skeptic 组可并行发起。
 
 9. 聚合判定：
    - **全部 pass** → `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement approved`
@@ -257,7 +265,7 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 
 `--mark-cr-requirement` 是 task 状态机的需求级批量更新命令，不代表必须生成 `cr/requirement-cr.md`。新 CR contract 以 `cr/dim-spec-cr.md` 和 `cr/dim-d2-cr.md` 到 `cr/dim-d8-cr.md` 为准；`cr/requirement-cr.md` 仅为旧运行态兼容产物。
 
-<HARD-GATE>
+<HARD-GATE principle="P2,P4">
 每个维度独立一次 opus 调用，不合并维度。
 spec 是门槛——fail 直接返修，不跑后续质量维度。
 D2-D8 中未激活的维度自动写 pass CR 文件（含跳过理由），已激活维度分两批（4+3）发起 Agent 调用，避免并发 stall。

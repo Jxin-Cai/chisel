@@ -1,0 +1,21 @@
+{
+  "type": "object",
+  "required": ["items"],
+  "properties": {
+    "schema_version": { "type": "integer" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "ac_id": { "type": "string" },
+          "description": { "type": "string" },
+          "ac_description": { "type": "string" },
+          "covering_tasks": { "type": "array" },
+          "covered_by_tasks": { "type": "array" }
+        }
+      }
+    }
+  }
+}

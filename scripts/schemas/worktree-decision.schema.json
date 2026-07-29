@@ -1,0 +1,11 @@
+{
+  "type": "object",
+  "required": ["mode", "schema_version"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "mode": { "type": "string", "enum": ["current-branch", "worktree"] },
+    "branch_name": { "type": "string" },
+    "base_ref": { "type": "string" },
+    "repos": { "type": "array" }
+  }
+}

@@ -62,7 +62,7 @@ user-invocable: false
 9. 将人类可读镜像写入 `{IDEA_DIR}/requirement-clarification.md`
 10. 运行 gate 验证：`node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} clarification-complete`
 
-<HARD-GATE>
+<HARD-GATE principle="P1,P2">
 此步骤澄清的是需求本身的诉求和边界，不是 as-is 理解的正确性（那是 understand:confirm 的职责）。
 必须按复杂度覆盖对应维度（trivial=2，standard/complex=7），即使某些维度用户回答"无特殊要求"也要记录。
 不能代替用户回答——每个维度必须由用户明确确认。

@@ -44,7 +44,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "$(head -c 5
 
 **代码地图生成**：
 
-<HARD-GATE>
+<HARD-GATE principle="P4">
 运行 repo-map 脚本生成代码地图：
 
 ```bash
@@ -64,7 +64,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/debt-scan.mjs --project-root . --repo-map {id
 
 ### Phase 1: 侦察定位
 
-<HARD-GATE>
+<HARD-GATE principle="P4">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/explore-prompt-guide.md`，基于需求特征构建 Explore prompt。
 </HARD-GATE>
 
@@ -113,7 +113,7 @@ Explore agent 返回分层文件清单后，检查覆盖度报告：
 
 #### 2.5 写入结构化产物
 
-<HARD-GATE>
+<HARD-GATE principle="P1,P4">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/ai-input-template.md`，按模板格式写入。
 </HARD-GATE>
 
@@ -132,7 +132,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/ai-input-templat
 | `as-is/ai-input/field-flow.md` | 字段流转表（仅当有字段变更时） |
 | `as-is/context-budget.json` | 已读文件清单、行数、覆盖率、未读相关文件、覆盖度自评 |
 
-<HARD-GATE>
+<HARD-GATE principle="P3">
 evidence-ledger.json 中所有 fact 的 status 必须为 "confirmed"——必须 Read 过对应源码文件并验证行号。无法确认的推断不写入 ledger。
 
 coverage-matrix.json 必须覆盖入口、链路、数据、副作用四个维度；不涉及的维度写 `not_applicable` reason。
@@ -142,7 +142,7 @@ coverage-matrix.json 必须覆盖入口、链路、数据、副作用四个维�
 
 ### Phase 3: 人类文档生成
 
-<HARD-GATE>
+<HARD-GATE principle="P5">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/writer-as-is-task.md`，按其 TASK 结构启动 writer。
 </HARD-GATE>
 
@@ -174,7 +174,7 @@ Writer 产出人类可读文档：overview.md / core-walkthrough.md / evidence-i
 
 ### Phase 4: 质量评分
 
-<HARD-GATE>
+<HARD-GATE principle="P4">
 Writer 完成后运行质量评分脚本：
 
 ```bash
@@ -196,7 +196,7 @@ Read stdout 查看各维度得分。hard gate 是 `overall >= 0.6` 且每个维�
 
 ## 最终产物检查清单
 
-<HARD-GATE>
+<HARD-GATE principle="P1,P4">
 Phase 4 通过后，确认以下产物全部存在：
 
 **结构化产物（主编排器 Phase 2 写入）：**

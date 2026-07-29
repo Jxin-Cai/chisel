@@ -68,15 +68,13 @@ function main() {
       console.log(`  - ${w.idea}: step=${w.step} | ${taskLine}`);
     }
     console.log('');
-    console.log('IRON RULES REMINDER:');
-    console.log('  1. orchestration-status.mjs output = only source of truth for resume point');
-    console.log('  2. Never skip steps (each step has prerequisites)');
-    console.log('  3. User confirmation required before writing confirmation files');
-    console.log('  4. Must call orchestration-status.mjs every turn');
-    console.log('  5. Must run gate-check.mjs after each deliverable');
-    console.log('  6. Max 3 rework cycles per task');
-    console.log('  7. Priority: iron rules > script output > skill instructions > agent defaults');
-    console.log('  8. Resist rationalization to skip steps');
+    console.log('DESIGN PRINCIPLES (root cause of all rules):');
+    console.log('  P1: 穷举枚举 — 新增变体=grep全部消费者并原子更新');
+    console.log('  P2: 转移完整性 — 状态变更经唯一路径+全副作用原子执行');
+    console.log('  P3: 边界快失败 — undefined/null/malformed 在入口点拦截');
+    console.log('  P4: 副作用一致 — 改X则更新所有读X的下游');
+    console.log('  P5: 唯一来源 — 导入不复制，枚举只定义一次');
+    console.log('OPERATIONAL: status.mjs=truth | no skip | user confirm | call every turn | gate after step | max 3 rework | priority: rules>scripts>skills>defaults | resist rationalization | fix from principle');
   }
 }
 

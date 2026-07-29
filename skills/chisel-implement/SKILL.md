@@ -76,7 +76,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} .
   - 修复后重新运行 `verify-run.mjs`
   - 最多尝试修复 2 次，仍失败则继续进入 CR（CR 阶段会捕获问题）
 
-<HARD-GATE>
+<HARD-GATE principle="P2">
 只有 `--next-tasks` 返回的 task 才能启动。
 有依赖的 task 必须串行。
 有 expected_files 重叠的 task 必须串行（用 `--check-overlap` 检测）。

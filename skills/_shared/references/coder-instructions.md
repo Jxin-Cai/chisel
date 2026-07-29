@@ -13,7 +13,7 @@
 | `{idea_dir}/cr/{task_id}-cr.md`（如存在） | 返修模式——按 CR-xxx 清单逐项修改，并在 report 中填写 Rework Resolution Matrix |
 | task 文件 `Context to Load` | 按列表加载 wiki/模块地图/ADR（不要全加载） |
 
-<HARD-GATE>
+<HARD-GATE principle="P2">
 在开始写代码前，先扫描 as-is/ai-input 中与本 task 相关的文件（至少 `constraints.md` 和 `change-surface.md`），
 理解约束和可修改范围。再按需查看 `as-is/core-walkthrough.md` 了解现有风格。
 代码实现必须靠齐这个风格。
