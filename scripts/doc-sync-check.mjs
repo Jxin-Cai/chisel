@@ -22,7 +22,7 @@ function getChangedSymbols(baseRef) {
       { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 5 * 1024 * 1024 }
     );
     const symbols = new Set();
-    const funcPattern = /^[-+]\s*(?:export\s+)?(?:function|class|const|let|var|def|func)\s+(\w+)/gm;
+    const funcPattern = /^[-+]\s*(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var|def|func|interface|type)\s+(\w+)/gm;
     let match;
     while ((match = funcPattern.exec(diff)) !== null) {
       if (match[1].length > 2) symbols.add(match[1]);

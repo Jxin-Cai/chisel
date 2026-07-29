@@ -85,7 +85,9 @@ function restoreSnapshot(ideaDir, snapshotFile) {
   const filePath = join(dir, snapshotFile);
   if (!existsSync(filePath)) return { error: `snapshot not found: ${snapshotFile}` };
 
-  const snapshot = JSON.parse(readFileSync(filePath, 'utf8'));
+  let snapshot;
+  try { snapshot = JSON.parse(readFileSync(filePath, 'utf8')); }
+  catch (e) { return { error: `invalid snapshot JSON: ${e.message}` }; }
 
   if (snapshot.workflow_state) {
     writeFileSync(join(ideaDir, 'workflow-state.yaml'), snapshot.workflow_state);

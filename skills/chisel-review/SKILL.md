@@ -19,7 +19,7 @@ user-invocable: false
 - **只执行第一步（Spec 门槛）**
 - Spec pass → 直接 `--mark-cr-requirement approved`，流程结束
 - Spec fail → `--mark-cr-requirement needs_rework`，流程结束
-- **不进入第二步和第三步（D2-D8 并行审查）**
+- **不进入第二步和第三步（D2-D9 并行审查）**
 
 ## Moderate 路径（review:cr-moderate）
 
@@ -59,6 +59,7 @@ CR diff loop 是 chisel 的质量保障核心：审查 → 返修 → 再审查�
 | D6 | 可维护性与迭代支持 | 质量 |
 | D7 | 无效代码清除（三环孤儿检测） | 质量 |
 | D8 | 影响面追踪（涟漪效应） | 质量 |
+| D9 | 安全审查（注入/XSS/认证/密钥/路径遍历/SSRF） | 质量（条件激活） |
 
 ## 执行流程
 
@@ -76,7 +77,7 @@ digraph review_flow {
   d6 [label="reviewer(opus, dim=d6)"];
   d7 [label="reviewer(opus, dim=d7)"];
   d8 [label="reviewer(opus, dim=d8)"];
-  aggregate [label="聚合 D2-D8 结果"];
+  aggregate [label="聚合 D2-D9 结果"];
   approved [label="mark-cr-requirement approved"];
   rework [label="mark-cr-requirement needs_rework\n(合并 affected_tasks)"];
 
@@ -141,7 +142,7 @@ if (d.schema_version === 2 && Array.isArray(d.repos)) {
 
 ### 第 1.5 步：预计算共享上下文
 
-5.5. Spec 通过后、D2-D8 启动前，运行一次预计算：
+5.5. Spec 通过后、D2-D9 启动前，运行一次预计算：
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-prepare.mjs {IDEA_DIR} "{BASE_REF}" .
    ```
@@ -151,7 +152,7 @@ if (d.schema_version === 2 && Array.isArray(d.repos)) {
    - 每个 task 的 scope-check 结果
    - wiki 查询结果
 
-   后续 D2-D8 agent 优先从 cr-context.json 读取，避免重复计算。
+   后续 D2-D9 agent 优先从 cr-context.json 读取，避免重复计算。
 
 ### 第二步（Rework Cycle Optimization）：增量复审判断
 
@@ -159,7 +160,7 @@ if (d.schema_version === 2 && Array.isArray(d.repos)) {
 
 1. 读取 `cr/cr-context-prev.json`（上一轮的 cr-context 快照）
 2. 读取 `cr-context.json` 中的 `repair_diff_files`（本次 repair 新增/变更的文件列表）
-3. 对每个 D2-D8 维度，判断是否可以使用缓存结果（`pass-cached`）：
+3. 对每个 D2-D9 维度，判断是否可以使用缓存结果（`pass-cached`）：
 
 | 条件 | 全部满足则写 pass-cached | 任一不满足则正常激活 |
 |------|-------------------------|---------------------|
@@ -197,9 +198,9 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 
 完成增量判断后，对未命中缓存的已激活维度，进入正常的条件激活流程：
 
-### 第二步（续）：条件激活 + D2-D8 并行质量审查
+### 第二步（续）：条件激活 + D2-D9 并行质量审查
 
-在发起 D2-D8 之前，分析变更文件特征，决定哪些维度需要激活：
+在发起 D2-D9 之前，分析变更文件特征，决定哪些维度需要激活：
 
 ```bash
 # 收集所有 task report 的 changed_files，合并为列表
@@ -215,10 +216,11 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 | D6 可维护性 | 始终激活 | — |
 | D7 孤儿检测 | 变更涉及删除/重命名文件，或 diff 中有函数/类定义被删除 | 写入 `cr/dim-d7-cr.md`（result: pass, 理由: "变更未删除/重命名代码，无孤儿风险"） |
 | D8 影响面 | 变更涉及 export/public/module.exports 或函数签名变更 | 写入 `cr/dim-d8-cr.md`（result: pass, 理由: "变更未修改公共 API 或接口签名"） |
+| D9 安全 | 变更文件含 `req.body/req.query/req.params/request.`（输入处理）、`exec/spawn/execSync`（命令执行）、`SELECT/INSERT/UPDATE/DELETE/query(`（数据库）、`auth/permission/role/token/session`（鉴权）、`innerHTML/dangerouslySetInnerHTML/v-html`（XSS）、`fetch/axios/http.get/request(`（外部请求） | 写入 `cr/dim-d9-cr.md`（result: pass, 理由: "变更未涉及安全敏感代码，自动跳过"） |
 
 检测方式：对变更文件 `grep -l` 关键字模式。一个维度只要任一变更文件命中即激活。
 
-分两批启动已激活维度，避免过多 opus agent 同时竞争导致 stall：
+分三批启动已激活维度，避免过多 opus agent 同时竞争导致 stall：
 
 6a. **Batch 1**——在一条消息中发起前 4 个已激活维度的 Agent 调用：
    ```
@@ -228,11 +230,12 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
    Agent({ description: "CR D5", prompt: TASK({ dimension: "d5", ..., "base_ref": "{BASE_REF}" }) })
    ```
 
-6b. 等待 Batch 1 全部返回后，**Batch 2**——再发起 3 个 Agent 调用：
+6b. 等待 Batch 1 全部返回后，**Batch 2**——再发起 4 个 Agent 调用：
    ```
    Agent({ description: "CR D6", prompt: TASK({ dimension: "d6", ..., "base_ref": "{BASE_REF}" }) })
    Agent({ description: "CR D7", prompt: TASK({ dimension: "d7", ..., "base_ref": "{BASE_REF}" }) })
    Agent({ description: "CR D8", prompt: TASK({ dimension: "d8", ..., "base_ref": "{BASE_REF}" }) })
+   Agent({ description: "CR D9", prompt: TASK({ dimension: "d9", ..., "base_ref": "{BASE_REF}" }) })
    ```
 
    每批 reviewer 并行执行，各自读取对应 `dim-{dimension}.md` 定义和 `cr-context.json`。
@@ -268,7 +271,7 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 <HARD-GATE principle="P2,P4">
 每个维度独立一次 opus 调用，不合并维度。
 spec 是门槛——fail 直接返修，不跑后续质量维度。
-D2-D8 中未激活的维度自动写 pass CR 文件（含跳过理由），已激活维度分两批（4+3）发起 Agent 调用，避免并发 stall。
+D2-D9 中未激活的维度自动写 pass CR 文件（含跳过理由），已激活维度分两批（4+4）发起 Agent 调用，避免并发 stall。
 聚合前必须执行验证子阶段——fail item 经 sonnet 验证后才能确认。
 聚合后一次性收集所有问题避免反复返修。
 返修后必须从 spec 重新开始，不能跳过。

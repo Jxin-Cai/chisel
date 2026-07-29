@@ -2,7 +2,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
-import { readTaskState, taskStateFile } from './workflow-lib.mjs';
 
 function getBaseRef(ideaDir) {
   const wdPath = join(ideaDir, 'worktree-decision.json');
@@ -50,17 +49,6 @@ function getPlannedFiles(ideaDir) {
     }
     return { planned, taskFiles };
   } catch { return { planned: new Map(), taskFiles: new Map() }; }
-}
-
-function getScopeFiles(ideaDir) {
-  const state = readTaskState(taskStateFile(ideaDir));
-  const allScope = new Set();
-  for (const [, task] of Object.entries(state.tasks || {})) {
-    if (task.scope_files) {
-      for (const f of task.scope_files) allScope.add(f);
-    }
-  }
-  return allScope;
 }
 
 export function detectDrift(ideaDir, baseRef) {

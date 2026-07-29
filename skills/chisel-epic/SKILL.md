@@ -41,12 +41,12 @@ user_invocable: true
 
 按依赖排序，对每个 ready idea 调用 `/chisel <idea-id>`：
 ```bash
-node scripts/epic-decompose.mjs {EPIC_DIR} --next
+node ${CLAUDE_PLUGIN_ROOT}/scripts/epic-decompose.mjs {EPIC_DIR} --next
 ```
 
 每个 idea 完成后更新状态：
 ```bash
-node scripts/epic-decompose.mjs {EPIC_DIR} --update <idea-id> done
+node ${CLAUDE_PLUGIN_ROOT}/scripts/epic-decompose.mjs {EPIC_DIR} --update <idea-id> done
 ```
 
 ### 5. Epic 完成
@@ -57,13 +57,13 @@ node scripts/epic-decompose.mjs {EPIC_DIR} --update <idea-id> done
 
 ```bash
 # 查看状态
-node scripts/epic-decompose.mjs <epic-dir> --status
+node ${CLAUDE_PLUGIN_ROOT}/scripts/epic-decompose.mjs <epic-dir> --status
 
 # 获取下一个可执行的 idea
-node scripts/epic-decompose.mjs <epic-dir> --next
+node ${CLAUDE_PLUGIN_ROOT}/scripts/epic-decompose.mjs <epic-dir> --next
 
 # 更新 idea 状态
-node scripts/epic-decompose.mjs <epic-dir> --update <idea-id> <done|in_progress|blocked>
+node ${CLAUDE_PLUGIN_ROOT}/scripts/epic-decompose.mjs <epic-dir> --update <idea-id> <done|in_progress|blocked>
 ```
 
 ## 约束

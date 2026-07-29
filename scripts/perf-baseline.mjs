@@ -37,11 +37,11 @@ function measureTestTime() {
   const pkg = existsSync('package.json') ? JSON.parse(readFileSync('package.json', 'utf8')) : {};
   const scripts = pkg.scripts || {};
   if (!scripts.test) return null;
+  const start = Date.now();
   try {
-    const start = Date.now();
     execSync('npm test', { stdio: 'pipe', timeout: 120000 });
     return Date.now() - start;
-  } catch (e) { return e.status !== undefined ? Date.now() - Date.now() : null; }
+  } catch { return Date.now() - start; }
 }
 
 function getBundleSize() {
@@ -67,11 +67,11 @@ export function captureBaseline(ideaDir, phase) {
     timestamp: new Date().toISOString(),
     loc: countLoc(projectRoot),
     build_time_ms: phase === 'after' ? measureBuildTime() : null,
-    test_time_ms: null,
+    test_time_ms: phase === 'after' ? measureTestTime() : null,
     bundle_size: getBundleSize(),
     file_count: (() => {
       try {
-        return execSync('git ls-files | wc -l', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        return parseInt(execSync('git ls-files | wc -l', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim(), 10);
       } catch { return null; }
     })(),
   };

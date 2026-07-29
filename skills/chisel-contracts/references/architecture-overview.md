@@ -28,7 +28,7 @@
 - `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
 - `scripts/quick-dev-init.mjs` trivial 快速通道自动生成单 task + worktree-decision + traceability-matrix。
 - `scripts/traceability-check.mjs` 需求→task 可追溯性验证，final 阶段前确认所有 AC 被覆盖实现。
-- `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check/wiki 数据写入 `cr-context.json`，D2-D8 agent 共用。
+- `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check/wiki 数据写入 `cr-context.json`，D2-D9 agent 共用。
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
 - `scripts/session-metrics.mjs` 记录每个 idea 的步骤耗时、agent 调用次数、返修轮次等效率指标。
 - `scripts/checkpoint.mjs` 关键阶段自动保存快照（workflow-state + task-state + git tag），支持恢复到历史快照。
@@ -36,7 +36,7 @@
 - **规划阶段**（`chisel-plan`）由主编排器直接执行：先调用原生 Plan subagent 设计方案框架，然后主编排器精化并写入 JSON 产物（tasks.json + traceability-matrix.json + impact-risk-report.json）+ 执行 6 步变更完整性自检，最后调用 `agent-chisel-writer`(sonnet) 生成 implementation-plan.md。
 - `agent-chisel-writer` 从结构化产物（JSON/md 表格）生成面向人类的图文中文文档（含 Mermaid），不探索代码、不做设计决策。支持 as-is 和 to-be 两种模式。
 - `agent-chisel-coder` 只按已确认 task 实现，完成后执行 diff 自检（bug/AC/scope 三项检查）。
-- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d8）执行单维度深度审查。dim-spec 包含伴生产物完整性检查（后端规则：加字段→DDL、加接口→路由+DTO；前端规则：DTO加字段→前端类型+页面适配、接口响应变更→前端渲染适配）和全链路字段透传验证。每个发现项附带 0-100 置信度评分，≥80 进 Rework Items 触发返修，60-79 进 Observations 供参考。D2/D7/D8 按变更特征条件激活，D3-D6 始终激活。fail 项经 sonnet 验证子阶段确认后聚合。
+- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d9）执行单维度深度审查。dim-spec 包含伴生产物完整性检查（后端规则：加字段→DDL、加接口→路由+DTO；前端规则：DTO加字段→前端类型+页面适配、接口响应变更→前端渲染适配）和全链路字段透传验证。每个发现项附带 0-100 置信度评分，≥80 进 Rework Items 触发返修，60-79 进 Observations 供参考。D2/D7/D8/D9 按变更特征条件激活，D3-D6 始终激活。fail 项经对抗性验证（standard/complex: 3-agent skeptic 投票；trivial/moderate: 单次 sonnet 验证）确认后聚合。
 
 ## As-Is 分层结构
 
@@ -64,7 +64,7 @@
 - 用户选 `current-branch` 时，所有 task 串行执行，**不使用 Agent worktree 隔离**。
 - 用户选 `worktree` 时，`getNextTasks()` 返回多个 task 且无文件重叠时，使用 `Agent(isolation: "worktree")` 并行编码（这是 Agent 工具的临时隔离，task 级，用完即弃），合并后统一更新状态。
 - 有重叠 task 串行执行；返修 task 始终串行。
-- `chisel-review` 在所有 task 编码完成后进行多维度 CR：spec 门槛（opus）通过后，D2-D8 按变更特征条件激活（D2 需并发/错误处理代码、D7 需删除/重命名、D8 需公共 API 变更，D3-D6 始终激活），已激活维度并行 opus 审查，每个发现附带置信度评分（≥80 返修、60-79 仅参考），fail 项经 sonnet 验证子阶段确认后聚合结果。Scope/Wiki Proof 只在 spec 维度执行一次，D2-D8 引用之。返修后从 spec 重新开始。
+- `chisel-review` 在所有 task 编码完成后进行多维度 CR：spec 门槛（opus）通过后，D2-D9 按变更特征条件激活（D2 需并发/错误处理代码、D7 需删除/重命名、D8 需公共 API 变更、D9 需安全敏感代码，D3-D6 始终激活），已激活维度并行 opus 审查，每个发现附带置信度评分（≥80 返修、60-79 仅参考），fail 项经对抗性验证确认后聚合结果。Scope/Wiki Proof 只在 spec 维度执行一次，D2-D9 引用之。返修后从 spec 重新开始。
 - 需求完成后（`done` 阶段），多仓场景对每个仓库分别创建 PR 或 merge。
 
 ## 知识提取（可选）

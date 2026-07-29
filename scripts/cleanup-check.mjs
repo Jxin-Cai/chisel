@@ -29,10 +29,11 @@ function scanFile(filePath) {
     const line = lines[i];
     const lineNum = i + 1;
 
-    if (/\bconsole\.(log|debug|info)\b/.test(line) && !/\/\/.*console/.test(line)) {
-      issues.push({ file: filePath, line: lineNum, type: 'console_log', auto_fixable: true, text: line.trim() });
+    if (/\bconsole\.(log|debug|info)\s*\(/.test(line) && !/\/\/.*console/.test(line) && !/\/\*.*console/.test(line) && !/['"`].*console\.(log|debug|info)/.test(line)) {
+      const isStandalone = /^\s*console\.(log|debug|info)\s*\(/.test(line);
+      issues.push({ file: filePath, line: lineNum, type: 'console_log', auto_fixable: isStandalone, text: line.trim() });
     }
-    if (/\bdebugger\b/.test(line)) {
+    if (/^\s*debugger\s*;?\s*$/.test(line)) {
       issues.push({ file: filePath, line: lineNum, type: 'debugger', auto_fixable: true, text: line.trim() });
     }
     if (/\b(TODO|FIXME|HACK|XXX)\b/.test(line)) {
@@ -100,8 +101,17 @@ export function cleanupCheck(ideaDir, { autoFixMode = false, baseRef = null } = 
     }
   }
 
+  // Re-scan after fix to get accurate remaining (avoids false "fixed" for inline console.log)
   const remaining = autoFixMode
-    ? allIssues.filter(i => !i.auto_fixable)
+    ? (() => {
+        const postFixIssues = [];
+        for (const file of changedFiles) {
+          if (!codeExtensions.some(ext => file.endsWith(ext))) continue;
+          if (!existsSync(file)) continue;
+          postFixIssues.push(...scanFile(file));
+        }
+        return postFixIssues;
+      })()
     : allIssues;
 
   return {

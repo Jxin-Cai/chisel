@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join, extname, basename, relative } from 'node:path';
 
@@ -92,6 +92,8 @@ export function buildIndex(projectRoot, { incremental = false, indexPath = null 
   existing.indexed_sha = getCurrentSha();
   existing.version = 1;
 
+  const outDir = join(outPath, '..');
+  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
   writeFileSync(outPath, JSON.stringify(existing, null, 2));
   return { indexed_files: filesToIndex.length, total_components: existing.components.length, path: outPath };
 }

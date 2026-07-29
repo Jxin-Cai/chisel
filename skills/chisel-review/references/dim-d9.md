@@ -73,13 +73,50 @@ rework_count: 0
 ---
 ```
 
-### 正文
+### 正文模板
 
-按照 dim-shared-footer.md 格式产出 Rework Items 和 Observations。
+```markdown
+# D9 CR: 安全审查
 
-每个 finding 必须包含：
-1. **位置**：文件名 + 行号
-2. **漏洞类型**：对应上述 8 类之一
-3. **攻击向量**：具体的利用路径描述
-4. **修复建议**：明确的代码级修复方向
+## 结论
+
+PASS | FAIL | N/A
+
+<简要说明理由>
+
+## 检查结果
+
+| 检查项 | Task | 结果 | 说明 |
+|--------|------|------|------|
+| 注入攻击 | task-001 | PASS/FAIL/N/A | <说明> |
+| XSS | task-001 | PASS/FAIL/N/A | <说明> |
+| 认证与授权 | task-001 | PASS/FAIL/N/A | <说明> |
+| 敏感数据保护 | task-001 | PASS/FAIL/N/A | <说明> |
+| 路径遍历 | task-001 | PASS/FAIL/N/A | <说明> |
+| SSRF | task-001 | PASS/FAIL/N/A | <说明> |
+| 不安全的反序列化 | task-001 | PASS/FAIL/N/A | <说明> |
+| 密码学误用 | task-001 | PASS/FAIL/N/A | <说明> |
+
+## 问题详情
+
+（FAIL 项逐条展开）
+
+### 问题 1
+
+- 位置：<文件:行号>
+- 漏洞类型：<8 类之一>
+- 攻击向量：<具体利用路径>
+- 风险等级：critical/high/medium/low
+- 修复建议：<代码级修复方向>
+
+> 📎 Read `dim-shared-footer.md` 获取 CR 产物格式模板（Scope/Wiki、Rework Items / Observations / Rework Verification 表格格式）
+```
+
+## 不要标记
+
+- 框架自带的安全防护（如 ORM 参数化查询、React 默认转义）已覆盖的场景
+- 仅在内部网络/管理后台使用且有网络层隔离的接口
+- 已有 WAF/安全中间件处理的通用防护（除非代码明确绕过）
+- 测试代码/mock 中的硬编码凭证（非生产环境）
+- 已被 `.gitignore` 排除的配置文件中的凭证模板
 5. **置信度**：0-100 分

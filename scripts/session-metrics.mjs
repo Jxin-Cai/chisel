@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readTaskState, taskStateFile } from './workflow-lib.mjs';
 
 const METRICS_FILE = 'metrics.json';
 

@@ -104,7 +104,7 @@ function main() {
 
   if (type === 'requirement') {
     if (!ideaDir) {
-      process.stderr.write('用法: cr-parse.mjs <idea-dir> --type requirement（legacy compatibility；新流程使用 --dim spec|d2|...|d8）\n');
+      process.stderr.write('用法: cr-parse.mjs <idea-dir> --type requirement（legacy compatibility；新流程使用 --dim spec|d2|...|d9）\n');
       process.exit(1);
     }
     const crFile = join(ideaDir, 'cr/requirement-cr.md');
