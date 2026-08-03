@@ -126,8 +126,9 @@ GIT_COMMON=$(git rev-parse --git-common-dir)
 BRANCH=$(git branch --show-current)
 ```
 
-- `GIT_DIR ≠ GIT_COMMON` → 在 worktree 中（完整 4 选项）
-- `GIT_DIR = GIT_COMMON` → 在主仓库中（仅选项 1/3）
+- `GIT_DIR ≠ GIT_COMMON` → 在 worktree 中（完整 5 选项）
+- `GIT_DIR = GIT_COMMON` 且当前分支非主干 → 在主仓库功能分支上（选项 1/2/3）
+- `GIT_DIR = GIT_COMMON` 且当前分支是主干 → 已合并完成（仅提示）
 
 **多仓模式**（schema_version=2，repos 数组非空）：
 ```bash
@@ -153,34 +154,72 @@ git -C <worktree-path> log --oneline <default-branch>..HEAD
 
 使用 `AskUserQuestion` 向用户呈现选项：
 
-**在 worktree 中时（4 选项）：**
+**在 worktree 中时（5 选项）：**
 
 | 选项 | 描述 |
 |------|------|
 | 创建 PR | 推送分支并创建 Pull Request（推荐） |
-| 直接合并 | 将变更直接合并到主干分支 |
+| 合并到主干 | 将变更合并到主干分支（含智能冲突分析） |
+| 转为常规分支 | 移除 worktree 保留分支，回归常规 git 分支管理 |
 | 保留分支 | 暂不处理，保留当前分支稍后决定 |
 | 放弃变更 | 丢弃所有变更并清理 worktree |
 
-**在主仓库中时（2 选项）：**
+**在主仓库功能分支上时（3 选项）：**
 
 | 选项 | 描述 |
 |------|------|
 | 创建 PR | 推送分支并创建 Pull Request（推荐） |
+| 合并到主干 | 将变更合并到主干分支（含智能冲突分析） |
 | 保留分支 | 暂不处理，保留当前分支稍后决定 |
 
 ### 4. 执行用户选择
 
 **单仓**：
+
 - **创建 PR**：`git push -u origin {branch}`，然后用 `gh pr create` 创建 PR，展示 PR URL
-- **直接合并**：提醒用户先 `ExitWorktree` 回到主分支，再 `git merge {branch}`，合并后清理 worktree
-- **保留分支**：仅提示用户分支名和 worktree 路径，告知后续可手动处理
+
+- **合并到主干（含冲突分析）**：
+  1. 若在 worktree 中，先执行转换：`node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --convert {branch} --repo <main-repo-path>`
+  2. 在主仓切换到主干分支：`git checkout {default-branch}`
+  3. 执行智能合并：`node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source {branch} --target {default-branch} --repo .`
+  4. 处理结果：
+     - `status: "merged"` → 告知合并成功
+     - `status: "conflicts_detected"` → 向用户展示冲突分析：
+       - 对 `auto_resolvable` 的文件：说明双方改动不在同一区域，可自动解决
+       - 对 `true_conflict` 的文件：展示冲突行范围、双方改动概述、推荐处理策略
+       - 使用 `AskUserQuestion` 让用户选择：自动解决可解冲突 / 全部手动处理 / 放弃合并
+     - 用户选"自动解决"→ 重新执行带 `--auto-resolve` 参数的合并
+  5. 合并完成后，若 worktree 仍存在则清理
+
+- **转为常规分支**：
+  1. 展示当前分支提交数：`git log --oneline {default-branch}..HEAD | wc -l`
+  2. 执行转换：`node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --convert {branch} --repo .`
+  3. 处理结果：
+     - `status: "converted"` → 告知用户："Worktree 已移除，分支 `{branch}` 保留了 N 个提交。当前已在主仓库的 `{branch}` 分支上。后续可用 `/chisel-branch merge-to-main` 合并，或 `/chisel-branch sync-from-main` 同步主干变更。"
+     - `status: "uncommitted_changes"` → 告知有未提交变更，列出脏文件，建议先 commit 或 stash
+  4. 更新 `{IDEA_DIR}/worktree-decision.json`，添加 `"converted_at": "<ISO 8601>"`
+
+- **保留分支**：仅提示用户分支名和 worktree 路径，告知后续可用 `/chisel-branch` 管理
+
 - **放弃变更**：先展示将被删除的内容（分支名、commit 列表 `git log --oneline main..HEAD`），要求用户明确输入"确认放弃"后才执行 `ExitWorktree(action: "remove", discard_changes: true)`。未收到确认文字前不得执行删除。
 
 **多仓**：
+
 - **创建 PR**：对每个仓库的 worktree 分支执行 `git -C <worktree-path> push -u origin {branch}`，然后在每个仓库创建 PR（`gh pr create`），汇总展示所有 PR URL
-- **直接合并**：对每个仓库依次回到主分支 merge，完成后统一清理 worktree（`node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --cleanup <idea-name> --repos <...>`）
+
+- **合并到主干（含冲突分析）**：
+  1. 先对所有仓库执行 worktree 转换：`node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --convert <idea-name> --repos <...>`
+  2. 对每个仓库依次执行智能合并：`node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source {branch} --target {default-branch} --repo <repo-path>`
+  3. 汇总所有仓库的冲突分析结果展示给用户
+  4. 用户决策后统一执行
+
+- **转为常规分支**：
+  1. 执行转换：`node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --convert <idea-name> --repos <...>`
+  2. 展示每个仓库的转换结果
+  3. 告知后续可用 `/chisel-branch` 管理各仓库分支
+
 - **保留分支**：提示每个仓库的分支名和 worktree 路径
+
 - **放弃变更**：展示所有仓库将被删除的内容，确认后执行 cleanup
 
 ---

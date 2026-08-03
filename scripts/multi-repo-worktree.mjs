@@ -7,6 +7,7 @@ const USAGE = `用法:
   node multi-repo-worktree.mjs --detect <workspace-root>
   node multi-repo-worktree.mjs --create <idea-name> --repos <repo1,repo2,...> [--branch <branch-name>]
   node multi-repo-worktree.mjs --status <idea-name> --repos <repo1,repo2,...>
+  node multi-repo-worktree.mjs --convert <idea-name> --repos <repo1,repo2,...> [--branch <branch-name>]
   node multi-repo-worktree.mjs --cleanup <idea-name> --repos <repo1,repo2,...>
 `;
 
@@ -16,6 +17,7 @@ function parseArgs(argv) {
     if (argv[i] === '--detect') args.action = 'detect', args.workspace = argv[++i];
     else if (argv[i] === '--create') args.action = 'create', args.ideaName = argv[++i];
     else if (argv[i] === '--status') args.action = 'status', args.ideaName = argv[++i];
+    else if (argv[i] === '--convert') args.action = 'convert', args.ideaName = argv[++i];
     else if (argv[i] === '--cleanup') args.action = 'cleanup', args.ideaName = argv[++i];
     else if (argv[i] === '--repos') args.repos = argv[++i]?.split(',').map(r => r.trim());
     else if (argv[i] === '--branch') args.branch = argv[++i];
@@ -127,6 +129,25 @@ function cleanupWorktree(repoPath, branchName) {
   }
 }
 
+function convertWorktree(repoPath, branchName) {
+  const wtPath = worktreePath(repoPath, branchName);
+  if (!existsSync(wtPath)) {
+    return { repo: repoPath, status: 'not_found' };
+  }
+  try {
+    const status = execSync('git status --porcelain', { cwd: wtPath, encoding: 'utf8' }).trim();
+    if (status.length > 0) {
+      return { repo: repoPath, worktree_path: wtPath, status: 'uncommitted_changes', dirty_files: status.split('\n').filter(Boolean) };
+    }
+  } catch { /* ignore */ }
+  try {
+    execSync(`git worktree remove "${wtPath}"`, { cwd: repoPath, stdio: 'pipe' });
+    return { repo: repoPath, worktree_path: wtPath, branch: branchName, status: 'converted' };
+  } catch (e) {
+    return { repo: repoPath, worktree_path: wtPath, status: 'error', error: e.message };
+  }
+}
+
 function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -177,6 +198,17 @@ function main() {
       }
       const branchName = args.branch || `feat/${args.ideaName}`;
       const results = args.repos.map(repo => getWorktreeStatus(resolve(repo), branchName));
+      console.log(JSON.stringify({ idea_name: args.ideaName, branch_name: branchName, repos: results }, null, 2));
+      break;
+    }
+
+    case 'convert': {
+      if (!args.ideaName || !args.repos?.length) {
+        process.stderr.write('--convert requires idea-name and --repos\n');
+        process.exit(1);
+      }
+      const branchName = args.branch || `feat/${args.ideaName}`;
+      const results = args.repos.map(repo => convertWorktree(resolve(repo), branchName));
       console.log(JSON.stringify({ idea_name: args.ideaName, branch_name: branchName, repos: results }, null, 2));
       break;
     }
