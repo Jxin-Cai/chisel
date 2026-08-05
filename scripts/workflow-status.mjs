@@ -18,8 +18,10 @@ import {
   rollbackTask,
   rollbackWorkflow,
   taskStateFile,
-  updateTaskStatus
+  updateTaskStatus,
+  writeTaskState
 } from './workflow-lib.mjs';
+import { finishTaskRun, readTaskRun, startTaskRun } from './task-provenance.mjs';
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -39,7 +41,7 @@ function help() {
     '  --init <idea-name>                 初始化 workflow-state.yaml',
     '  --init-tasks <idea-name> <spec...> 初始化 task-workflow-state.yaml',
     '  --next-tasks [code|review|rework]  输出下一批可执行 task',
-    '  --start-task <task-id>             标记 task 开始编码/返修',
+    '  --start-task <task-id> [--project-root <path>] 标记 task 开始编码/返修并记录执行基线',
     '  --start-review <task-id>           标记 task 开始 review',
     '  --finish-task <task-id> coded|failed',
     '  --mark-cr <task-id> approved|needs_rework|blocked',
@@ -100,8 +102,14 @@ export async function main(argv) {
           fail(`task ${taskId} has reached max rework count (${task.rework_count}), use --rollback-task to reset`);
         }
         const next = ['needs_rework', 'repairing'].includes(current) ? 'repairing' : 'coding';
+        const rootIndex = argv.indexOf('--project-root');
+        if (rootIndex >= 0 && !argv[rootIndex + 1]) fail('--project-root 需要 path');
+        const projectRoots = rootIndex >= 0 ? [argv[rootIndex + 1]] : undefined;
+        const run = readTaskRun(ideaDir, taskId);
+        const activeAttempt = run?.attempts?.[run.attempts.length - 1];
+        if (!activeAttempt || activeAttempt.finished_at) startTaskRun(ideaDir, taskId, { projectRoots });
         updateTaskStatus(ideaDir, taskId, next);
-        print({ updated: true, task_id: taskId, status: next });
+        print({ updated: true, task_id: taskId, status: next, provenance: 'started' });
         break;
       }
       case '--start-review': {
@@ -116,8 +124,16 @@ export async function main(argv) {
         const result = argv[3];
         if (!taskId || !result) fail('--finish-task 需要 task-id 和 coded|failed');
         if (!['coded', 'failed'].includes(result)) fail('--finish-task 仅支持 coded|failed');
+        const run = readTaskRun(ideaDir, taskId);
+        const provenance = run ? finishTaskRun(ideaDir, taskId) : null;
         updateTaskStatus(ideaDir, taskId, result);
-        print({ updated: true, task_id: taskId, status: result });
+        if (provenance) {
+          const stateFile = taskStateFile(ideaDir);
+          const state = readTaskState(stateFile);
+          state.tasks[taskId].changed_files = provenance.changed_files || [];
+          writeTaskState(stateFile, state);
+        }
+        print({ updated: true, task_id: taskId, status: result, changed_files: provenance?.changed_files || null });
         break;
       }
       case '--mark-cr': {

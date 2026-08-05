@@ -102,7 +102,7 @@ ${acSection}
     description: goal.slice(0, 100),
     file: taskFile,
     expected_files: [],
-    impact_surface: { files: [], symbols: [], invariants: [], shared_state: [] },
+    impact_surface: { files: [], symbols: [], invariants: [], shared_state: [], reads: [], writes: [] },
     exports: [],
     imports: [],
     status: 'confirmed'

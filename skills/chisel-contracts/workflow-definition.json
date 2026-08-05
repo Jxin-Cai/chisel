@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "steps": {
+    "receive-requirement": { "phase": "requirement", "gate": "requirement-exists" },
+    "understand:explore": { "phase": "understand", "gate": "as-is-complete" },
+    "understand:confirm": { "phase": "understand", "gate": "as-is-confirmed" },
+    "clarify:requirement": { "phase": "clarify", "gate": "clarification-complete" },
+    "plan:design": { "phase": "plan", "gate": "to-be-exists" },
+    "plan:confirm": { "phase": "plan", "gate": "to-be-confirmed" },
+    "worktree:setup": { "phase": "plan", "gate": "worktree-decided" },
+    "quick-dev:init": { "phase": "tasks", "gate": "task-workflow-exists" },
+    "tasks:init": { "phase": "tasks", "gate": "task-workflow-exists" },
+    "implement:code": { "phase": "implement", "gate": "implementation-verified" },
+    "repair:code": { "phase": "implement", "gate": "implementation-verified" },
+    "review:cr": { "phase": "review", "gate": "cr-complete" },
+    "review:cr-light": { "phase": "review", "gate": "cr-complete" },
+    "review:cr-moderate": { "phase": "review", "gate": "cr-complete" },
+    "review:integration": { "phase": "review", "gate": "integration-cr-complete" },
+    "knowledge:extract": { "phase": "knowledge", "gate": "knowledge-extracted" },
+    "final:summary": { "phase": "final", "gate": "done" },
+    "blocked": { "phase": null, "gate": null },
+    "done": { "phase": null, "gate": null }
+  },
+  "complexity_paths": {
+    "hotfix": ["receive-requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary"],
+    "minor": ["receive-requirement", "clarify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary"],
+    "trivial": ["receive-requirement", "clarify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary"],
+    "moderate": ["receive-requirement", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr-moderate", "final:summary"],
+    "standard": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "knowledge:extract", "final:summary"],
+    "complex": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "knowledge:extract", "final:summary"]
+  }
+}

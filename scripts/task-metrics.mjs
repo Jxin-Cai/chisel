@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { readTaskExpectedFiles, readTaskState, taskStateFile, writeTaskState } from './workflow-lib.mjs';
+import { changedFilesForProject } from './task-provenance.mjs';
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -39,7 +40,7 @@ function lineCount(file) {
   }
 }
 
-function collectRows(scopedFiles = []) {
+function collectRows(scopedFiles = [], exactFiles = null) {
   let trackedRows = [];
   let untrackedFiles = [];
   try {
@@ -57,7 +58,11 @@ function collectRows(scopedFiles = []) {
     ...trackedRows,
     ...untrackedFiles.filter(file => !trackedFiles.has(file)).map(file => ({ file, added: lineCount(file), deleted: 0 }))
   ];
-  return rows.filter(row => row.file && !row.file.startsWith('.chisel/') && matchesScope(row.file, scopedFiles));
+  const exact = exactFiles === null ? null : new Set(exactFiles);
+  const filtered = rows.filter(row => row.file && !row.file.startsWith('.chisel/') && matchesScope(row.file, scopedFiles) && (!exact || exact.has(row.file)));
+  if (!exact) return filtered;
+  const present = new Set(filtered.map(row => row.file));
+  return [...filtered, ...exactFiles.filter(file => !present.has(file)).map(file => ({ file, added: 0, deleted: 0 }))];
 }
 
 function updateTaskMetrics(ideaDir, taskId = '', { escalatedModel } = {}) {
@@ -68,7 +73,8 @@ function updateTaskMetrics(ideaDir, taskId = '', { escalatedModel } = {}) {
   const taskFile = task ? join(ideaDir, task.file) : '';
   const expectedFiles = readTaskExpectedFiles(taskFile);
   const scopedFiles = expectedFiles.length > 0 ? expectedFiles : task?.expected_files || [];
-  const rows = collectRows(scopedFiles);
+  const provenanceFiles = taskId ? changedFilesForProject(ideaDir, taskId, '.') : null;
+  const rows = collectRows(scopedFiles, provenanceFiles);
 
   const metricsDir = join(ideaDir, 'metrics');
   mkdirSync(metricsDir, { recursive: true });
@@ -89,6 +95,7 @@ function updateTaskMetrics(ideaDir, taskId = '', { escalatedModel } = {}) {
 
   const summary = {
     task_id: taskId || null,
+    change_source: provenanceFiles === null ? 'working-tree-fallback' : 'task-provenance',
     expected_files: scopedFiles,
     changed_files: changedFiles,
     loc_added: locAdded,

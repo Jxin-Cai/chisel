@@ -21,7 +21,7 @@
 | 执法层 | 机制 | 文件 |
 |--------|------|------|
 | 脚本 | `enum-coverage-check.mjs` 静态检查枚举在所有消费处的覆盖 | `scripts/enum-coverage-check.mjs` |
-| 脚本 | `ALL_COMPLEXITIES` / `STEP_TO_PHASE` 作为唯一枚举源 | `scripts/workflow-lib.mjs` |
+| 机器定义 | `workflow-definition.json` 作为 step / phase / gate / complexity path 的唯一枚举源 | `skills/chisel-contracts/workflow-definition.json` |
 | Prompt | Iron Rule #9: 修 P1 bug 时运行 enum-coverage-check | `iron-rules.md` |
 
 **已知违规案例（0.21.1–0.21.2）：**
@@ -41,7 +41,7 @@
 | Hook | `stop-gate-guard` 阻止未满足 postcondition 的停止 | `hooks/stop-gate-guard.mjs` |
 | Prompt | Iron Rule #1/#2/#4: 状态文件是真相/禁止跳步/每轮调用 | `iron-rules.md` |
 
-**已知违规案例：**
+**历史回归案例（现由上述机制覆盖）：**
 - `markCr` 守卫允许重复调用导致 `rework_count` 多次递增
 - `--start-task` 绕过 rework 上限（needs_rework+count≥MAX 仍可转 repairing）
 - `rollbackTask` 未重置 `rework_count`
@@ -55,7 +55,7 @@
 | 脚本 | `gate-check` 每个 gate 入口检查文件/字段存在性 | `scripts/gate-check.mjs` |
 | Hook | `pre-tool-write-guard` 校验路径格式 | `hooks/pre-tool-write-guard.mjs` |
 
-**已知违规案例：**
+**历史回归案例（现由上述机制覆盖）：**
 - `parseScalar` 中 `JSON.parse` 未 try-catch
 - `task.report_file` 可能 undefined 导致 `join()` 崩溃
 - `scope-check` `/*` glob 缺少深度限制导致跨目录误匹配
@@ -70,10 +70,9 @@
 | Hook | `stop-gate-guard` 验证当前步骤 postcondition 完整 | `hooks/stop-gate-guard.mjs` |
 | Prompt | Iron Rule #5: 每步完成验证 gate | `iron-rules.md` |
 
-**已知违规案例：**
+**历史回归案例（现由上述机制覆盖）：**
 - `rollback` 后 dashboard phase 未重置为 pending
 - `orchestration-status` 冗余 done 检查位于 allTasksApproved guard 之外
-- `stop-gate-guard` empty-diff guard 在代码已 commit 后误报（检查 HEAD 而非 base）
 
 ### P5: 唯一正规来源
 
@@ -82,8 +81,7 @@
 | 脚本 | `workflow-lib.mjs` 导出共享枚举/函数供其他脚本导入 | `scripts/workflow-lib.mjs` |
 | 脚本 | `enum-coverage-check.mjs` 检测重复定义 | `scripts/enum-coverage-check.mjs` |
 
-**已知违规案例：**
-- `dashboard.mjs` 独立定义 `detectComplexity` 与 `workflow-lib.mjs` 版本分歧
+`dashboard.mjs`、`orchestration-status.mjs` 和状态机均从 `workflow-definition.json` 派生路径；复杂度检测统一复用 `workflow-lib.mjs`。
 
 ---
 

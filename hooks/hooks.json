@@ -45,7 +45,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/stop-gate-guard.mjs"
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/stop-gate-guard.mjs",
+            "timeout": 10
           }
         ]
       }

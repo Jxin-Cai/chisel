@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readFrontmatter, readTaskState, resolveProjectName, taskStateFile } from './workflow-lib.mjs';
+import { changedFilesForProject } from './task-provenance.mjs';
 
 function parseListSection(text, heading) {
   const lines = String(text || '').split('\n');
@@ -216,7 +217,8 @@ function check(ideaDir, taskId, projectRoot = '.') {
   const allForbidden = [...new Set([...forbidden, ...wikiForbidden])];
   const allForbiddenPatterns = [...forbiddenPatterns, ...wikiForbiddenPatterns];
   const otherTasksPatterns = getOtherTasksExpectedPatterns(ideaDir, taskId);
-  const changedFiles = getChangedFiles(projectRoot);
+  const provenanceFiles = changedFilesForProject(ideaDir, taskId, projectRoot);
+  const changedFiles = provenanceFiles ?? getChangedFiles(projectRoot);
 
   const violations = [];
   const hitProofs = [];
@@ -285,6 +287,7 @@ function check(ideaDir, taskId, projectRoot = '.') {
     schema_version: 3,
     task_id: taskId,
     project_root: projectRoot,
+    change_source: provenanceFiles === null ? 'working-tree-fallback' : 'task-provenance',
     changed_files: changedFiles,
     expected_scope: expected,
     forbidden_scope: allForbidden,

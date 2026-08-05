@@ -7,7 +7,7 @@ expected_files: [] # 仓库相对路径，填本 task 预计修改或必须审�
 trace_refs: [] # 必须对应 to-be/traceability-matrix.json 的条目 ID，并在 task report 的 Traceability Evidence 中逐项证明
 allowed_symbols: [] # 本 task 允许触碰的关键函数/类/接口名
 forbidden_symbols: [] # 本 task 禁止触碰的关键函数/类/接口名
-impact_surface: {"files":[],"symbols":[],"invariants":[],"shared_state":[]} # 并行调度使用的影响面
+impact_surface: {"files":[],"symbols":[],"invariants":[],"shared_state":[],"reads":[],"writes":[]} # 并行调度使用；shared_state 兼容旧格式并视为 write lock
 task_complexity: standard # trivial | standard | complex — 决定 coder agent 模型
 ---
 

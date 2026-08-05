@@ -70,12 +70,22 @@ describe('detectComplexity', () => {
     assert.equal(detectComplexity(ideaDir), 'trivial');
   });
 
+  it('supports template-style complexity on the next line', () => {
+    writeFileSync(join(ideaDir, 'requirement.md'), '# R\n## 复杂度\nmoderate\n');
+    assert.equal(detectComplexity(ideaDir), 'moderate');
+  });
+
   it('returns standard when no requirement file', () => {
     assert.equal(detectComplexity(ideaDir), 'standard');
   });
 
   it('returns standard when no complexity marker', () => {
     writeFileSync(join(ideaDir, 'requirement.md'), '# Just a requirement\nsome text\n');
+    assert.equal(detectComplexity(ideaDir), 'standard');
+  });
+
+  it('returns standard when the scope section is empty', () => {
+    writeFileSync(join(ideaDir, 'requirement.md'), '# Requirement\n## 涉及范围\n\n## 验收标准\n- works\n');
     assert.equal(detectComplexity(ideaDir), 'standard');
   });
 });

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
@@ -58,15 +59,25 @@ function queryWiki(projectRoot, text) {
   }
 }
 
-function computeRepairDiffFiles(ideaDir, currentChangedFiles) {
+function computeFileHashes(projectRoot, files) {
+  return Object.fromEntries(files.map(file => {
+    const path = join(projectRoot, file);
+    if (!existsSync(path)) return [file, null];
+    return [file, createHash('sha256').update(readFileSync(path)).digest('hex')];
+  }));
+}
+
+function computeRepairDiffFiles(ideaDir, currentFileHashes) {
   const prevPath = join(ideaDir, 'cr', 'cr-context-prev.json');
-  if (!existsSync(prevPath)) return currentChangedFiles;
+  if (!existsSync(prevPath)) return Object.keys(currentFileHashes);
   try {
     const prev = JSON.parse(readFileSync(prevPath, 'utf8'));
-    const prevFiles = new Set(Object.values(prev.tasks || {}).flatMap(t => t.changed_files || []));
-    return currentChangedFiles.filter(f => !prevFiles.has(f));
+    // Legacy contexts have no hashes. Re-run conservatively instead of caching.
+    if (!prev.file_hashes || typeof prev.file_hashes !== 'object') return Object.keys(currentFileHashes);
+    const files = new Set([...Object.keys(prev.file_hashes), ...Object.keys(currentFileHashes)]);
+    return [...files].filter(file => prev.file_hashes[file] !== currentFileHashes[file]);
   } catch {
-    return currentChangedFiles;
+    return Object.keys(currentFileHashes);
   }
 }
 
@@ -143,7 +154,7 @@ function main() {
   const wikiResult = queryWiki(projectRoot, wikiText.slice(0, 500));
 
   const context = {
-    schema_version: 1,
+    schema_version: 2,
     mode: compactMode ? 'compact' : pathsOnly ? 'paths-only' : 'inline',
     generated_at: new Date().toISOString(),
     idea_dir: ideaDir,
@@ -152,6 +163,7 @@ function main() {
     task_ids: taskIds,
     tasks,
     unified_diff: diff,
+    file_hashes: computeFileHashes(projectRoot, [...allChangedFiles]),
     wiki_query: wikiResult
   };
 
@@ -169,7 +181,7 @@ function main() {
   // Compute incremental review fields
   const reworkCycle = computeReworkCycle(ideaDir);
   const allChangedFilesList = [...allChangedFiles];
-  const repairDiffFiles = reworkCycle > 0 ? computeRepairDiffFiles(ideaDir, allChangedFilesList) : [];
+  const repairDiffFiles = reworkCycle > 0 ? computeRepairDiffFiles(ideaDir, context.file_hashes) : [];
 
   context.rework_cycle = reworkCycle;
   context.repair_diff_files = repairDiffFiles;
@@ -204,6 +216,8 @@ function main() {
   writeFileSync(outPath, JSON.stringify(context, null, 2));
   console.log(JSON.stringify({ status: 'ok', path: outPath, task_count: taskIds.length, diff_lines: diff.split('\n').length, rework_cycle: reworkCycle, repair_diff_files_count: repairDiffFiles.length }));
 }
+
+export { computeFileHashes, computeRepairDiffFiles };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main();

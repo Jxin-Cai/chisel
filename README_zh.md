@@ -46,7 +46,7 @@ Chisel 通过**门控驱动的工作流**解决这个问题：
 | **理解** | 只读探索相关代码路径，产出带证据的 as-is 文档 |
 | **确认** | 三个人工确认关卡 — as-is 理解、策略方向、task 拆分 |
 | **实现** | 受限编码，文件边界强制执行，安全时并行 |
-| **审查** | 多维度架构师 CR，自动返修闭环（单 task 最多 3 轮） |
+| **审查** | 多维度架构师 CR，自动返修闭环（单 task 最多 5 轮） |
 | **知识** | 捕获禁区、历史包袱、术语映射，沉淀到持久化项目 wiki |
 
 不跳步。不凭记忆决策 — 编排器始终读取文件化的状态机。
@@ -140,7 +140,7 @@ chisel 会在业务仓库中创建运行态产物目录 `.chisel/<idea-name>/`�
 | 8 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
 | 9 | **编码** | coder agent 在受限文件范围内编码 |
 | 10 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
-| 11 | **返修闭环** | 单 task 最多返修 3 次，超过进入 blocked |
+| 11 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
 | 12 | **最终总结** | 汇总变更、scope control、wiki 更新 |
 | 13 | **完成** | 若在 worktree 中，提示合并分支 |
 
@@ -297,10 +297,14 @@ task 处于 `coding`/`repairing` 状态超 30 分钟时，orchestration-status �
 
 | 脚本 | 说明 |
 |---|---|
-| `orchestration-status.mjs` | 恢复点判定和复杂度检测 |
+| `orchestration-status.mjs` | 只读恢复点判定和复杂度检测 |
+| `orchestration-transition.mjs` | 校验 resume step 与 revision 后显式切换状态并记录事件 |
 | `gate-check.mjs` | 阶段 postcondition gate 校验 |
 | `task-init.mjs` | 初始化 task 文件和状态机 |
 | `workflow-status.mjs` | task 状态查询、回退、overlap 检测 |
+| `task-provenance.mjs` | 记录 task 执行基线/结果指纹与 changed-files 归属 |
+| `verify-run.mjs` | 绑定工作区指纹的多仓构建/测试验证 |
+| `checkpoint.mjs` | 绑定源码身份、保存完整 artifact 的一致性快照恢复 |
 | `wiki-manage.mjs` | wiki 初始化、合入、查询、health-check |
 | `scope-check.mjs` | 文件边界和禁区校验 |
 | `repo-map.mjs` | 代码地图生成 |

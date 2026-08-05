@@ -3,6 +3,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { validateTasksDocument } from './task-init.mjs';
+import { validateVerificationResult } from './verification-lib.mjs';
+import { readTaskRun } from './task-provenance.mjs';
 
 import { getTaskScope } from './scope-check.mjs';
 import { validateJsonFile } from './schemas/validate.mjs';
@@ -433,7 +435,7 @@ function validateCompletionStatus(text) {
   return '';
 }
 
-function validateFileLevelReport(text, taskText) {
+function validateFileLevelReport(text, taskText, provenance = null) {
   const reportTable = parseFileLevelReport(text);
   if (reportTable.missingColumns.length > 0) return `File-Level Implementation Report missing columns: ${reportTable.missingColumns.join(', ')}`;
   if (reportTable.rows.length === 0) return 'File-Level Implementation Report must contain at least one row';
@@ -462,6 +464,13 @@ function validateFileLevelReport(text, taskText) {
   if (parsedScope.error) return parsedScope.error;
   const scope = parsedScope.value;
   if (!Array.isArray(scope.changed_files)) return 'Scope Check JSON Summary changed_files must be an array';
+  if (provenance) {
+    if (!provenance.finished_at) return 'task provenance attempt is not finished';
+    if (scope.change_source !== 'task-provenance') return 'Scope Check JSON Summary must use task-provenance';
+    const reported = [...scope.changed_files].sort();
+    const actual = [...(provenance.changed_files || [])].sort();
+    if (JSON.stringify(reported) !== JSON.stringify(actual)) return `Scope Check JSON Summary changed_files do not match task provenance (expected: ${actual.join(', ') || '<none>'})`;
+  }
   for (const file of scope.changed_files) {
     if (!reportRowsByFile.has(file)) return `File-Level Implementation Report missing changed file from scope-check: ${file}`;
   }
@@ -475,7 +484,7 @@ function validateFileLevelReport(text, taskText) {
   return validateCompletionStatus(text);
 }
 
-function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = [], { ideaDir = '', taskText = '', taskFm = {} } = {}) {
+function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = [], { ideaDir = '', taskId = '', taskText = '', taskFm = {} } = {}) {
   const text = readText(reportPath);
   if (!hasRequiredLines(reportPath, ['## 做了什么', '## 改了什么'])) return 'missing required report sections';
   if (traceRefs.length > 0) {
@@ -495,7 +504,13 @@ function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = [],
   if (wikiProofReason) return wikiProofReason;
   const scopeReason = validateScopeProof(text, 'report', { behaviorInvariants });
   if (scopeReason) return scopeReason;
-  if (isNewFileReportContract(ideaDir, taskText, taskFm, readFrontmatter(text))) return validateFileLevelReport(text, taskText);
+  if (isNewFileReportContract(ideaDir, taskText, taskFm, readFrontmatter(text))) {
+    let run = null;
+    try { run = taskId ? readTaskRun(ideaDir, taskId) : null; }
+    catch (error) { return error.message; }
+    const provenance = run?.attempts?.[run.attempts.length - 1] || null;
+    return validateFileLevelReport(text, taskText, provenance);
+  }
   return '';
 }
 
@@ -578,6 +593,24 @@ function validateDimensionCrFile(ideaDir, dimension) {
     if (!issuePattern.test(text)) return { valid: false, reason: `cr/dim-${dimension}-cr.md fail result must include ${dimension === 'spec' ? 'SPEC-xxx' : `CR-xxx [${dimension.toUpperCase()}]`} item` };
   }
 
+  return { valid: true, fm };
+}
+
+function validateIntegrationCrFile(ideaDir) {
+  const crPath = dimensionCrPath(ideaDir, 'integration');
+  if (!existsSync(crPath)) return { valid: false, reason: 'cr/dim-integration-cr.md missing' };
+  const text = readText(crPath);
+  const fm = readFrontmatter(text);
+  if (fm.dimension !== 'integration') return { valid: false, reason: 'cr/dim-integration-cr.md dimension must be integration' };
+  if (!['pass', 'fail'].includes(fm.result)) return { valid: false, reason: 'cr/dim-integration-cr.md result must be pass/fail' };
+  if (!Array.isArray(fm.affected_tasks)) return { valid: false, reason: 'cr/dim-integration-cr.md affected_tasks must be an array' };
+  for (const section of ['## 结论', '## Task 交互矩阵', '## Rework Items']) {
+    if (!hasSection(text, section)) return { valid: false, reason: `cr/dim-integration-cr.md missing section: ${section}` };
+  }
+  if (fm.result === 'fail') {
+    if (fm.affected_tasks.length === 0) return { valid: false, reason: 'failed integration CR must include affected_tasks' };
+    if (!/\bCR-INT-\d{3}\b/.test(text)) return { valid: false, reason: 'failed integration CR must include CR-INT-xxx rework item' };
+  }
   return { valid: true, fm };
 }
 
@@ -1206,10 +1239,16 @@ export function checkGate(ideaDir, gateId) {
         const taskFm = existsSync(taskPath) ? readFrontmatter(readText(taskPath)) : {};
         const traceRefs = Array.isArray(taskFm.trace_refs) ? taskFm.trace_refs : [];
         const taskText = existsSync(taskPath) ? readText(taskPath) : '';
-        const reason = validateTaskReport(reportPath, behaviorInvariants, traceRefs, { ideaDir, taskText, taskFm });
+        const reason = validateTaskReport(reportPath, behaviorInvariants, traceRefs, { ideaDir, taskId, taskText, taskFm });
         return reason ? `${taskId} (${reason})` : '';
       }).filter(Boolean);
       return invalid.length === 0 ? result(gateId, true) : result(gateId, false, `invalid task reports: ${invalid.join(', ')}`);
+    }
+    case 'implementation-verified': {
+      const reportGate = checkGate(ideaDir, 'task-report-exists');
+      if (!reportGate.pass) return result(gateId, false, reportGate.reason);
+      const verificationReason = validateVerificationResult(ideaDir, '.');
+      return verificationReason ? result(gateId, false, verificationReason) : result(gateId, true);
     }
     case 'cr-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
@@ -1258,6 +1297,12 @@ export function checkGate(ideaDir, gateId) {
           : result(gateId, false, 'spec passed but not all tasks are approved');
       }
       return validateDimensionCrComplete(ideaDir, gateId);
+    }
+    case 'integration-cr-complete': {
+      const integration = validateIntegrationCrFile(ideaDir);
+      if (!integration.valid) return result(gateId, false, integration.reason);
+      if (integration.fm.result !== 'pass') return result(gateId, false, `integration CR result is ${integration.fm.result}`);
+      return result(gateId, true);
     }
     case 'rework-limit': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
@@ -1352,6 +1397,8 @@ export function checkGate(ideaDir, gateId) {
       return result(gateId, true);
     }
     case 'done': {
+      if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
+      if (!allTasksApproved(ideaDir)) return result(gateId, false, 'not all tasks are approved');
       const reason = validateFinalSummary(ideaDir);
       if (reason) return result(gateId, false, reason);
       const traceGate = checkGate(ideaDir, 'traceability-complete');

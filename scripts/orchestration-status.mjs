@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import {
   allTasksApproved,
   detectComplexity,
@@ -16,11 +15,10 @@ import {
   getStaleCodingTasks,
   readTaskState,
   taskStateFile,
-  updateWorkflowPhase
+  readWorkflowRevision
 } from './workflow-lib.mjs';
 import { checkGate } from './gate-check.mjs';
-import { recordStepStart, recordStepFinish } from './session-metrics.mjs';
-import { createSnapshot } from './checkpoint.mjs';
+import { WORKFLOW_PATHS } from './workflow-definition.mjs';
 
 const IDEA_DIR = process.argv[2];
 const compact = process.argv.includes('--compact');
@@ -44,6 +42,11 @@ function emit(resumeStep, reason, phaseDetail = {}) {
   console.log(`resume_step: ${resumeStep}`);
   console.log(`reason: ${JSON.stringify(reason)}`);
   console.log(`complexity: ${complexity}`);
+  const currentStep = IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? readPreviousStep(IDEA_DIR) : null;
+  const revision = IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? readWorkflowRevision(IDEA_DIR) : 0;
+  console.log(`current_step: ${currentStep || 'none'}`);
+  console.log(`state_revision: ${revision}`);
+  console.log(`transition_required: ${currentStep !== resumeStep}`);
   const entries = Object.entries(phaseDetail).filter(([k, v]) => v !== undefined && v !== '' && k !== 'complexity');
   if (entries.length > 0) {
     if (compact) {
@@ -53,26 +56,30 @@ function emit(resumeStep, reason, phaseDetail = {}) {
       for (const [key, value] of entries) console.log(`  ${key}: ${Array.isArray(value) ? value.join(',') : value}`);
     }
   }
-  if (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)) {
-    const prevStep = readPreviousStep(IDEA_DIR);
-    if (prevStep && prevStep !== resumeStep) {
-      try { recordStepFinish(IDEA_DIR, prevStep); } catch { /* non-critical */ }
-      try { createSnapshot(IDEA_DIR); } catch { /* non-critical */ }
-    }
-    try { recordStepStart(IDEA_DIR, resumeStep); } catch { /* non-critical */ }
-    updateWorkflowPhase(IDEA_DIR, resumeStep);
-    const shouldOpen = prevStep !== resumeStep;
-    try {
-      const __dirname = dirname(fileURLToPath(import.meta.url));
-      const openFlag = shouldOpen ? '' : ' --no-open';
-      execSync(`node "${join(__dirname, 'dashboard.mjs')}" "${IDEA_DIR}"${openFlag}`, { stdio: 'ignore', timeout: 5000 });
-    } catch { /* non-critical */ }
-    if (shouldOpen) console.log('dashboard_opened: true');
-  }
 }
 
 function has(rel) {
   return existsSync(join(IDEA_DIR, rel));
+}
+
+function ensureVerificationBeforeReview(reviewTasks, reviewStep, reason, phaseDetail = {}) {
+  const state = readTaskState(taskStateFile(IDEA_DIR));
+  // A reviewing task is a recovery case: it already crossed the verification
+  // boundary in an earlier run, including legacy workflows created before v2.
+  const unstartedReviewTasks = reviewTasks.filter(taskId => state.tasks[taskId]?.status === 'coded');
+  if (unstartedReviewTasks.length > 0) {
+    const gate = checkGate(IDEA_DIR, 'implementation-verified');
+    if (!gate.pass) {
+      emit('implement:code', 'post-coding verification is missing, failed, or stale', {
+        ...phaseDetail,
+        verification_reason: gate.reason,
+        verification_tasks: unstartedReviewTasks,
+      });
+      return false;
+    }
+  }
+  emit(reviewStep, reason, { ...phaseDetail, next_tasks: reviewTasks });
+  return true;
 }
 
 
@@ -88,72 +95,7 @@ function dryRunPlan() {
   const complexity = (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR))
     ? detectComplexity(IDEA_DIR) : 'standard';
 
-  const PATHS = {
-    hotfix: [
-      { step: 'receive-requirement', phase: 'requirement' },
-      { step: 'quick-dev:init', phase: 'tasks' },
-      { step: 'implement:code', phase: 'implement' },
-      { step: 'review:cr-light', phase: 'review' },
-      { step: 'final:summary', phase: 'final' },
-    ],
-    minor: [
-      { step: 'receive-requirement', phase: 'requirement' },
-      { step: 'clarify:requirement', phase: 'clarify', note: '2 dimensions: functional_scope + acceptance_criteria' },
-      { step: 'quick-dev:init', phase: 'tasks' },
-      { step: 'implement:code', phase: 'implement' },
-      { step: 'review:cr-light', phase: 'review' },
-      { step: 'final:summary', phase: 'final' },
-    ],
-    trivial: [
-      { step: 'receive-requirement', phase: 'requirement' },
-      { step: 'clarify:requirement', phase: 'clarify', note: '2 dimensions: functional_scope + acceptance_criteria' },
-      { step: 'quick-dev:init', phase: 'tasks' },
-      { step: 'implement:code', phase: 'implement' },
-      { step: 'review:cr-light', phase: 'review' },
-      { step: 'final:summary', phase: 'final' },
-    ],
-    moderate: [
-      { step: 'receive-requirement', phase: 'requirement' },
-      { step: 'clarify:requirement', phase: 'clarify', note: '4 dimensions' },
-      { step: 'plan:design', phase: 'plan', note: 'no impact-risk-report' },
-      { step: 'plan:confirm', phase: 'plan' },
-      { step: 'worktree:setup', phase: 'plan' },
-      { step: 'tasks:init', phase: 'tasks' },
-      { step: 'implement:code', phase: 'implement' },
-      { step: 'review:cr-moderate', phase: 'review', note: 'spec + D3 + D4 + D5' },
-      { step: 'final:summary', phase: 'final' },
-    ],
-    standard: [
-      { step: 'receive-requirement', phase: 'requirement' },
-      { step: 'understand:explore', phase: 'understand' },
-      { step: 'understand:confirm', phase: 'understand' },
-      { step: 'clarify:requirement', phase: 'clarify', note: '7 dimensions' },
-      { step: 'plan:design', phase: 'plan' },
-      { step: 'plan:confirm', phase: 'plan' },
-      { step: 'worktree:setup', phase: 'plan' },
-      { step: 'tasks:init', phase: 'tasks' },
-      { step: 'implement:code', phase: 'implement' },
-      { step: 'review:cr', phase: 'review', note: 'spec gate + D2-D8' },
-      { step: 'knowledge:extract', phase: 'knowledge', note: 'parallel side-branch' },
-      { step: 'final:summary', phase: 'final' },
-    ],
-    complex: [
-      { step: 'receive-requirement', phase: 'requirement' },
-      { step: 'understand:explore', phase: 'understand' },
-      { step: 'understand:confirm', phase: 'understand' },
-      { step: 'clarify:requirement', phase: 'clarify', note: '7 dimensions' },
-      { step: 'plan:design', phase: 'plan' },
-      { step: 'plan:confirm', phase: 'plan' },
-      { step: 'worktree:setup', phase: 'plan' },
-      { step: 'tasks:init', phase: 'tasks' },
-      { step: 'implement:code', phase: 'implement' },
-      { step: 'review:cr', phase: 'review', note: 'spec gate + D2-D8' },
-      { step: 'knowledge:extract', phase: 'knowledge', note: 'parallel side-branch' },
-      { step: 'final:summary', phase: 'final' },
-    ],
-  };
-
-  const steps = PATHS[complexity] || PATHS.standard;
+  const steps = WORKFLOW_PATHS[complexity] || WORKFLOW_PATHS.standard;
   const currentStep = readPreviousStep(IDEA_DIR);
 
   const output = {
@@ -212,7 +154,7 @@ function main() {
     }
     const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
     if (reviewTasks.length > 0) {
-      emit('review:cr-light', 'tasks are ready or already in review (hotfix: spec-only)', { next_tasks: reviewTasks, complexity });
+      ensureVerificationBeforeReview(reviewTasks, 'review:cr-light', 'tasks are ready or already in review (hotfix: spec-only)', { complexity });
       return;
     }
     const codingTasks = getCodingTasks(IDEA_DIR);
@@ -270,7 +212,7 @@ function main() {
     }
     const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
     if (reviewTasks.length > 0) {
-      emit('review:cr-light', 'tasks are ready or already in review (minor: spec + light)', { next_tasks: reviewTasks, complexity });
+      ensureVerificationBeforeReview(reviewTasks, 'review:cr-light', 'tasks are ready or already in review (minor: spec + light)', { complexity });
       return;
     }
     const codingTasks = getCodingTasks(IDEA_DIR);
@@ -329,7 +271,7 @@ function main() {
     }
     const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
     if (reviewTasks.length > 0) {
-      emit('review:cr-light', 'tasks are ready or already in review (trivial)', { next_tasks: reviewTasks, complexity });
+      ensureVerificationBeforeReview(reviewTasks, 'review:cr-light', 'tasks are ready or already in review (trivial)', { complexity });
       return;
     }
     const codingTasks = getCodingTasks(IDEA_DIR);
@@ -404,7 +346,7 @@ function main() {
     }
     const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
     if (reviewTasks.length > 0) {
-      emit('review:cr-moderate', 'tasks are ready or already in review (moderate: spec+D3+D4+D5)', { next_tasks: reviewTasks, complexity });
+      ensureVerificationBeforeReview(reviewTasks, 'review:cr-moderate', 'tasks are ready or already in review (moderate: spec+D3+D4+D5)', { complexity });
       return;
     }
     const codingTasks = getCodingTasks(IDEA_DIR);
@@ -500,7 +442,7 @@ function main() {
 
   const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
   if (reviewTasks.length > 0) {
-    emit('review:cr', 'tasks are ready or already in requirement-level review', { next_tasks: reviewTasks, complexity });
+    ensureVerificationBeforeReview(reviewTasks, 'review:cr', 'tasks are ready or already in requirement-level review', { complexity });
     return;
   }
 
@@ -520,10 +462,12 @@ function main() {
     // Integration review: multi-task standard/complex only
     const state = readTaskState(taskStateFile(IDEA_DIR));
     const taskCount = Object.keys(state.tasks).length;
-    const integrationCrPath = join(IDEA_DIR, 'cr', 'dim-integration-cr.md');
-    if (taskCount > 1 && (complexity === 'standard' || complexity === 'complex') && !existsSync(integrationCrPath)) {
-      emit('review:integration', 'all per-task CRs passed, integration review needed', { complexity, task_count: taskCount });
-      return;
+    if (taskCount > 1 && (complexity === 'standard' || complexity === 'complex')) {
+      const integrationGate = checkGate(IDEA_DIR, 'integration-cr-complete');
+      if (!integrationGate.pass) {
+        emit('review:integration', 'integration review is missing, incomplete, or did not pass', { complexity, task_count: taskCount, integration_reason: integrationGate.reason });
+        return;
+      }
     }
 
     const traceGate = checkGate(IDEA_DIR, 'traceability-complete');

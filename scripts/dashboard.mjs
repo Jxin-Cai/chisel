@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join, basename, resolve } from 'node:path';
 import { atomicWriteFile, readTaskState, taskStateFile, readFrontmatter, detectComplexity } from './workflow-lib.mjs';
+import { WORKFLOW_PATHS } from './workflow-definition.mjs';
 
 // --- Data collection ---
 
@@ -1297,9 +1298,12 @@ const DATA = {
   apiChanges,
 };
 
-const WORKFLOW_STEPS = complexity === 'trivial'
-  ? ['receive-requirement', 'clarify:requirement', 'quick-dev:init', 'implement:code', 'review:cr-light', 'final:summary', 'done']
-  : ['receive-requirement', 'understand:explore', 'understand:confirm', 'understand:generate-ai-input', 'clarify:requirement', 'plan:design', 'plan:confirm', 'knowledge:extract', 'worktree:setup', 'tasks:init', 'implement:code', 'review:cr', 'repair:code', 'final:summary', 'done'];
+const WORKFLOW_STEPS = [...(WORKFLOW_PATHS[complexity] || WORKFLOW_PATHS.standard).map(item => item.step)];
+if (DATA.currentStep === 'repair:code' && !WORKFLOW_STEPS.includes('repair:code')) {
+  const implementIndex = WORKFLOW_STEPS.indexOf('implement:code');
+  WORKFLOW_STEPS.splice(implementIndex + 1, 0, 'repair:code');
+}
+if (!WORKFLOW_STEPS.includes('done')) WORKFLOW_STEPS.push('done');
 
 const currentIdx = WORKFLOW_STEPS.indexOf(DATA.currentStep);
 const stepOutputs = collectStepOutputs(IDEA_DIR, WORKFLOW_STEPS, DATA.currentStep, DATA.stepHistory);

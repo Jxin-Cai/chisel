@@ -44,7 +44,7 @@ Invariant Proofs 必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须�
 - Query command、Query summary、category/min-score、load_plan JSON
 - Wiki Entries Loaded 表（Entry / File / Why Loaded / Used For）
 
-**CR 维度 Proof 去重规则**：Scope Check 和 Wiki 查询只在 spec 维度完整执行。D2-D8 维度的 CR 产物中写 `## Scope / Wiki / Invariant Proof: 见 cr/dim-spec-cr.md` 即可，不重复执行。
+**CR 维度 Proof 去重规则**：Scope Check 和 Wiki 查询只在 spec 维度完整执行。D2-D9 维度的 CR 产物中写 `## Scope / Wiki / Invariant Proof: 见 cr/dim-spec-cr.md` 即可，不重复执行。
 
 ## 4. 模板优先
 

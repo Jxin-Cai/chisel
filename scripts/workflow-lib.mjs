@@ -1,30 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
+import { ALL_COMPLEXITIES, STEP_GATE_MAP, STEP_TO_PHASE as DEFINITION_STEP_TO_PHASE } from './workflow-definition.mjs';
 
 export const TASK_STATES = ['pending', 'confirmed', 'coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'];
 export const MAX_REWORK_COUNT = 5;
-export const ALL_COMPLEXITIES = ['hotfix', 'minor', 'trivial', 'moderate', 'standard', 'complex'];
-
-export const STEP_GATE_MAP = {
-  'receive-requirement': 'requirement-exists',
-  'understand:explore': 'as-is-complete',
-  'understand:confirm': 'as-is-confirmed',
-  'clarify:requirement': 'clarification-complete',
-  'plan:design': 'to-be-exists',
-  'plan:confirm': 'to-be-confirmed',
-  'worktree:setup': 'worktree-decided',
-  'tasks:init': 'task-workflow-exists',
-  'quick-dev:init': 'task-workflow-exists',
-  'implement:code': 'task-report-exists',
-  'repair:code': 'task-report-exists',
-  'review:cr': 'cr-complete',
-  'review:cr-light': 'cr-complete',
-  'review:cr-moderate': 'cr-complete',
-  'review:integration': 'cr-complete',
-  'knowledge:extract': 'knowledge-extracted',
-  'final:summary': 'done'
-};
+export { ALL_COMPLEXITIES, STEP_GATE_MAP };
 
 const VALID_TRANSITIONS = new Set([
   'pending:confirmed',
@@ -170,7 +151,9 @@ export function normalizeImpactSurface(surface = {}) {
     files: Array.isArray(surface.files) ? surface.files : [],
     symbols: Array.isArray(surface.symbols) ? surface.symbols : [],
     invariants: Array.isArray(surface.invariants) ? surface.invariants : [],
-    shared_state: Array.isArray(surface.shared_state) ? surface.shared_state : []
+    shared_state: Array.isArray(surface.shared_state) ? surface.shared_state : [],
+    reads: Array.isArray(surface.reads) ? surface.reads : [],
+    writes: Array.isArray(surface.writes) ? surface.writes : []
   };
 }
 
@@ -207,6 +190,7 @@ export function initWorkflowState(ideaDir, ideaName) {
     `idea: ${ideaName}`,
     `started_at: ${now}`,
     `last_updated_at: ${now}`,
+    'revision: 0',
     `current_step: receive-requirement`,
     'phase:',
     '  requirement: done',
@@ -269,40 +253,41 @@ function replaceWorkflowStepHistory(text, history) {
 }
 
 export const STEP_TO_PHASE = {
-  'receive-requirement': 'requirement',
-  'understand:explore': 'understand',
-  'understand:confirm': 'understand',
+  ...DEFINITION_STEP_TO_PHASE,
+  // Legacy rollback aliases retained for existing runtime directories.
   'understand:generate-ai-input': 'understand',
-  'clarify:requirement': 'clarify',
   'plan:strategy': 'plan',
   'plan:strategy-confirm': 'plan',
   'plan:decompose': 'plan',
-  'plan:decompose-confirm': 'plan',
-  'plan:design': 'plan',
-  'plan:confirm': 'plan',
-  'worktree:setup': 'plan',
-  'quick-dev:init': 'tasks',
-  'tasks:init': 'tasks',
-  'implement:code': 'implement',
-  'repair:code': 'implement',
-  'review:cr': 'review',
-  'review:cr-light': 'review',
-  'review:cr-moderate': 'review',
-  'review:integration': 'review',
-  'knowledge:extract': 'knowledge',
-  'final:summary': 'final'
+  'plan:decompose-confirm': 'plan'
 };
 
 const PHASE_ORDER = ['requirement', 'understand', 'clarify', 'plan', 'tasks', 'implement', 'review', 'knowledge', 'final'];
 
-export function updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases = false } = {}) {
+export function readWorkflowRevision(ideaDir) {
+  const file = workflowStateFile(ideaDir);
+  if (!existsSync(file)) return 0;
+  return Number(readFileSync(file, 'utf8').match(/^revision:\s*(\d+)$/m)?.[1] || 0);
+}
+
+export function updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases = false, expectedRevision, incrementRevision = false } = {}) {
   const file = workflowStateFile(ideaDir);
   if (!existsSync(file)) return;
   let text = readFileSync(file, 'utf8');
+  const currentRevision = Number(text.match(/^revision:\s*(\d+)$/m)?.[1] || 0);
+  if (expectedRevision !== undefined && currentRevision !== Number(expectedRevision)) {
+    throw new Error(`workflow revision conflict: expected ${expectedRevision}, actual ${currentRevision}`);
+  }
   const now = new Date().toISOString();
   const previousStep = text.match(/^current_step:\s*(.+)$/m)?.[1]?.trim() || '';
   text = text.replace(/^last_updated_at:.*$/m, `last_updated_at: ${now}`);
   text = text.replace(/^current_step:.*$/m, `current_step: ${stepId}`);
+  if (incrementRevision) {
+    const nextRevision = currentRevision + 1;
+    text = /^revision:/m.test(text)
+      ? text.replace(/^revision:.*$/m, `revision: ${nextRevision}`)
+      : text.replace(/^current_step:/m, `revision: ${nextRevision}\ncurrent_step:`);
+  }
   const phase = STEP_TO_PHASE[stepId];
   if (phase) {
     text = text.replace(new RegExp(`^(  ${phase}:).*$`, 'm'), `$1 in_progress`);
@@ -329,6 +314,11 @@ export function updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases = false 
   }
 
   atomicWriteFile(file, replaceWorkflowStepHistory(text, history));
+  return { previous_step: previousStep, current_step: stepId, previous_revision: currentRevision, revision: currentRevision + (incrementRevision ? 1 : 0) };
+}
+
+export function transitionWorkflowPhase(ideaDir, stepId, expectedRevision) {
+  return updateWorkflowPhase(ideaDir, stepId, { expectedRevision, incrementRevision: true });
 }
 
 export function initTaskState(ideaDir, ideaName, specs) {
@@ -412,34 +402,67 @@ export function allTasksApproved(ideaDir) {
   return tasks.length > 0 && tasks.every(task => task.status === 'approved');
 }
 
-export function getTasksFileOverlap(ideaDir, taskIds) {
-  const state = readTaskState(taskStateFile(ideaDir));
-  const fileMap = {};
-  for (const tid of taskIds) {
-    for (const f of (state.tasks[tid]?.expected_files || [])) {
-      (fileMap[f] ??= []).push(tid);
+function normalizedPattern(value) {
+  return String(value || '').trim().replace(/^\.\//, '').replace(/\\/g, '/');
+}
+
+function patternPrefix(value) {
+  const pattern = normalizedPattern(value);
+  const wildcard = pattern.search(/[?*\[]/);
+  return wildcard >= 0 ? pattern.slice(0, wildcard) : pattern;
+}
+
+export function scopePatternsOverlap(leftValue, rightValue) {
+  const left = normalizedPattern(leftValue);
+  const right = normalizedPattern(rightValue);
+  if (!left || !right) return false;
+  if (left === right || left === '*' || right === '*') return true;
+  const leftGlob = /[?*\[]/.test(left);
+  const rightGlob = /[?*\[]/.test(right);
+  const leftDirectory = left.endsWith('/');
+  const rightDirectory = right.endsWith('/');
+  if (!leftGlob && !rightGlob && !leftDirectory && !rightDirectory) return false;
+  const leftPrefix = patternPrefix(left).replace(/\/$/, '');
+  const rightPrefix = patternPrefix(right).replace(/\/$/, '');
+  if (leftGlob || rightGlob) return leftPrefix.startsWith(rightPrefix) || rightPrefix.startsWith(leftPrefix);
+  return leftPrefix === rightPrefix || leftPrefix.startsWith(`${rightPrefix}/`) || rightPrefix.startsWith(`${leftPrefix}/`);
+}
+
+function pairwiseOverlaps(taskSurfaces, kind, leftValues, rightValues = leftValues) {
+  const overlaps = [];
+  const entries = Object.entries(taskSurfaces);
+  for (let i = 0; i < entries.length; i += 1) {
+    for (let j = i + 1; j < entries.length; j += 1) {
+      const [leftTask, leftSurface] = entries[i];
+      const [rightTask, rightSurface] = entries[j];
+      for (const left of leftValues(leftSurface)) {
+        for (const right of rightValues(rightSurface)) {
+          if (scopePatternsOverlap(left, right)) overlaps.push({ kind, left, right, tasks: [leftTask, rightTask] });
+        }
+      }
     }
   }
-  return Object.entries(fileMap)
-    .filter(([, tasks]) => tasks.length > 1)
-    .map(([file, tasks]) => ({ file, tasks }));
+  return overlaps;
+}
+
+export function getTasksFileOverlap(ideaDir, taskIds) {
+  const state = readTaskState(taskStateFile(ideaDir));
+  const surfaces = Object.fromEntries(taskIds.map(taskId => [taskId, state.tasks[taskId] || {}]));
+  return pairwiseOverlaps(surfaces, 'file', task => task.expected_files || []).map(overlap => ({ ...overlap, file: overlap.left === overlap.right ? overlap.left : `${overlap.left} ↔ ${overlap.right}` }));
 }
 
 export function getTasksImpactOverlap(ideaDir, taskIds) {
   const state = readTaskState(taskStateFile(ideaDir));
-  const byKind = { files: {}, symbols: {}, invariants: {}, shared_state: {} };
-  for (const tid of taskIds) {
-    const task = state.tasks[tid] || {};
-    const surface = normalizeImpactSurface(task.impact_surface || { files: task.expected_files || [] });
-    for (const kind of Object.keys(byKind)) {
-      for (const value of surface[kind] || []) {
-        (byKind[kind][value] ??= []).push(tid);
-      }
-    }
-  }
-  return Object.entries(byKind).flatMap(([kind, values]) => Object.entries(values)
-    .filter(([, tasks]) => tasks.length > 1)
-    .map(([value, tasks]) => ({ kind, value, tasks })));
+  const surfaces = Object.fromEntries(taskIds.map(taskId => {
+    const task = state.tasks[taskId] || {};
+    return [taskId, normalizeImpactSurface(task.impact_surface || { files: task.expected_files || [] })];
+  }));
+  const overlaps = ['files', 'symbols', 'invariants', 'shared_state'].flatMap(kind => pairwiseOverlaps(surfaces, kind, surface => surface[kind] || []));
+  const writeWrite = pairwiseOverlaps(surfaces, 'shared_resource', surface => [...surface.writes, ...surface.shared_state], surface => [...surface.writes, ...surface.shared_state]);
+  const writeRead = pairwiseOverlaps(surfaces, 'shared_resource', surface => [...surface.writes, ...surface.shared_state], surface => surface.reads || []);
+  const readWrite = pairwiseOverlaps(surfaces, 'shared_resource', surface => surface.reads || [], surface => [...surface.writes, ...surface.shared_state]);
+  const unique = new Map([...overlaps, ...writeWrite, ...writeRead, ...readWrite].map(item => [`${item.kind}:${item.tasks.join(':')}:${item.left}:${item.right}`, item]));
+  return [...unique.values()];
 }
 
 export function updateTaskStatus(ideaDir, taskId, nextStatus) {
@@ -773,7 +796,7 @@ export function rollbackWorkflow(ideaDir, stepId, { dryRun = false } = {}) {
     rmSync(join(ideaDir, rel), { recursive: true, force: true });
   }
   applyTaskResets(ideaDir, plan.task_resets);
-  updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases: true });
+  updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases: true, incrementRevision: true });
   return { rolled_back: true, dry_run: false, ...plan };
 }
 
@@ -867,10 +890,15 @@ export function detectComplexity(ideaDir) {
   const reqPath = join(ideaDir, 'requirement.md');
   if (!existsSync(reqPath)) return 'standard';
   const text = readFileSync(reqPath, 'utf8');
-  const explicitMatch = text.match(/^##\s*复杂度[：:]\s*(hotfix|minor|trivial|moderate|standard|complex)\s*$/m);
+  const explicitMatch = text.match(/^##\s*复杂度(?:[：:]\s*|\s*\n\s*)(hotfix|minor|trivial|moderate|standard|complex)\s*$/m);
   if (explicitMatch) return explicitMatch[1];
-  const scopeSection = text.split('## 涉及范围')[1]?.split('##')[0] || '';
+  const scopeHeading = text.match(/^##\s+涉及范围(?:（初步）)?\s*$/m);
+  // Missing or empty scope is uncertainty, not evidence that a change is trivial.
+  // Keep the conservative default until the requirement explicitly supplies scope.
+  if (!scopeHeading) return 'standard';
+  const scopeSection = text.slice(scopeHeading.index + scopeHeading[0].length).split(/^##\s+/m)[0] || '';
   const scopeItems = scopeSection.split('\n').filter(l => /^-\s+\S/.test(l)).length;
+  if (scopeItems === 0) return 'standard';
   const hasNewTable = /新增.*表|新.*table|create.*table|DDL/i.test(text);
   const hasNewApi = /新增.*接口|new.*api|新.*endpoint/i.test(text);
   if (scopeItems <= 2 && !hasNewTable && !hasNewApi) {

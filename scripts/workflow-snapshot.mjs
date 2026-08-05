@@ -10,7 +10,8 @@ function readWorkflowState(ideaDir) {
   const step = text.match(/^current_step:\s*(.+)$/m)?.[1]?.trim() || 'unknown';
   const idea = text.match(/^idea:\s*(.+)$/m)?.[1]?.trim() || 'unknown';
   const updated = text.match(/^last_updated_at:\s*(.+)$/m)?.[1]?.trim();
-  return { idea, step, updated };
+  const revision = Number(text.match(/^revision:\s*(\d+)$/m)?.[1] || 0);
+  return { idea, step, revision, updated };
 }
 
 function readTaskSummary(ideaDir) {
@@ -65,7 +66,7 @@ function main() {
     const taskLine = w.tasks
       ? Object.entries(w.tasks).map(([s, c]) => `${s}=${c}`).join(', ')
       : '未初始化';
-    console.log(`活跃: ${w.idea} @ step=${w.step} | tasks: ${taskLine}`);
+    console.log(`活跃: ${w.idea} @ step=${w.step} rev=${w.revision} | tasks: ${taskLine}`);
   }
   console.log('提示: 必须调用 orchestration-status.mjs 获取权威 resume_step');
 }

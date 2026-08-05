@@ -11,11 +11,11 @@ allowed-tools: Bash, Read
 
 !`node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
 
-运行两条命令，用中文简要报告：
+运行两条只读命令，用中文简要报告。不得调用 `orchestration-transition.mjs`：
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs .chisel/<idea-name>
 node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs .chisel/<idea-name> --summary
 ```
 
-报告内容：当前恢复点、下一步、task 状态总览、待实现/待 CR/待返修/blocked task、关键产物路径。优先展示 review/rework backlog，再展示可编码任务。
+报告内容：当前状态、state revision、建议恢复点、是否需要 transition、task 状态总览、待实现/待 CR/待返修/blocked task、关键产物路径。优先展示 review/rework backlog，再展示可编码任务。

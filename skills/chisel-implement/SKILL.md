@@ -60,7 +60,7 @@ digraph implement_flow {
      - 升级记录写入 `task-metrics.mjs` 的 `escalated_model` 和 `fresh_agent` 字段
 2. 如果没有 rework task，运行 `--next-tasks code`
 3. **单 task** → 串行执行：
-   - `--start-task <task-id>`
+   - `--start-task <task-id> --project-root .`（记录 task 开始前的 Git/工作区基线；已有脏改动不会被归到该 task）
    - 读取 task 文件 frontmatter 的 `task_complexity` 字段，按复杂度选择 coder agent：
      - `trivial` → `agent-chisel-coder-light`（haiku）
      - `standard` 或未指定 → `agent-chisel-coder`（sonnet）
@@ -86,11 +86,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} .
 ```
 
 读取 `{IDEA_DIR}/verify-result.json`：
-- `status: "pass"` 或 `status: "skip"` → 正常流转，等待 orchestration-status 派发 review
+- `status: "pass"` → 正常流转，等待 orchestration-status 派发 review。结果绑定当前 Git HEAD 和工作区指纹；验证后代码再变化会使 gate 失效，必须重跑
 - `status: "fail"` → 检查 output 中的错误信息：
   - 如果是编译/类型错误且涉及本次修改的文件 → 直接修复（不启动新 coder agent）
   - 修复后重新运行 `verify-run.mjs`
-  - 最多尝试修复 2 次，仍失败则继续进入 CR（CR 阶段会捕获问题）
+  - 最多尝试修复 2 次；仍失败则保持在 implement/repair，报告明确阻塞原因，不得进入 CR
+- 未检测到验证命令时结果为 `fail`；先从项目说明、CI 或用户输入补充可重复执行的验证命令，不得以 skip 代替验证
 
 <HARD-GATE principle="P2">
 只有 `--next-tasks` 返回的 task 才能启动。

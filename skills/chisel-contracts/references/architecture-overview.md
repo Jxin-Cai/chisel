@@ -16,8 +16,11 @@
 
 - 单一插件 `chisel`，主入口 skill 是 `/chisel`。
 - 运行态产物写入业务仓库的 `.chisel/<idea-name>/`。
-- `scripts/orchestration-status.mjs` 是恢复点判定入口。
+- `skills/chisel-contracts/workflow-definition.json` 是 step/phase/gate/complexity path 的唯一机器定义；脚本通过 `workflow-definition.mjs` 加载，不再复制枚举。
+- `scripts/orchestration-status.mjs` 是严格只读的恢复点判定入口。
+- `scripts/orchestration-transition.mjs` 是 workflow step 的唯一写入口：校验权威 resume step 与 expected revision，持有 transition lock，记录 `events.ndjson`，再更新 dashboard 投影。
 - `scripts/workflow-status.mjs` 和 `scripts/workflow-lib.mjs` 管理 task 状态机。
+- `scripts/task-provenance.mjs` 为每个 task/attempt 记录执行前基线和执行后结果指纹；scope、报告 gate 与指标只归属基线之后的真实变更。
 - `scripts/gate-check.mjs` 管理每步 postcondition。
 - `scripts/scope-check.mjs` 检查变更文件是否越界或触碰禁区。
 - `scripts/multi-repo-worktree.mjs` 多仓 worktree 检测/创建/状态/清理（支持非 git 工作空间下的多 git 仓库场景）。
@@ -31,7 +34,7 @@
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check/wiki 数据写入 `cr-context.json`，D2-D9 agent 共用。
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
 - `scripts/session-metrics.mjs` 记录每个 idea 的步骤耗时、agent 调用次数、返修轮次等效率指标。
-- `scripts/checkpoint.mjs` 关键阶段自动保存快照（workflow-state + task-state + git tag），支持恢复到历史快照。
+- `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照（源码 HEAD/工作区指纹 + 完整 workflow artifact payload + 可选 git tag）。一致性恢复仅在源码身份与快照相同后执行；额外 artifact 会移动到 recovery 目录。`--force-state-only` 只用于人工应急，并明确标记为非一致恢复。
 - **理解阶段**（`chisel-understand`）由主编排器直接执行：先调用原生 Explore subagent 侦察定位文件，然后主编排器（真身）深度走查产出结构化数据（evidence-ledger.json + coverage-matrix.json + ai-input/*.md），最后调用 `agent-chisel-writer`(sonnet) 从结构化数据生成面向人类的图文文档。
 - **规划阶段**（`chisel-plan`）由主编排器直接执行：先调用原生 Plan subagent 设计方案框架，然后主编排器精化并写入 JSON 产物（tasks.json + traceability-matrix.json + impact-risk-report.json）+ 执行 6 步变更完整性自检，最后调用 `agent-chisel-writer`(sonnet) 生成 implementation-plan.md。
 - `agent-chisel-writer` 从结构化产物（JSON/md 表格）生成面向人类的图文中文文档（含 Mermaid），不探索代码、不做设计决策。支持 as-is 和 to-be 两种模式。
@@ -62,8 +65,8 @@
 - 单仓场景退化为 schema_version=1，行为不变。
 - Worktree 决策在方案确认后（`plan:confirm` 之后、`tasks:init` 之前）由用户选择。
 - 用户选 `current-branch` 时，所有 task 串行执行，**不使用 Agent worktree 隔离**。
-- 用户选 `worktree` 时，`getNextTasks()` 返回多个 task 且无文件重叠时，使用 `Agent(isolation: "worktree")` 并行编码（这是 Agent 工具的临时隔离，task 级，用完即弃），合并后统一更新状态。
-- 有重叠 task 串行执行；返修 task 始终串行。
+- 用户选 `worktree` 时，`getNextTasks()` 返回多个 task 且文件/符号/不变量/共享资源均无冲突时，使用 `Agent(isolation: "worktree")` 并行编码（这是 Agent 工具的临时隔离，task 级，用完即弃），合并后统一更新状态。
+- 路径目录和 glob 交叉会保守判定为冲突；共享资源用 `impact_surface.reads/writes` 建模，read/read 可并行，任一 write 冲突。旧 `shared_state` 等价于 write lock。返修 task 始终串行。
 - `chisel-review` 在所有 task 编码完成后进行多维度 CR：spec 门槛（opus）通过后，D2-D9 按变更特征条件激活（D2 需并发/错误处理代码、D7 需删除/重命名、D8 需公共 API 变更、D9 需安全敏感代码，D3-D6 始终激活），已激活维度并行 opus 审查，每个发现附带置信度评分（≥80 返修、60-79 仅参考），fail 项经对抗性验证确认后聚合结果。Scope/Wiki Proof 只在 spec 维度执行一次，D2-D9 引用之。返修后从 spec 重新开始。
 - 需求完成后（`done` 阶段），多仓场景对每个仓库分别创建 PR 或 merge。
 
@@ -78,7 +81,7 @@
 
 - 当 complexity=trivial（scope≤2 项、无新表/API）时自动激活。
 - 缩短路径：`receive → clarify(2 维度) → quick-dev:init → implement → review:cr-light(spec-only) → done`。
-- 跳过：as-is 探索/确认、ai-input、plan、knowledge、worktree 选择、D2-D8 CR。
+- 跳过：as-is 探索/确认、ai-input、plan、knowledge、worktree 选择、D2-D9 CR。
 - `quick-dev-init.mjs` 从 requirement-clarification.json 自动生成单 task + worktree-decision(current-branch) + traceability-matrix。
 
 ## 需求可追溯性
@@ -91,7 +94,7 @@
 ## 可视化仪表板
 
 - `/chisel-dashboard <idea-name>` 手动生成 `{idea-dir}/dashboard.html`。
-- **每次步骤切换时强制打开浏览器**，并等待用户确认已查看后才继续执行（仪表盘确认协议）。浏览器 30s 自动刷新。
+- **每次显式步骤切换后更新 dashboard 投影**，默认不打开浏览器、不阻塞执行；用户主动查看或进入人工确认时再打开。浏览器页面打开后每 30s 自动刷新。
 - 自包含 HTML，使用 Mermaid CDN + Chart.js CDN 渲染图表。
 - 含"步骤产出详情"表：展示当前需求的完整执行步骤列表、每步状态（已完成/进行中/待执行/已跳过）和对应的产出文件完成情况。
 - 含 As-Is 查看器（5 Tab：概览、核心走查、证据表、质量雷达图、覆盖矩阵）。

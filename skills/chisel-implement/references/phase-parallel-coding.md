@@ -34,11 +34,17 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --check-overla
 
 ### 2. 状态前置更新
 
-对当前批次所有 task **串行**调用 `--start-task`（确保状态原子更新）。
+对当前批次所有 task **串行**调用 `--start-task <task-id> --project-root .`（确保状态原子更新并记录主工作区基线）。
 
 ### 3. 并行派发
 
-对每个 task 使用 `Agent({ isolation: "worktree" })`，所有 Agent 调用在同一条消息中发出。TASK 输入增加 `"parallel": true`，告知 coder 不要自行更新状态。
+对每个 task 使用 `Agent({ isolation: "worktree" })`，所有 Agent 调用在同一条消息中发出。TASK 输入增加 `"parallel": true`，告知 coder 不要自行更新 workflow 状态。coder 进入临时 worktree 后必须先运行：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {IDEA_DIR} <task-id> --rebase-baseline --project-root .
+```
+
+写完 report 和 scope proof 后、返回前必须运行 `task-provenance.mjs ... --finish`，冻结该 agent worktree 中的真实 changed files；不要调用 `workflow-status --finish-task`。
 
 注意：这里的 worktree 是 Agent 工具的 **临时隔离机制**（task 级，用完即弃），不是用户在 `worktree:setup` 阶段选择的需求级 worktree。Agent 的临时 worktree 在合并回收后自动清理。
 
@@ -48,7 +54,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --check-overla
 
 1. 如果 Agent 报告有变更（返回 worktree 路径和分支名）：
    - `git merge <worktree-branch>` 合入当前工作分支
-   - 合并成功 → 运行 `task-metrics.mjs` + `--finish-task <task-id> coded`
+   - 合并成功 → 运行 `--finish-task <task-id> coded` + `task-metrics.mjs`（`--finish-task` 会读取 agent 已冻结的 provenance）
    - 合并冲突 → `--finish-task <task-id> failed`，报告冲突文件
 2. 如果 Agent 报告无变更或失败：
    - `--finish-task <task-id> failed`

@@ -42,7 +42,7 @@ user-invocable: false
 | moderate | 功能范围、验收标准细化、兼容性约束、优先级（4 维度） |
 | standard / complex | 全部 7 维度 |
 
-复杂度由 `requirement.md` 自动判定（显式标注 `## 复杂度: trivial/moderate/standard/complex`，或基于涉及范围条目数推断）。
+复杂度由 `requirement.md` 自动判定（显式标注 `## 复杂度: hotfix/minor/trivial/moderate/standard/complex`，或基于涉及范围条目数推断）。hotfix 路径不进入本 skill；minor 与 trivial 同为 2 维度。
 
 ## 执行流程
 
@@ -64,7 +64,7 @@ user-invocable: false
 
 <HARD-GATE principle="P1,P2">
 此步骤澄清的是需求本身的诉求和边界，不是 as-is 理解的正确性（那是 understand:confirm 的职责）。
-必须按复杂度覆盖对应维度（trivial=2，standard/complex=7），即使某些维度用户回答"无特殊要求"也要记录。
+必须按复杂度覆盖对应维度（minor/trivial=2，moderate=4，standard/complex=7），即使某些维度用户回答"无特殊要求"也要记录。
 不能代替用户回答——每个维度必须由用户明确确认。
 问题要基于 as-is 中实际发现的事实来提，不要泛泛而问。每个问题必须能追溯到 facts.md 中的 F-xxx 编号、constraints.md 中的 FZ/WBI/DNR 编号、或具体文件位置。
 

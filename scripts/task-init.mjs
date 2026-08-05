@@ -88,7 +88,7 @@ function validateTask(task, index, options = {}) {
   requireArray(task.behavior_invariants, 'behavior_invariants', taskId);
   requireArray(task.change_point_refs, 'change_point_refs', taskId);
   if (!task.impact_surface || typeof task.impact_surface !== 'object' || Array.isArray(task.impact_surface)) throw new Error(`${taskId} missing impact_surface`);
-  for (const key of ['files', 'symbols', 'invariants', 'shared_state']) requireArray(task.impact_surface[key] || [], `impact_surface.${key}`, taskId);
+  for (const key of ['files', 'symbols', 'invariants', 'shared_state', 'reads', 'writes']) requireArray(task.impact_surface[key] || [], `impact_surface.${key}`, taskId);
   if (task.acceptance_criteria.length === 0) throw new Error(`${taskId} acceptance_criteria must not be empty`);
   if (task.trace_refs.length === 0) throw new Error(`${taskId} trace_refs must not be empty`);
   if (task.behavior_invariants.length === 0) throw new Error(`${taskId} behavior_invariants must not be empty`);
@@ -213,6 +213,8 @@ ${bulletList(task.forbidden_symbols || [])}
 - symbols：${inlineList(normalizeImpactSurface(task.impact_surface).symbols)}
 - invariants：${inlineList(normalizeImpactSurface(task.impact_surface).invariants)}
 - shared_state：${inlineList(normalizeImpactSurface(task.impact_surface).shared_state)}
+- reads：${inlineList(normalizeImpactSurface(task.impact_surface).reads)}
+- writes：${inlineList(normalizeImpactSurface(task.impact_surface).writes)}
 
 ## Change Points
 

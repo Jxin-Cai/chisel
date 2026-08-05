@@ -85,7 +85,7 @@ describe('workflow review recovery', () => {
     const result = runWorkflowStatus(ideaDir, '--start-task', 'task-001');
 
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout), { updated: true, task_id: 'task-001', status: 'repairing' });
+    assert.deepEqual(JSON.parse(result.stdout), { updated: true, task_id: 'task-001', status: 'repairing', provenance: 'started' });
     assert.equal(readTaskState(taskStateFile(ideaDir)).tasks['task-001'].status, 'repairing');
   });
 });

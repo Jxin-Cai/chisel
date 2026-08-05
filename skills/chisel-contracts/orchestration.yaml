@@ -90,10 +90,10 @@ steps:
       name: chisel-implement
       args: "{idea-name}"
     postcondition:
-      check: task-report-exists
+      check: implementation-verified
 
   - id: review:cr
-    description: spec 门槛 + D2-D8 条件激活多维 CR；spec fail 直接返修，spec pass 后按变更特征激活 D2-D8 子集并行审查，fail 项经验证子阶段确认后聚合返修项
+    description: spec 门槛 + D2-D9 条件激活多维 CR；spec fail 直接返修，spec pass 后按变更特征激活 D2-D9 子集并行审查，fail 项经验证子阶段确认后聚合返修项
     action:
       type: skill
       name: chisel-review
@@ -111,6 +111,24 @@ steps:
     postcondition:
       check: cr-complete
 
+  - id: review:cr-moderate
+    description: moderate 路径执行 spec + D3 + D4 + D5 审查，其余维度记录显式跳过
+    action:
+      type: skill
+      name: chisel-review
+      args: "{idea-name}"
+    postcondition:
+      check: cr-complete
+
+  - id: review:integration
+    description: standard/complex 多 task 全部通过 per-task CR 后执行跨 task 集成审查
+    action:
+      type: skill
+      name: chisel-review
+      args: "{idea-name}"
+    postcondition:
+      check: integration-cr-complete
+
   - id: repair:code
     description: 按 CR 返修清单修复代码
     action:
@@ -118,7 +136,7 @@ steps:
       name: chisel-implement
       args: "{idea-name}"
     postcondition:
-      check: task-report-exists
+      check: implementation-verified
 
   - id: final:summary
     description: 汇总变更、CR、返修、验证方法，呈现知识候选摘要

@@ -140,7 +140,7 @@
       "trace_refs": ["REQ-001"],
       "acceptance_criteria": ["满足某个可验证行为"],
       "behavior_invariants": ["需要保持的旧行为、接口契约或包袱"],
-      "impact_surface": {"files": ["src/a.ts"], "symbols": [], "invariants": [], "shared_state": []},
+      "impact_surface": {"files": ["src/a.ts"], "symbols": [], "invariants": [], "shared_state": [], "reads": ["db:users"], "writes": ["cache:feature-a"]},
       "file_plan": [
         {
           "path": "src/a.ts",
@@ -160,7 +160,7 @@
 }
 ```
 
-必填字段：`behavior_invariants`、`impact_surface`、`context_to_load`、`change_point_refs` 必须填写，即使为空数组也要显式给出结构，供 task-init、并行调度和 coder 上下文加载使用。新生成的标准/复杂需求应使用 `schema_version: 2` 和 `plan_with_file: true`，并为每个 task 填写 `file_plan`。
+必填字段：`behavior_invariants`、`impact_surface`、`context_to_load`、`change_point_refs` 必须填写，即使为空数组也要显式给出结构，供 task-init、并行调度和 coder 上下文加载使用。`impact_surface.reads/writes` 描述数据库、缓存、schema、生成目录等共享资源；read/read 可并行，任一侧 write 则冲突。旧 `shared_state` 按 write lock 处理。新生成的标准/复杂需求应使用 `schema_version: 2` 和 `plan_with_file: true`，并为每个 task 填写 `file_plan`。
 
 可选字段：`allowed_symbols`、`forbidden_symbols`、`exports`、`imports`、`modification_hints`、`task_complexity`。旧任务可不含 `file_plan`；当 `plan_with_file=true` 或 `schema_version>=2` 时，`file_plan` 变为必填。
 

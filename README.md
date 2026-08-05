@@ -46,7 +46,7 @@ Chisel solves this with a **gate-driven workflow**:
 | **Understand** | Read-only exploration of relevant code paths, producing human-readable as-is documentation with evidence |
 | **Confirm** | Three mandatory human checkpoints — as-is understanding, strategy direction, and task decomposition |
 | **Implement** | Scoped coding with file-boundary enforcement, parallel task execution when safe |
-| **Review** | Multi-dimension architect CR with automatic rework loop (max 3 rounds) |
+| **Review** | Multi-dimension architect CR with automatic rework loop (max 5 rounds) |
 | **Knowledge** | Capture forbidden zones, legacy baggage, and terminology into a persistent project wiki |
 
 No step is skipped. No decision is made from memory alone — the orchestrator always reads the file-based state machine.
@@ -302,10 +302,14 @@ Tasks in `coding`/`repairing` state for > 30 minutes trigger a stale warning in 
 
 | Script | Description |
 |---|---|
-| `orchestration-status.mjs` | Recovery point and complexity detection |
+| `orchestration-status.mjs` | Side-effect-free recovery point and complexity detection |
+| `orchestration-transition.mjs` | Explicit revision-checked state transition and event recording |
 | `gate-check.mjs` | Phase postcondition gate validation |
 | `task-init.mjs` | Initialize task files and state machine |
 | `workflow-status.mjs` | Task state query, rollback, overlap detection |
+| `task-provenance.mjs` | Per-task baseline/result fingerprint and changed-file ownership |
+| `verify-run.mjs` | Repository-aware build/test verification bound to workspace fingerprints |
+| `checkpoint.mjs` | Source-bound, full-artifact consistent snapshots and recovery |
 | `wiki-manage.mjs` | Wiki init, merge, query, health-check |
 | `scope-check.mjs` | File boundary and forbidden zone validation |
 | `repo-map.mjs` | Code map generation (stats, structure, entry candidates) |

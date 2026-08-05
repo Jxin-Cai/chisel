@@ -9,7 +9,8 @@ function readWorkflowState(ideaDir) {
   const text = readFileSync(wsFile, 'utf8');
   const step = text.match(/^current_step:\s*(.+)$/m)?.[1]?.trim() || 'unknown';
   const idea = text.match(/^idea:\s*(.+)$/m)?.[1]?.trim() || 'unknown';
-  return { idea, step };
+  const revision = Number(text.match(/^revision:\s*(\d+)$/m)?.[1] || 0);
+  return { idea, step, revision };
 }
 
 function readTaskSummary(ideaDir) {
@@ -65,7 +66,7 @@ function main() {
       const taskLine = w.tasks
         ? Object.entries(w.tasks).map(([s, c]) => `${s}=${c}`).join(', ')
         : 'tasks not initialized';
-      console.log(`  - ${w.idea}: step=${w.step} | ${taskLine}`);
+      console.log(`  - ${w.idea}: step=${w.step} rev=${w.revision} | ${taskLine}`);
     }
     console.log('');
     console.log('DESIGN PRINCIPLES (root cause of all rules):');
@@ -74,7 +75,7 @@ function main() {
     console.log('  P3: 边界快失败 — undefined/null/malformed 在入口点拦截');
     console.log('  P4: 副作用一致 — 改X则更新所有读X的下游');
     console.log('  P5: 唯一来源 — 导入不复制，枚举只定义一次');
-    console.log('OPERATIONAL: status.mjs=truth | no skip | user confirm | call every turn | gate after step | max 3 rework | priority: rules>scripts>skills>defaults | resist rationalization | fix from principle');
+    console.log('OPERATIONAL: status=read-only truth | transition.mjs=only step writer | revision required | no skip | user confirm | call status every turn | gate after step | max 5 rework | rounds 4-5 use fresh agent | priority: rules>scripts>skills>defaults | resist rationalization | fix from principle');
   }
 }
 

@@ -24,6 +24,7 @@
 
 `orchestration-status.mjs` 的输出是唯一的恢复点判定。  
 `task-workflow-state.yaml` 是 task 状态的唯一权威来源。  
+`orchestration-status.mjs` 严格只读；正常 workflow step 只能由 `orchestration-transition.mjs` 显式更新（受控 rollback 是唯一例外，并同样递增 revision）。
 不要依据上下文记忆、对话长度或自身推断来决定下一步。
 
 ### 2. 禁止跳步 `[P2]`
@@ -51,6 +52,13 @@ node ${SCRIPTS}/orchestration-status.mjs <idea-dir|none>
 ```
 
 只执行脚本返回的 `resume_step`。
+当 `transition_required: true` 时，先使用输出中的 `state_revision` 执行：
+
+```
+node ${SCRIPTS}/orchestration-transition.mjs <idea-dir> <resume_step> --expected-revision <state_revision>
+```
+
+revision 冲突或权威 resume_step 变化时必须重新查询，禁止覆盖。
 
 ### 5. 每步完成后必须验证 gate `[P4]`
 

@@ -18,7 +18,7 @@
 
 ## 复杂度
 
-trivial / standard / complex（默认 standard）
+hotfix / minor / trivial / moderate / standard / complex（默认 standard）
 
 ## 验收标准（初步）
 

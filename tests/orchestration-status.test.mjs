@@ -1,10 +1,10 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { initTaskState } from '../scripts/workflow-lib.mjs';
+import { initTaskState, initWorkflowState } from '../scripts/workflow-lib.mjs';
 
 function makeTmpDir() {
   return mkdtempSync(join(tmpdir(), 'chisel-orchestration-'));
@@ -103,5 +103,20 @@ describe('orchestration review recovery', () => {
     assert.match(result.stdout, /resume_step: repair:code/);
     assert.match(result.stdout, /in_progress_tasks: task-001/);
     assert.doesNotMatch(result.stdout, /no executable next step found/);
+  });
+
+  it('is side-effect-free when queried repeatedly', () => {
+    initWorkflowState(ideaDir, 'idea');
+    initTaskState(ideaDir, 'idea', [
+      { taskId: 'task-001', status: 'reviewing' }
+    ]);
+    const statePath = join(ideaDir, 'workflow-state.yaml');
+    const before = readFileSync(statePath, 'utf8');
+    runOrchestration(ideaDir);
+    runOrchestration(ideaDir);
+    assert.equal(readFileSync(statePath, 'utf8'), before);
+    assert.equal(existsSync(join(ideaDir, 'metrics.json')), false);
+    assert.equal(existsSync(join(ideaDir, 'dashboard.html')), false);
+    assert.equal(existsSync(join(ideaDir, 'snapshots')), false);
   });
 });

@@ -340,3 +340,83 @@ describe('gate-check task-report-exists file-level contract', () => {
     assert.match(r.reason, /violations_count does not match/);
   });
 });
+
+describe('gate-check integration-cr-complete', () => {
+  let ideaDir;
+
+  beforeEach(() => {
+    ideaDir = makeTmpDir();
+    mkdirSync(join(ideaDir, 'cr'), { recursive: true });
+  });
+  afterEach(() => rmSync(ideaDir, { recursive: true, force: true }));
+
+  it('accepts a structurally complete passing integration review', () => {
+    writeFileSync(join(ideaDir, 'cr/dim-integration-cr.md'), [
+      '---',
+      'dimension: integration',
+      'result: pass',
+      'affected_tasks: [task-001, task-002]',
+      'rework_count: 0',
+      '---',
+      '# Integration CR',
+      '## 结论',
+      'PASS',
+      '## Task 交互矩阵',
+      '| Task A | Task B | 交互点 | 状态 |',
+      '|---|---|---|---|',
+      '| task-001 | task-002 | API | OK |',
+      '## Rework Items',
+      '无',
+    ].join('\n'));
+    assert.equal(checkGate(ideaDir, 'integration-cr-complete').pass, true);
+  });
+
+  it('rejects a failed review without a concrete rework item', () => {
+    writeFileSync(join(ideaDir, 'cr/dim-integration-cr.md'), [
+      '---',
+      'dimension: integration',
+      'result: fail',
+      'affected_tasks: [task-001]',
+      'rework_count: 0',
+      '---',
+      '## 结论',
+      'FAIL',
+      '## Task 交互矩阵',
+      '存在问题',
+      '## Rework Items',
+      '待补充',
+    ].join('\n'));
+    const result = checkGate(ideaDir, 'integration-cr-complete');
+    assert.equal(result.pass, false);
+    assert.match(result.reason, /CR-INT/);
+  });
+});
+
+describe('gate-check done state integrity', () => {
+  let ideaDir;
+  beforeEach(() => { ideaDir = makeTmpDir(); });
+  afterEach(() => { rmSync(ideaDir, { recursive: true, force: true }); });
+
+  it('rejects a stale .done marker while tasks are not approved', () => {
+    mkdirSync(join(ideaDir, 'task-reports'), { recursive: true });
+    writeFileSync(join(ideaDir, 'task-workflow-state.yaml'), [
+      'idea: idea',
+      'tasks:',
+      '  task-001:',
+      '    status: coded',
+      '    depends_on: []',
+      '    description: task',
+      '    file: tasks/task-001.md',
+      '    expected_files: []',
+      '    report_file: task-reports/task-001-report.md',
+      '    cr_file: cr/task-001-cr.md',
+      '    rework_count: 0',
+      '    changed_files: []',
+      '    loc_added: 0',
+      '    loc_deleted: 0',
+    ].join('\n'));
+    writeFileSync(join(ideaDir, '.done'), 'done\n');
+    writeFileSync(join(ideaDir, 'final-summary.md'), '# Final\n## 变更摘要\nchange\n## Scope Control Summary\nscope-check pass\n');
+    assert.match(checkGate(ideaDir, 'done').reason, /not all tasks are approved/);
+  });
+});

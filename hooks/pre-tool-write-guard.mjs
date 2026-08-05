@@ -73,9 +73,17 @@ function main() {
   const ideaDir = join(cwd, '.chisel', ideaName);
   const subPath = parts.slice(2).join('/');
 
-  // Rule 1: task-workflow-state.yaml must not be written directly
+  // Rule 1: machine state and event history must not be written directly.
   if (subPath === 'task-workflow-state.yaml') {
     deny('task-workflow-state.yaml must be modified through workflow-status.mjs, not written directly.');
+    return;
+  }
+  if (subPath === 'workflow-state.yaml') {
+    deny('workflow-state.yaml must be modified through orchestration-transition.mjs (or controlled rollback), not written directly.');
+    return;
+  }
+  if (subPath === 'events.ndjson') {
+    deny('events.ndjson is append-only and must be written through orchestration-transition.mjs.');
     return;
   }
 

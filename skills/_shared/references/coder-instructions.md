@@ -32,7 +32,7 @@
      - `implementation_plan_excerpt`（to-be 中本 task 的方案段落）
    - 不存在 → 按下方原流程手动读取（向后兼容）
 
-0. **检查不变量** — 若步骤 0.5 已获取 `invariants` 则使用预打包数据；否则若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束（这些是从历史 CR 返修中提取的失败模式，必须避免重犯）。
+0. **建立执行归属** — 若 TASK 中 `parallel` 为 true，进入临时 worktree 后先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --rebase-baseline --project-root .`。然后检查不变量：若步骤 0.5 已获取 `invariants` 则使用预打包数据；否则若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束。
 1. **Wiki 查询** — 若步骤 0.5 已获取 `wiki_results` 则跳过；否则按 agent-shared-rules §1 执行查询
 2. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
 3. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。
@@ -60,6 +60,7 @@
    - DONE / DONE_WITH_CONCERNS → `--finish-task {task_id} coded`
    - BLOCKED → `--finish-task {task_id} failed`
    - NEEDS_CONTEXT → 不更新状态，直接结束并在输出中说明缺失信息
+   - parallel task 在返回前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --finish`，只冻结结果归属，不更新 workflow 状态
 
 ## 限制
 
