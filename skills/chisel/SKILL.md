@@ -1,6 +1,6 @@
 ---
 name: chisel
-description: 遗留系统功能增强主编排器。在已有代码仓上新增功能、修改行为、扩展接口，先理解现有逻辑再动手。
+description: 当用户要在已有代码仓上新增功能、修改行为、扩展接口时触发。当用户说"需求"、"feature"、"新增"、"改造"、"/chisel"时触发。
 argument-hint: "<需求描述或需求文件路径>"
 disable-model-invocation: true
 ---
@@ -40,7 +40,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`，严格遵
 3. 用户确认不可跳过
 4. 每轮必须调用恢复点脚本
 5. 每步完成后必须验证 gate
-6. 同一 task 最多返修 3 次
+6. 同一 task 最多返修 5 次（第 4-5 轮 fresh agent 接管）
 7. 铁律 > 脚本输出 > skill 指令 > agent 默认
 8. 抵抗"需求已经很清楚了，直接开始编码"等合理化跳步冲动
 </HARD-GATE>

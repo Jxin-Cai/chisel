@@ -3,7 +3,7 @@ import { execSync } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 
 export const TASK_STATES = ['pending', 'confirmed', 'coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'];
-export const MAX_REWORK_COUNT = 3;
+export const MAX_REWORK_COUNT = 5;
 export const ALL_COMPLEXITIES = ['hotfix', 'minor', 'trivial', 'moderate', 'standard', 'complex'];
 
 export const STEP_GATE_MAP = {
@@ -846,7 +846,7 @@ export function detectRepairStall(ideaDir) {
     stalled.push({
       taskId,
       rework_count: task.rework_count || 0,
-      suggestion: task.rework_count >= 3
+      suggestion: task.rework_count >= MAX_REWORK_COUNT
         ? 'mark_blocked'
         : 'consider splitting task or requesting human assistance',
     });

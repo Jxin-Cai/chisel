@@ -155,6 +155,12 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 对每个 task 的 `expected_files`，用 grep 检查 caller/callee：
 - 不在 call-graph 中的调用关系 → 追加为新 CP → 分配到 task
 
+#### 7. Task Brief 自包含性
+
+每个 task 必须仅凭自身 `description` + `file_plan` + `change_point_refs` + `trace_refs` + `imports/exports` 即可被实现者理解，不允许出现：
+- "参见 Task-N 的 XX"（实现者可能乱序读或读不到其他 task）
+- "与前一个 task 类似"（重复代码优于交叉引用）
+
 自检结果写入 `design-notes.json` 的 `self_check` 字段。
 </HARD-GATE>
 

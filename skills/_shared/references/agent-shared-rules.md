@@ -49,3 +49,24 @@ Invariant Proofs 必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须�
 ## 4. 模板优先
 
 写产物前先 Read 对应模板文件，按模板结构填充。不凭记忆写格式。
+
+## 5. 上下文隔离纪律
+
+### 禁止累积摘要注入
+
+编排器向 coder agent 传递上下文时，严格只传：
+1. 当前 task brief（`coder-context/{task-id}.json`）
+2. 邻接 task 的 exports 接口定义（仅签名，不传实现代码）
+3. 全局约束（constraints.md + change-surface.md + invariants）
+
+绝不传递：
+- 前序 task 的实现报告或代码摘要
+- 其他 task 的 coder-context
+- 累积的"到目前为止已完成的 task 列表"叙述
+
+### 理由
+
+前序 task 信息通过文件系统可查（coder 可自行 Read），但主动注入会：
+- 膨胀 prompt 占用推理 budget
+- 引发"对齐前序风格"的过度一致化
+- 在 context compaction 后成为幻觉源

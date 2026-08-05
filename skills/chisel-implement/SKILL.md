@@ -43,11 +43,21 @@ digraph implement_flow {
    - 如有 rework task → 检查 task 文件 frontmatter 中的 `rework_count`：
      - `rework_count >= 2` → 先执行 `/chisel-debug <idea-name> <task-id>` 进行根因调查，再继续返修
      - 否则 → 直接串行返修（返修不并行）
-   - **返修模型升级**：当 `rework_count >= 2`（第 3 轮返修）时，覆盖原始 `task_complexity` 的模型选择：
-     - `trivial` (原 haiku) → 升级为 `agent-chisel-coder`（sonnet）
-     - `standard` (原 sonnet) → 升级为 `agent-chisel-coder-heavy`（opus）
-     - `complex` (原 opus) → 不变（已是最高）
-     - 升级后在 `task-metrics.mjs` 中记录 `escalated_model` 字段
+   - **返修策略**：
+     - `rework_count 1-2`：复用同一 coder agent 类型（保持上下文连续性）
+     - `rework_count 3`：模型升级（trivial→sonnet, standard→opus），仍复用同类型 agent
+       - `trivial` (原 haiku) → 升级为 `agent-chisel-coder`（sonnet）
+       - `standard` (原 sonnet) → 升级为 `agent-chisel-coder-heavy`（opus）
+       - `complex` (原 opus) → 不变（已是最高）
+     - `rework_count 4-5`：**Fresh Agent 重做**——启动一个全新的 coder agent（不继承前序 repair 上下文），agent prompt 追加：
+       ```
+       ⚠️ 前任实现者已尝试 {rework_count} 轮修复未通过。
+       你是全新接管者。请从 task brief 和 CR findings 出发独立实现，不要延续前任的修复方向。
+       已知失败路径记录在 debug/{task-id}-debug.md。
+       ```
+       - 第 4 轮使用 `agent-chisel-coder`（sonnet fresh）
+       - 第 5 轮使用 `agent-chisel-coder-heavy`（opus fresh）
+     - 升级记录写入 `task-metrics.mjs` 的 `escalated_model` 和 `fresh_agent` 字段
 2. 如果没有 rework task，运行 `--next-tasks code`
 3. **单 task** → 串行执行：
    - `--start-task <task-id>`

@@ -1,6 +1,6 @@
 ---
 name: chisel-branch
-description: 分支管理工具。Worktree 转常规分支、特性分支合并到主干（含冲突分析）、从主干同步到特性分支。当用户说"转分支"、"合并分支"、"merge"、"sync"、"冲突分析"、"合并到主干"、"同步主干"时触发。
+description: 当用户说"转分支"、"合并分支"、"merge"、"sync"、"冲突分析"、"合并到主干"、"同步主干"时触发。
 argument-hint: "<convert|merge-to-main|sync-from-main> [idea-name]"
 ---
 

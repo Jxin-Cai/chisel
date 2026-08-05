@@ -1,5 +1,5 @@
 ---
-description: 大型需求/initiative 分解为多个独立 idea 并行执行。当需求范围跨越多个模块、涉及多阶段交付、或复杂度远超单 idea 承载时使用。
+description: 当需求范围跨越多个模块、涉及多阶段交付、或复杂度远超单 idea 承载时使用。
 user_invocable: true
 ---
 
