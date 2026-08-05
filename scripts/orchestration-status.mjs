@@ -517,6 +517,15 @@ function main() {
   }
 
   if (allTasksApproved(IDEA_DIR)) {
+    // Integration review: multi-task standard/complex only
+    const state = readTaskState(taskStateFile(IDEA_DIR));
+    const taskCount = Object.keys(state.tasks).length;
+    const integrationCrPath = join(IDEA_DIR, 'cr', 'dim-integration-cr.md');
+    if (taskCount > 1 && (complexity === 'standard' || complexity === 'complex') && !existsSync(integrationCrPath)) {
+      emit('review:integration', 'all per-task CRs passed, integration review needed', { complexity, task_count: taskCount });
+      return;
+    }
+
     const traceGate = checkGate(IDEA_DIR, 'traceability-complete');
     if (!traceGate.pass && !traceGate.skipped) {
       emit('blocked', 'traceability incomplete — not all requirements covered by approved tasks', { complexity, trace_reason: traceGate.reason });

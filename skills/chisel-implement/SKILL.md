@@ -43,6 +43,11 @@ digraph implement_flow {
    - 如有 rework task → 检查 task 文件 frontmatter 中的 `rework_count`：
      - `rework_count >= 2` → 先执行 `/chisel-debug <idea-name> <task-id>` 进行根因调查，再继续返修
      - 否则 → 直接串行返修（返修不并行）
+   - **返修模型升级**：当 `rework_count >= 2`（第 3 轮返修）时，覆盖原始 `task_complexity` 的模型选择：
+     - `trivial` (原 haiku) → 升级为 `agent-chisel-coder`（sonnet）
+     - `standard` (原 sonnet) → 升级为 `agent-chisel-coder-heavy`（opus）
+     - `complex` (原 opus) → 不变（已是最高）
+     - 升级后在 `task-metrics.mjs` 中记录 `escalated_model` 字段
 2. 如果没有 rework task，运行 `--next-tasks code`
 3. **单 task** → 串行执行：
    - `--start-task <task-id>`
@@ -50,6 +55,7 @@ digraph implement_flow {
      - `trivial` → `agent-chisel-coder-light`（haiku）
      - `standard` 或未指定 → `agent-chisel-coder`（sonnet）
      - `complex` → `agent-chisel-coder-heavy`（opus）
+   - 预打包 coder 上下文：`node ${CLAUDE_PLUGIN_ROOT}/scripts/coder-prepare.mjs {IDEA_DIR} <task-id> .`
    - 启动选定的 coder agent，传入 TASK：
      ```json
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>", "task_file": "tasks/<task-id>.md" }

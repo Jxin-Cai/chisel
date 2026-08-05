@@ -222,23 +222,28 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 
 分三批启动已激活维度，避免过多 opus agent 同时竞争导致 stall：
 
+**Scoped Re-review 模式判断**：当 `rework_cycle > 0` 时，对每个已激活维度检查上轮 CR 结果：
+- 上轮 `result: fail` → TASK 中追加 `"mode": "scoped-rework"`（增量复审，只验证修复 + 检查 fix diff 新问题）
+- 上轮 `result: pass` 但未命中 pass-cached（如新增文件导致缓存失效）→ 正常全量审查（不加 mode）
+- 首次审查（`rework_cycle = 0`）→ 正常全量审查
+
 6a. **Batch 1**——在一条消息中发起前 4 个已激活维度的 Agent 调用：
    ```
-   Agent({ description: "CR D2", prompt: TASK({ dimension: "d2", ..., "base_ref": "{BASE_REF}" }) })
-   Agent({ description: "CR D3", prompt: TASK({ dimension: "d3", ..., "base_ref": "{BASE_REF}" }) })
-   Agent({ description: "CR D4", prompt: TASK({ dimension: "d4", ..., "base_ref": "{BASE_REF}" }) })
-   Agent({ description: "CR D5", prompt: TASK({ dimension: "d5", ..., "base_ref": "{BASE_REF}" }) })
+   Agent({ description: "CR D2", prompt: TASK({ dimension: "d2", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
+   Agent({ description: "CR D3", prompt: TASK({ dimension: "d3", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
+   Agent({ description: "CR D4", prompt: TASK({ dimension: "d4", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
+   Agent({ description: "CR D5", prompt: TASK({ dimension: "d5", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
    ```
 
 6b. 等待 Batch 1 全部返回后，**Batch 2**——再发起 4 个 Agent 调用：
    ```
-   Agent({ description: "CR D6", prompt: TASK({ dimension: "d6", ..., "base_ref": "{BASE_REF}" }) })
-   Agent({ description: "CR D7", prompt: TASK({ dimension: "d7", ..., "base_ref": "{BASE_REF}" }) })
-   Agent({ description: "CR D8", prompt: TASK({ dimension: "d8", ..., "base_ref": "{BASE_REF}" }) })
-   Agent({ description: "CR D9", prompt: TASK({ dimension: "d9", ..., "base_ref": "{BASE_REF}" }) })
+   Agent({ description: "CR D6", prompt: TASK({ dimension: "d6", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
+   Agent({ description: "CR D7", prompt: TASK({ dimension: "d7", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
+   Agent({ description: "CR D8", prompt: TASK({ dimension: "d8", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
+   Agent({ description: "CR D9", prompt: TASK({ dimension: "d9", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
    ```
 
-   每批 reviewer 并行执行，各自读取对应 `dim-{dimension}.md` 定义和 `cr-context.json`。
+   每批 reviewer 并行执行，各自读取对应 `dim-{dimension}.md`（全量）或 `dim-re-review.md`（scoped）和 `cr-context.json`。
 
 ### 第三步：验证 + 聚合结果
 
@@ -267,6 +272,28 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
    - **任一 fail** → 合并所有 fail 维度的 affected_tasks（去重）→ `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement needs_rework <affected_tasks>`
 
 `--mark-cr-requirement` 是 task 状态机的需求级批量更新命令，不代表必须生成 `cr/requirement-cr.md`。新 CR contract 以 `cr/dim-spec-cr.md` 和 `cr/dim-d2-cr.md` 到 `cr/dim-d8-cr.md` 为准；`cr/requirement-cr.md` 仅为旧运行态兼容产物。
+
+### 第四步：Integration Review（条件触发）
+
+当所有 per-task CR 通过（`--mark-cr-requirement approved` 执行后）且满足以下条件时，由 `orchestration-status.mjs` 自动 emit `review:integration`：
+- `task_count > 1`
+- 需求复杂度为 `standard` 或 `complex`
+
+执行流程：
+
+1. 检查 `{IDEA_DIR}/cr/dim-integration-cr.md` 是否已存在（幂等性）
+   - 已存在且 `result: pass` → 跳过，流程继续
+   - 已存在且 `result: fail` → 进入返修（已由 orchestrator 处理）
+2. 启动 `agent-chisel-reviewer`（opus），传入 TASK：
+   ```json
+   { "idea_dir": "{IDEA_DIR}", "task_ids": ["task-001", "task-002", ...], "dimension": "integration", "rework_count": 0, "base_ref": "{BASE_REF}" }
+   ```
+3. `node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-parse.mjs {IDEA_DIR} --dim integration`
+4. 按结果：
+   - **pass** → 流程继续到 knowledge/final（由 orchestrator 自动流转）
+   - **fail** → `--mark-cr-requirement needs_rework <affected_tasks>`，受影响 task 回到 `repair:code`
+
+**注意**：Integration Review 不走验证子阶段（skeptic voting），因为它本身就是最终质量关卡。如果 fail，直接进入返修。
 
 <HARD-GATE principle="P2,P4">
 每个维度独立一次 opus 调用，不合并维度。

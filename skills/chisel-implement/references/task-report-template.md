@@ -7,6 +7,10 @@ expected_files: []
 changed_files: []
 file_report_schema_version: 1
 scope_check_schema_version: 3
+scope_check_result: pass
+invariant_check_result: pass
+completion_status: DONE
+concerns: ""
 ---
 
 # Task Report: task-001-example

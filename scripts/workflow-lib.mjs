@@ -21,6 +21,7 @@ export const STEP_GATE_MAP = {
   'review:cr': 'cr-complete',
   'review:cr-light': 'cr-complete',
   'review:cr-moderate': 'cr-complete',
+  'review:integration': 'cr-complete',
   'knowledge:extract': 'knowledge-extracted',
   'final:summary': 'done'
 };
@@ -287,6 +288,7 @@ export const STEP_TO_PHASE = {
   'review:cr': 'review',
   'review:cr-light': 'review',
   'review:cr-moderate': 'review',
+  'review:integration': 'review',
   'knowledge:extract': 'knowledge',
   'final:summary': 'final'
 };

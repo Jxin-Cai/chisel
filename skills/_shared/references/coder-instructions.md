@@ -21,8 +21,19 @@
 
 ## 实现步骤
 
-0. **检查不变量** — 若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束（这些是从历史 CR 返修中提取的失败模式，必须避免重犯）。
-1. **Wiki 查询** — 按 agent-shared-rules §1 执行查询
+0.5. **Pre-packaged Context Check** — 检查 `{idea_dir}/coder-context/{task_id}.json` 是否存在：
+   - 存在 → Read 该文件作为主要上下文来源，从中获取：
+     - `task_content`（可跳过单独读 task 文件）
+     - `constraints_excerpt` / `change_surface_excerpt`（可跳过 as-is/ai-input 手动读取）
+     - `wiki_results`（可跳过步骤 1 的 wiki 查询）
+     - `invariants`（可跳过步骤 0 的手动读取）
+     - `style_samples`（快速了解文件现有风格）
+     - `rework_items`（返修时直接获取上轮 CR findings）
+     - `implementation_plan_excerpt`（to-be 中本 task 的方案段落）
+   - 不存在 → 按下方原流程手动读取（向后兼容）
+
+0. **检查不变量** — 若步骤 0.5 已获取 `invariants` 则使用预打包数据；否则若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束（这些是从历史 CR 返修中提取的失败模式，必须避免重犯）。
+1. **Wiki 查询** — 若步骤 0.5 已获取 `wiki_results` 则跳过；否则按 agent-shared-rules §1 执行查询
 2. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
 3. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。
 4. **实现** — 修改代码，靠齐 as-is 风格
@@ -35,6 +46,11 @@
    发现问题则立即修复，不等 CR 阶段。这一步在现有 turn 内完成，不额外调用 agent。
 
 7. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`。必须填写 `## File-Level Implementation Report`，覆盖 task `File-Level Plan` 中 `Report Required=true` 的文件，以及 scope-check JSON `changed_files[]` 的每个文件；每行 Evidence 必须是实际文件行号、验证命令或行为说明，不能留空或占位。
+   - **Frontmatter 快速路由字段**（必须从实际结果同步填写）：
+     - `scope_check_result`：从步骤 5 的 scope-check 输出取 `pass` / `fail`
+     - `invariant_check_result`：从 Invariant Proofs 中取——全部 pass 则 `pass`，否则 `fail`
+     - `completion_status`：与 `## Completion Status` 的 status 行一致
+     - `concerns`：与 `## Completion Status` 的 concerns 行一致（无则空字符串）
 8. **Completion Status** — 填写模板中的 `## Completion Status`，不得省略该章节：
    - DONE：正常完成
    - DONE_WITH_CONCERNS：完成但对某些决策不确定（如风格不一致的现有代码、不清楚的业务逻辑）

@@ -22,13 +22,28 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
 |------|------|
 | `idea_dir` | 需求工作目录 |
 | `task_ids` | 待审查的 task ID 列表 |
-| `dimension` | 本次审查维度（`spec`、`d2`、`d3`、`d4`、`d5`、`d6`、`d7`、`d8`） |
+| `dimension` | 本次审查维度（`spec`、`d2`、`d3`、`d4`、`d5`、`d6`、`d7`、`d8`、`d9`、`integration`） |
 | `rework_count` | 当前返修轮次 |
 | `base_ref` | diff 基准 commit（功能分叉点），为空则降级到 git log |
+| `mode` | （可选）审查模式，默认空表示全量审查；`scoped-rework` 表示增量复审 |
 
 ## 执行步骤
 
 <HARD-GATE>
+
+### 0. 检查审查模式
+
+从 TASK 获取可选字段 `mode`：
+- `mode` 为空或缺失 → 正常全量审查（下方步骤 1-5）
+- `mode: "scoped-rework"` → **增量复审模式**：
+  1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-review/references/dim-re-review.md`（代替维度定义文件）
+  2. Read 上轮本维度 CR 文件 `{idea_dir}/cr/dim-{dimension}-cr.md`，提取 Rework Items 表
+  3. 获取修复 diff（仅 affected_files 范围）：
+     - 优先从 `cr-context.json` 的 `repair_diff` 字段读取
+     - 不存在时：`git diff {base_ref}...HEAD -- <affected_files>`
+  4. 按 `dim-re-review.md` 的检查清单执行增量复审
+  5. 输出 CR 产物到 `{idea_dir}/cr/dim-{dimension}-cr.md`（覆盖上轮）
+  6. **结束——不执行下方步骤 1-5**
 
 ### 1. 加载维度定义
 

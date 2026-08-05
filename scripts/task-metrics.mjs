@@ -60,7 +60,7 @@ function collectRows(scopedFiles = []) {
   return rows.filter(row => row.file && !row.file.startsWith('.chisel/') && matchesScope(row.file, scopedFiles));
 }
 
-function updateTaskMetrics(ideaDir, taskId = '') {
+function updateTaskMetrics(ideaDir, taskId = '', { escalatedModel } = {}) {
   if (!existsSync(taskStateFile(ideaDir))) throw new Error('task-workflow-state.yaml missing');
 
   const state = readTaskState(taskStateFile(ideaDir));
@@ -92,7 +92,8 @@ function updateTaskMetrics(ideaDir, taskId = '') {
     expected_files: scopedFiles,
     changed_files: changedFiles,
     loc_added: locAdded,
-    loc_deleted: locDeleted
+    loc_deleted: locDeleted,
+    ...(escalatedModel ? { escalated_model: escalatedModel } : {})
   };
   writeFileSync(join(metricsDir, 'task-summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
   return summary;
@@ -101,9 +102,11 @@ function updateTaskMetrics(ideaDir, taskId = '') {
 function main(argv) {
   const ideaDir = argv[0];
   const taskId = argv[1] || '';
-  if (!ideaDir) fail('用法: task-metrics.mjs <idea-dir> [task-id]');
+  if (!ideaDir) fail('用法: task-metrics.mjs <idea-dir> [task-id] [--escalated-model <model>]');
+  const emIdx = argv.indexOf('--escalated-model');
+  const escalatedModel = emIdx >= 0 ? argv[emIdx + 1] : undefined;
   try {
-    console.log(JSON.stringify(updateTaskMetrics(ideaDir, taskId)));
+    console.log(JSON.stringify(updateTaskMetrics(ideaDir, taskId, { escalatedModel })));
   } catch (error) {
     fail(error.message);
   }
