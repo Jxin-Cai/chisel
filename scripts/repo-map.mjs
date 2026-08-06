@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { extname, join, dirname } from 'node:path';
 
@@ -391,6 +391,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const result = generateRepoMap(args.projectRoot, { requirement: args.requirement });
   const json = JSON.stringify(result, null, 2);
   if (args.output) {
+    mkdirSync(dirname(args.output), { recursive: true });
     writeFileSync(args.output, json + '\n');
     const fwk = result.frontend.framework ? `, frontend: ${result.frontend.framework}, ${result.frontend.routes.length} routes` : '';
     process.stderr.write(`repo-map written to ${args.output} (${result.stats.total_files} files, ${result.stats.source_files} source, ${result.entry_candidates.length} entry candidates${fwk})\n`);
