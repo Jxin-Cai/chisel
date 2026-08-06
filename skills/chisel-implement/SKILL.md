@@ -25,7 +25,7 @@ digraph implement_flow {
   multi [label="多 task\ncheck-overlap"];
   overlap [label="有文件重叠\n串行执行"];
   parallel [label="无重叠\nworktree 并行"];
-  select [label="按 task_complexity\n选择 coder agent"];
+  select [label="按 task_complexity\n选择 model override"];
 
   start -> rework [label="有"];
   start -> code [label="无"];
@@ -43,28 +43,24 @@ digraph implement_flow {
    - 如有 rework task → 检查 task 文件 frontmatter 中的 `rework_count`：
      - `rework_count >= 2` → 先执行 `/chisel-debug <idea-name> <task-id>` 进行根因调查，再继续返修
      - 否则 → 直接串行返修（返修不并行）
-   - **返修策略**：
-     - `rework_count 1-2`：复用同一 coder agent 类型（保持上下文连续性）
-     - `rework_count 3`：模型升级（trivial→sonnet, standard→opus），仍复用同类型 agent
-       - `trivial` (原 haiku) → 升级为 `agent-chisel-coder`（sonnet）
-       - `standard` (原 sonnet) → 升级为 `agent-chisel-coder-heavy`（opus）
+   - **返修策略**（统一使用 `agent-chisel-coder`，通过 model override 区分档位）：
+     - `rework_count 1-2`：保持当前 model 配置（保持上下文连续性）
+     - `rework_count 3`：模型升级
+       - `trivial`/`standard` (原 sonnet) → model override: opus
        - `complex` (原 opus) → 不变（已是最高）
-     - `rework_count 4-5`：**Fresh Agent 重做**——启动一个全新的 coder agent（不继承前序 repair 上下文），agent prompt 追加：
+     - `rework_count 4-5`：**Fresh Agent 重做**——启动一个全新的 `agent-chisel-coder`（不继承前序 repair 上下文），model override: opus，agent prompt 追加：
        ```
        ⚠️ 前任实现者已尝试 {rework_count} 轮修复未通过。
        你是全新接管者。请从 task brief 和 CR findings 出发独立实现，不要延续前任的修复方向。
        已知失败路径记录在 debug/{task-id}-debug.md。
        ```
-       - 第 4 轮使用 `agent-chisel-coder`（sonnet fresh）
-       - 第 5 轮使用 `agent-chisel-coder-heavy`（opus fresh）
      - 升级记录写入 `task-metrics.mjs` 的 `escalated_model` 和 `fresh_agent` 字段
 2. 如果没有 rework task，运行 `--next-tasks code`
 3. **单 task** → 串行执行：
    - `--start-task <task-id> --project-root .`（记录 task 开始前的 Git/工作区基线；已有脏改动不会被归到该 task）
-   - 读取 task 文件 frontmatter 的 `task_complexity` 字段，按复杂度选择 coder agent：
-     - `trivial` → `agent-chisel-coder-light`（haiku）
-     - `standard` 或未指定 → `agent-chisel-coder`（sonnet）
-     - `complex` → `agent-chisel-coder-heavy`（opus）
+   - 读取 task 文件 frontmatter 的 `task_complexity` 字段，选择 model override：
+     - `trivial` / `standard` 或未指定 → `agent-chisel-coder`（默认 sonnet）
+     - `complex` → `agent-chisel-coder`，model override: opus
    - 预打包 coder 上下文：`node ${CLAUDE_PLUGIN_ROOT}/scripts/coder-prepare.mjs {IDEA_DIR} <task-id> .`
    - 启动选定的 coder agent，传入 TASK：
      ```json

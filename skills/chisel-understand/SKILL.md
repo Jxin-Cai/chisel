@@ -15,7 +15,7 @@ user-invocable: false
 
 ## 执行
 
-主编排器直接执行探索工作，利用原生 Explore subagent 做前期侦察，自身做深度走查，最后由 Writer subagent 产出人类文档。
+利用原生 Explore subagent 做前期侦察，Analyst subagent 做深度走查产出结构化数据，Writer subagent 产出人类文档。主编排器负责调度和质量验证。
 
 ### 重试模式
 
@@ -80,44 +80,20 @@ Explore agent 返回分层文件清单后，检查覆盖度报告：
 
 ---
 
-### Phase 2: 深度走查（主编排器直接执行）
+### Phase 2: 深度走查（委托 Analyst Subagent）
 
-基于 Phase 1 返回的文件清单，由主编排器直接执行深度分析。
+启动 `agent-chisel-analyst`，传入 TASK：
 
-#### 2.1 调用链追踪
+```json
+{
+  "idea_dir": "{idea_dir}",
+  "explore_result": "<Phase 1 Explore 返回的分层文件清单>",
+  "requirement_path": "{requirement_path}",
+  "wiki_context": "<Phase 0 wiki 查询结果（如有，含 forbidden_zone/glossary/weird_but_intentional）>"
+}
+```
 
-按由外到内的顺序 Read 文件：
-1. **入口层** — Read 每个入口文件，确认路由/Handler 注册方式、参数校验、鉴权
-2. **调用链** — 从入口方法追踪到 service → domain → repository/mapper，Read 每个节点文件
-3. **数据层** — Read entity/migration/DDL，确认表结构和字段类型
-
-对每个链路上的方法调用，记录 `file:line` 证据。
-
-#### 2.2 字段传递链（当需求涉及字段变更时）
-
-对每个目标字段追踪完整路径：
-- DB column → Entity 字段 → Service 返回值 → DTO/VO → API Response → 前端类型 → Store → UI render
-
-确认各层命名（驼峰/下划线转换）和字段映射逻辑。
-
-#### 2.3 写逻辑+读逻辑综合分析
-
-对每个数据写入点（save/insert/update），同时确认：
-- 对应的读取路径（query/find/get 方法）
-- 缓存层（如有）
-- 写入后的事件/回调
-
-#### 2.4 隐性依赖确认
-
-对 Phase 1 发现的隐性依赖（事件监听/AOP/反射），Read 对应文件确认行为。
-
-#### 2.5 写入结构化产物
-
-<HARD-GATE principle="P1,P4">
-Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/ai-input-template.md`，按模板格式写入。
-</HARD-GATE>
-
-将走查结果写入以下产物（每条 fact 必须有已验证的 file:line 证据）：
+Analyst 产出以下结构化产物（每条 fact 必须有已验证的 file:line 证据）：
 
 | 产物 | 内容 |
 |------|------|
@@ -133,9 +109,12 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/ai-input-templat
 | `as-is/context-budget.json` | 已读文件清单、行数、覆盖率、未读相关文件、覆盖度自评 |
 
 <HARD-GATE principle="P3">
-evidence-ledger.json 中所有 fact 的 status 必须为 "confirmed"——必须 Read 过对应源码文件并验证行号。无法确认的推断不写入 ledger。
+Analyst 返回后，验证结构化产物合规：
+- `evidence-ledger.json` 存在且非空，所有 fact 的 status 为 "confirmed"
+- `coverage-matrix.json` 覆盖入口、链路、数据、副作用四个维度；不涉及的维度有 `not_applicable` reason
+- `ai-input/` 下至少有 facts.md、call-graph.md、data-schema.md、api-surface.md、constraints.md、change-surface.md
 
-coverage-matrix.json 必须覆盖入口、链路、数据、副作用四个维度；不涉及的维度写 `not_applicable` reason。
+不满足则重新派发 Analyst 补充缺失产物（传入 `retry_reason` 说明缺失项）。
 </HARD-GATE>
 
 ---
@@ -199,7 +178,7 @@ Read stdout 查看各维度得分。hard gate 是 `overall >= 0.6` 且每个维�
 <HARD-GATE principle="P1,P4">
 Phase 4 通过后，确认以下产物全部存在：
 
-**结构化产物（主编排器 Phase 2 写入）：**
+**结构化产物（Analyst Phase 2 写入）：**
 - `as-is/repo-map.json`（Phase 0 脚本生成）
 - `as-is/evidence-ledger.json`
 - `as-is/coverage-matrix.json`
@@ -235,5 +214,5 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {idea_dir} as-is-complete
 | "这个模块我已经理解了" | 理解必须体现在结构化产物中，不是记忆中 |
 | "只改一个文件，不需要全局理解" | 变更影响面可能超出预期 |
 | "代码注释已经很清楚了" | 注释可能过时，以运行行为为准 |
-| "Explore 返回的文件清单够用了" | Explore 读片段，Phase 2 必须 Read 全文件验证 |
+| "Explore 返回的文件清单够用了" | Explore 读片段，Analyst 必须 Read 全文件验证 |
 </HARD-GATE>

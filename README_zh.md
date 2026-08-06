@@ -288,9 +288,8 @@ task 处于 `coding`/`repairing` 状态超 30 分钟时，orchestration-status �
 | Agent | 说明 |
 |---|---|
 | `agent-chisel-writer` | 从结构化产物生成人类可读文档（sonnet） |
-| `agent-chisel-coder` | 按 confirmed task 编码实现（sonnet） |
-| `agent-chisel-coder-light` | trivial task 快速编码（haiku） |
-| `agent-chisel-coder-heavy` | complex task 深度编码（opus） |
+| `agent-chisel-analyst` | 深度代码走查，产出结构化 as-is 数据（sonnet） |
+| `agent-chisel-coder` | 按 confirmed task 编码实现（sonnet/opus model override） |
 | `agent-chisel-reviewer` | 多维度 CR，单维度/次深度审查（opus） |
 
 ### Scripts

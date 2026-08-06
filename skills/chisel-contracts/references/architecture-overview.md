@@ -35,15 +35,15 @@
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
 - `scripts/session-metrics.mjs` 记录每个 idea 的步骤耗时、agent 调用次数、返修轮次等效率指标。
 - `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照（源码 HEAD/工作区指纹 + 完整 workflow artifact payload + 可选 git tag）。一致性恢复仅在源码身份与快照相同后执行；额外 artifact 会移动到 recovery 目录。`--force-state-only` 只用于人工应急，并明确标记为非一致恢复。
-- **理解阶段**（`chisel-understand`）由主编排器直接执行：先调用原生 Explore subagent 侦察定位文件，然后主编排器（真身）深度走查产出结构化数据（evidence-ledger.json + coverage-matrix.json + ai-input/*.md），最后调用 `agent-chisel-writer`(sonnet) 从结构化数据生成面向人类的图文文档。
+- **理解阶段**（`chisel-understand`）由主编排器调度三个 subagent：先调用原生 Explore subagent 侦察定位文件，然后调用 `agent-chisel-analyst`(sonnet) 深度走查产出结构化数据（evidence-ledger.json + coverage-matrix.json + ai-input/*.md），最后调用 `agent-chisel-writer`(sonnet) 从结构化数据生成面向人类的图文文档。主编排器只负责调度和质量验证，不直接 Read 业务代码。
 - **规划阶段**（`chisel-plan`）由主编排器直接执行：先调用原生 Plan subagent 设计方案框架，然后主编排器精化并写入 JSON 产物（tasks.json + traceability-matrix.json + impact-risk-report.json）+ 执行 6 步变更完整性自检，最后调用 `agent-chisel-writer`(sonnet) 生成 implementation-plan.md。
 - `agent-chisel-writer` 从结构化产物（JSON/md 表格）生成面向人类的图文中文文档（含 Mermaid），不探索代码、不做设计决策。支持 as-is 和 to-be 两种模式。
-- `agent-chisel-coder` 只按已确认 task 实现，完成后执行 diff 自检（bug/AC/scope 三项检查）。
+- `agent-chisel-coder` 只按已确认 task 实现，完成后执行 diff 自检（bug/AC/scope 三项检查）。支持 model override：trivial/standard 用 sonnet，complex 用 opus，返修升级时也通过 model override 切换。
 - `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d9）执行单维度深度审查。dim-spec 包含伴生产物完整性检查（后端规则：加字段→DDL、加接口→路由+DTO；前端规则：DTO加字段→前端类型+页面适配、接口响应变更→前端渲染适配）和全链路字段透传验证。每个发现项附带 0-100 置信度评分，≥80 进 Rework Items 触发返修，60-79 进 Observations 供参考。D2/D7/D8/D9 按变更特征条件激活，D3-D6 始终激活。fail 项经对抗性验证（standard/complex: 3-agent skeptic 投票；trivial/moderate: 单次 sonnet 验证）确认后聚合。
 
 ## As-Is 分层结构
 
-- **结构化产物**（主编排器 Phase 2 产出）：`evidence-ledger.json`、`coverage-matrix.json`、`context-budget.json`、`ai-input/*.md`（facts/call-graph/data-schema/api-surface/constraints/change-surface/field-flow）
+- **结构化产物**（Analyst Phase 2 产出）：`evidence-ledger.json`、`coverage-matrix.json`、`context-budget.json`、`ai-input/*.md`（facts/call-graph/data-schema/api-surface/constraints/change-surface/field-flow）
 - **脚本产物**：`repo-map.json`（Phase 0）、`quality-score.json`（Phase 4）
 - **人类文档**（Writer 产出）：`overview.md`、`core-walkthrough.md`、`evidence-index.md`、`knowledge-candidates.md`、`context-budget.md`
 - **枝干文件**（Writer 按需产出）：`details/entrypoints.md`、`details/data-model.md`、`details/api-contracts.md`、`details/data-flow.md`

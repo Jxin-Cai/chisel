@@ -293,9 +293,8 @@ Tasks in `coding`/`repairing` state for > 30 minutes trigger a stale warning in 
 | Agent | Description |
 |---|---|
 | `agent-chisel-writer` | Generate human-readable docs from structured artifacts (sonnet) |
-| `agent-chisel-coder` | Implement confirmed tasks (sonnet) |
-| `agent-chisel-coder-light` | Fast coding for trivial tasks (haiku) |
-| `agent-chisel-coder-heavy` | Deep coding for complex tasks (opus) |
+| `agent-chisel-analyst` | Deep code walkthrough, produce structured as-is data (sonnet) |
+| `agent-chisel-coder` | Implement confirmed tasks (sonnet/opus via model override) |
 | `agent-chisel-reviewer` | Multi-dimension CR with single-dimension-per-pass (opus) |
 
 ### Scripts
