@@ -4,6 +4,7 @@ import { execSync } from 'node:child_process';
 import { join, basename, resolve } from 'node:path';
 import { atomicWriteFile, readTaskState, taskStateFile, readFrontmatter, detectComplexity } from './workflow-lib.mjs';
 import { WORKFLOW_PATHS } from './workflow-definition.mjs';
+import { generateReport as generateCrReport } from './cr-report.mjs';
 
 // --- Data collection ---
 
@@ -517,6 +518,100 @@ function computeDashboardSummary({ tasks, traceabilityModel, crResults, impactRi
   };
 }
 
+function generateStatusSentence(currentStep, taskStats, crStats) {
+  const STEP_LABELS = {
+    'receive-requirement': '正在接收需求',
+    'understand:explore': '正在探索 AS-IS 现状',
+    'understand:confirm': '等待用户确认 AS-IS 理解',
+    'clarify:requirement': '正在澄清需求细节',
+    'quick-dev:init': '正在初始化快速开发',
+    'plan:design': '正在设计 TO-BE 方案',
+    'plan:confirm': '等待用户确认方案',
+    'knowledge:extract': '正在提取领域知识',
+    'worktree:setup': '等待配置工作分支',
+    'tasks:init': '正在初始化 Task',
+    'implement:code': '正在编码实现',
+    'review:cr': '正在进行代码审查',
+    'review:cr-light': '正在进行轻量审查',
+    'review:cr-moderate': '正在进行中等审查',
+    'repair:code': '正在修复 CR 发现的问题',
+    'review:integration': '正在进行集成审查',
+    'final:summary': '正在生成最终总结',
+    'done': '需求已完成',
+    'blocked': '流程被阻塞',
+  };
+  const stepLabel = STEP_LABELS[currentStep] || `当前步骤：${currentStep}`;
+  const parts = [stepLabel];
+  if (taskStats.total > 0) {
+    parts.push(`${taskStats.approved}/${taskStats.total} task 已通过`);
+  }
+  if (crStats.rework > 0) {
+    parts.push(`${crStats.rework} 个 CR 问题待修复`);
+  }
+  return parts.join('，');
+}
+
+function getTopChangePoints(changePoints, limit = 3) {
+  const sorted = [...changePoints].sort((a, b) => {
+    const riskOrder = { high: 0, medium: 1, low: 2 };
+    const ra = riskOrder[a.risk_level] ?? 2;
+    const rb = riskOrder[b.risk_level] ?? 2;
+    if (ra !== rb) return ra - rb;
+    const decOrder = { '删除': 0, '新增': 1, '改造': 2, '保留': 3 };
+    return (decOrder[a.decision] ?? 3) - (decOrder[b.decision] ?? 3);
+  });
+  return { items: sorted.slice(0, limit), remaining: Math.max(0, sorted.length - limit) };
+}
+
+function getTopRisks(impactRisk, crResults, limit = 3) {
+  const risks = [];
+  for (const r of (impactRisk?.risk_matrix || [])) {
+    if (String(r.severity || '').toLowerCase() === 'high') {
+      risks.push({ severity: 'high', source: 'risk-matrix', description: r.description || r.mitigation || '' });
+    }
+  }
+  for (const cr of crResults) {
+    for (const item of (cr.reworkItems || [])) {
+      const sev = String(item['严重度'] || item.severity || '').toLowerCase();
+      if (sev.includes('high') || sev.includes('critical')) {
+        risks.push({ severity: sev.includes('critical') ? 'critical' : 'high', source: `CR ${cr.dimension}`, description: item['问题描述'] || item.description || '' });
+      }
+    }
+  }
+  return { items: risks.slice(0, limit), remaining: Math.max(0, risks.length - limit) };
+}
+
+function renderFocusSummary({ currentStep, taskStats, crStats, changePoints, impactRisk, crResults }) {
+  const sentence = generateStatusSentence(currentStep, taskStats, crStats);
+  const topCPs = getTopChangePoints(changePoints);
+  const topRisks = getTopRisks(impactRisk, crResults);
+
+  const taskProgressParts = [];
+  const byStatus = taskStats.byStatus || {};
+  if (byStatus.approved) taskProgressParts.push(`${byStatus.approved} approved`);
+  if (byStatus.coding || byStatus.coded) taskProgressParts.push(`${(byStatus.coding || 0) + (byStatus.coded || 0)} coding`);
+  if (byStatus.needs_rework || byStatus.repairing) taskProgressParts.push(`${(byStatus.needs_rework || 0) + (byStatus.repairing || 0)} rework`);
+  if (byStatus.pending || byStatus.confirmed) taskProgressParts.push(`${(byStatus.pending || 0) + (byStatus.confirmed || 0)} pending`);
+
+  return `<section class="focus-summary" aria-label="状态聚焦">
+    <div class="focus-sentence">${escHtml(sentence)}</div>
+    <div class="focus-grid">
+      <div class="focus-block">
+        <div class="focus-block-title">关键变化点</div>
+        ${topCPs.items.length > 0 ? `<ul class="focus-list-compact">${topCPs.items.map(cp => `<li><span class="ref-chip cp">${escHtml(cp.id)}</span><span class="status s-${cp.risk_level === 'high' ? 'failed' : cp.risk_level === 'medium' ? 'needs_rework' : 'approved'}">${escHtml(cp.risk_level || 'low')}</span><span class="focus-desc">${escHtml(oneSentence(cp.summary || cp.node || cp.id, 60))}</span></li>`).join('')}</ul>${topCPs.remaining > 0 ? `<div class="focus-more"><button type="button" class="view-link" onclick="activateView('view-to-be')">+${topCPs.remaining} more</button></div>` : ''}` : '<p class="muted">暂无改造点</p>'}
+      </div>
+      <div class="focus-block">
+        <div class="focus-block-title">风险关注</div>
+        ${topRisks.items.length > 0 ? `<ul class="focus-list-compact">${topRisks.items.map(r => `<li><span class="status s-${r.severity === 'critical' ? 'fail' : 'failed'}">${escHtml(r.severity)}</span><span class="focus-desc">${escHtml(oneSentence(r.description, 70))}</span></li>`).join('')}</ul>${topRisks.remaining > 0 ? `<div class="focus-more">+${topRisks.remaining} 项风险</div>` : ''}` : '<p class="muted">暂无高风险项</p>'}
+      </div>
+      <div class="focus-block">
+        <div class="focus-block-title">Task 进度</div>
+        ${taskStats.total > 0 ? `<div class="progress-bar" style="height:8px;margin:6px 0"><div class="progress-fill ${taskStats.percentage === 100 ? 'fill-success' : 'fill-accent'}" style="width:${taskStats.percentage}%"></div></div><div class="focus-task-status">${taskProgressParts.join(' · ')}</div>` : '<p class="muted">暂无 Task</p>'}
+      </div>
+    </div>
+  </section>`;
+}
+
 function traceTypeLabel(type) {
   return ({ requirement: 'REQ 需求', acceptance_criteria: 'AC 验收', verification: 'VC/VER 验证', constraint: 'C 约束', risk: 'RISK 风险', risk_mitigation: '风险缓解' })[type] || type;
 }
@@ -700,7 +795,7 @@ function renderTaskStatusCard(tasks, taskDetails) {
   </div>`;
 }
 
-function renderCrSection(crResults, taskDetails) {
+function renderCrSection(crResults, taskDetails, reviewReportMd) {
   return `<div class="card">
     <h2>CR 维度结果</h2>
     ${crResults.length > 0 ? `
@@ -715,11 +810,13 @@ function renderCrSection(crResults, taskDetails) {
       ]);
     })()}
     <div class="tabs" data-group="cr-detail">
-      <button class="tab active" data-tab="cr-summary">总览</button>
+      <button class="tab active" data-tab="cr-report">总报告</button>
+      <button class="tab" data-tab="cr-summary">维度总览</button>
       <button class="tab" data-tab="cr-rework">Rework Items</button>
       <button class="tab" data-tab="cr-obs">Observations</button>
     </div>
-    <div class="tab-content active" id="cr-summary">
+    <div class="tab-content active" id="cr-report">${reviewReportMd ? mdToHtml(reviewReportMd) : '<p class="muted">CR 完成后将自动生成汇总报告。如需手动生成：<code>node scripts/cr-report.mjs {idea-dir}</code></p>'}</div>
+    <div class="tab-content" id="cr-summary">
       <div class="table-wrap"><table>
         <tr><th>维度</th><th>结果</th><th>Rework</th><th>Obs</th></tr>
         ${crResults.map(r => `<tr><td>${escHtml(r.dimension)}</td><td><span class="status s-${r.result}">${escHtml(r.result)}</span></td><td>${r.reworkItems?.length || 0}</td><td>${r.observations?.length || 0}</td></tr>`).join('')}
@@ -1252,6 +1349,10 @@ if (!IDEA_DIR || !existsSync(IDEA_DIR)) {
 const workflowState = readWorkflowState(IDEA_DIR);
 const taskState = readTaskState(taskStateFile(IDEA_DIR));
 const crResults = collectCrResults(IDEA_DIR);
+let reviewReportMd = readMd(IDEA_DIR, 'cr/review-report.md');
+if (!reviewReportMd && crResults.length > 0) {
+  try { generateCrReport(IDEA_DIR); reviewReportMd = readMd(IDEA_DIR, 'cr/review-report.md'); } catch { /* ignore generation failure */ }
+}
 const traceability = collectTraceability(IDEA_DIR);
 const impactRisk = readJson(IDEA_DIR, 'to-be/impact-risk-report.json');
 const requirement = readMd(IDEA_DIR, 'requirement.md');
@@ -1406,6 +1507,21 @@ tr:hover td{background:var(--surface-hover)}
 .timeline-item::before{content:'';position:absolute;left:-3px;top:12px;width:5px;height:5px;border-radius:50%;background:var(--accent);border:1px solid var(--bg)}
 .timeline-item .time{color:var(--text2);min-width:140px;font-family:var(--font-mono);font-size:0.72rem}
 
+/* Focus summary */
+.focus-summary{background:linear-gradient(135deg,rgba(59,130,246,.06),rgba(139,92,246,.04));border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px}
+.focus-sentence{font-size:1.05rem;font-weight:650;color:var(--text);margin-bottom:12px;letter-spacing:-.01em}
+.focus-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.focus-block{background:rgba(255,255,255,.025);border:1px solid var(--border-light);border-radius:10px;padding:12px}
+.focus-block-title{font-size:.68rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text2);margin-bottom:8px}
+.focus-list-compact{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.focus-list-compact li{display:flex;align-items:center;gap:6px;font-size:.8rem}
+.focus-desc{color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.focus-more{font-size:.72rem;color:var(--accent);margin-top:6px}
+.focus-task-status{font-size:.78rem;color:var(--text2);margin-top:4px}
+.view-link{background:none;border:none;color:var(--accent);cursor:pointer;font-family:var(--font-sans);font-size:.72rem;padding:0}
+.view-link:hover{text-decoration:underline}
+@media(max-width:900px){.focus-grid{grid-template-columns:1fr}}
+
 /* Refresh indicator */
 .refresh-indicator{position:fixed;bottom:16px;right:16px;background:var(--surface);border:1px solid var(--border);border-radius:100px;padding:6px 14px;font-size:0.68rem;font-family:var(--font-mono);color:var(--text2);display:flex;align-items:center;gap:8px;z-index:50;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
 .refresh-indicator .ri-bar{width:40px;height:3px;background:var(--surface2);border-radius:2px;overflow:hidden}
@@ -1469,6 +1585,8 @@ canvas{max-height:260px}
   </div>
 </header>
 
+${renderFocusSummary({ currentStep: DATA.currentStep, taskStats: dashboardSummary.taskStats, crStats: dashboardSummary.crStats, changePoints, impactRisk, crResults })}
+
 <section aria-label="仪表盘总览指标">
   ${renderMetricGrid([
     metricCard('总执行进度', `${dashboardSummary.workflowPercentage}%`, `${dashboardSummary.workflowDone}/${dashboardSummary.workflowTotal} 步`, 'accent'),
@@ -1508,7 +1626,7 @@ canvas{max-height:260px}
     </div>
   </section>
   <section class="view-panel" id="view-cr" tabindex="-1">
-    ${renderCrSection(crResults, taskDetails)}
+    ${renderCrSection(crResults, taskDetails, reviewReportMd)}
   </section>
   <section class="view-panel" id="view-timeline" tabindex="-1">
     <div class="panel-stack">
