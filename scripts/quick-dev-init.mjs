@@ -16,25 +16,51 @@ function readJson(rel) {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 }
 
+function parseRequirementForHotfix(ideaDir) {
+  const reqPath = join(ideaDir, 'requirement.md');
+  if (!existsSync(reqPath)) return null;
+  const text = readFileSync(reqPath, 'utf8');
+  const titleMatch = text.match(/^#\s+(.+)$/m);
+  const goal = titleMatch ? titleMatch[1].trim() : 'hotfix';
+  return {
+    goal,
+    acceptanceCriteria: [{ id: 'AC-001', description: goal, verification_method: 'manual' }],
+    traceRefs: ['AC-001'],
+  };
+}
+
 function main() {
+  const complexity = detectComplexity(IDEA_DIR);
   const clarification = readJson('requirement-clarification.json');
-  if (!clarification) {
-    process.stderr.write(JSON.stringify({ error: 'requirement-clarification.json not found' }) + '\n');
+
+  let goal, acceptanceCriteria, traceRefs;
+
+  if (clarification) {
+    const dims = clarification.dimensions || {};
+    const functionalScope = dims.functional_scope || {};
+    acceptanceCriteria = Array.isArray(dims.acceptance_criteria) ? dims.acceptance_criteria : [];
+
+    if (acceptanceCriteria.length === 0) {
+      process.stderr.write(JSON.stringify({ error: 'acceptance_criteria is empty' }) + '\n');
+      process.exit(1);
+    }
+
+    const inScope = Array.isArray(functionalScope.in_scope) ? functionalScope.in_scope : [];
+    goal = inScope.length > 0 ? inScope.join('；') : 'implement trivial requirement';
+    traceRefs = acceptanceCriteria.map(ac => ac.id || `AC-${String(acceptanceCriteria.indexOf(ac) + 1).padStart(3, '0')}`);
+  } else if (complexity === 'hotfix') {
+    const hotfix = parseRequirementForHotfix(IDEA_DIR);
+    if (!hotfix) {
+      process.stderr.write(JSON.stringify({ error: 'requirement.md not found for hotfix' }) + '\n');
+      process.exit(1);
+    }
+    goal = hotfix.goal;
+    acceptanceCriteria = hotfix.acceptanceCriteria;
+    traceRefs = hotfix.traceRefs;
+  } else {
+    process.stderr.write(JSON.stringify({ error: 'requirement-clarification.json not found (required for non-hotfix)' }) + '\n');
     process.exit(1);
   }
-
-  const dims = clarification.dimensions || {};
-  const functionalScope = dims.functional_scope || {};
-  const acceptanceCriteria = Array.isArray(dims.acceptance_criteria) ? dims.acceptance_criteria : [];
-
-  if (acceptanceCriteria.length === 0) {
-    process.stderr.write(JSON.stringify({ error: 'acceptance_criteria is empty' }) + '\n');
-    process.exit(1);
-  }
-
-  const inScope = Array.isArray(functionalScope.in_scope) ? functionalScope.in_scope : [];
-  const goal = inScope.length > 0 ? inScope.join('；') : 'implement trivial requirement';
-  const traceRefs = acceptanceCriteria.map(ac => ac.id || `AC-${String(acceptanceCriteria.indexOf(ac) + 1).padStart(3, '0')}`);
 
   const taskId = 'task-001';
   const taskFile = `tasks/${taskId}.md`;
@@ -44,7 +70,6 @@ function main() {
 
   const acSection = acceptanceCriteria.map(ac => `- ${ac.id || 'AC'}: ${ac.description || ''} (${ac.verification_method || 'manual'})`).join('\n');
 
-  const complexity = detectComplexity(IDEA_DIR);
   const complexityLabel = complexity === 'hotfix' ? 'Hotfix' : complexity === 'minor' ? 'Minor' : complexity === 'trivial' ? 'Trivial' : complexity.charAt(0).toUpperCase() + complexity.slice(1);
 
   const taskMd = `---
@@ -77,8 +102,7 @@ ${goal}
 
 ## Context to Load
 
-- requirement.md
-- requirement-clarification.json
+- requirement.md${complexity !== 'hotfix' ? '\n- requirement-clarification.json' : ''}
 
 ## Traceability
 

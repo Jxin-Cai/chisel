@@ -27,7 +27,7 @@ user-invocable: false
 - **执行第一步（Spec 门槛）**——与 standard 相同
 - Spec fail → `--mark-cr-requirement needs_rework`，流程结束
 - Spec pass → **只启动 D3 + D4 + D5 三个维度**（去重、设计原则、风格一致性）
-- **D2/D6/D7/D8 不启动**——自动写入对应 `cr/dim-{dim}-cr.md`：
+- **D2/D6/D7/D8/D9 不启动**——自动写入对应 `cr/dim-{dim}-cr.md`：
   ```yaml
   dimension: {dim}
   result: pass
@@ -270,6 +270,11 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 9. 聚合判定：
    - **全部 pass** → `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement approved`
    - **任一 fail** → 合并所有 fail 维度的 affected_tasks（去重）→ `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement needs_rework <affected_tasks>`
+
+10. 生成 CR 汇总报告：`node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-report.mjs {IDEA_DIR}`
+    - 将所有 `cr/dim-*-cr.md` 聚合为 `cr/review-report.md`（结构化总报告）
+    - 包含 Summary 表、Dimension Results 表、Findings 详情、Observations 表
+    - 该步骤为幂等操作，每次 CR 结束（无论 approved 还是 needs_rework）都运行
 
 `--mark-cr-requirement` 是 task 状态机的需求级批量更新命令，不代表必须生成 `cr/requirement-cr.md`。新 CR contract 以 `cr/dim-spec-cr.md` 和 `cr/dim-d2-cr.md` 到 `cr/dim-d8-cr.md` 为准；`cr/requirement-cr.md` 仅为旧运行态兼容产物。
 
