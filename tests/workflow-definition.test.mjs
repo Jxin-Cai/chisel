@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ALL_COMPLEXITIES, STEP_GATE_MAP, STEP_TO_PHASE, WORKFLOW_DEFINITION, WORKFLOW_PATHS } from '../scripts/workflow-definition.mjs';
+import { renderOrchestrationProjection } from '../scripts/workflow-projector.mjs';
 
 function orchestrationContract() {
   const text = readFileSync(join(process.cwd(), 'skills/chisel-contracts/orchestration.yaml'), 'utf8');
@@ -37,6 +38,11 @@ describe('canonical workflow definition', () => {
   });
 
   it('keeps the human orchestration contract aligned', () => {
+    assert.equal(
+      readFileSync(join(process.cwd(), 'skills/chisel-contracts/orchestration.yaml'), 'utf8'),
+      renderOrchestrationProjection(),
+      'compatibility projection must be generated from workflow-definition.json',
+    );
     const contract = orchestrationContract();
     for (const [step, config] of Object.entries(WORKFLOW_DEFINITION.steps)) {
       if (!config.gate) continue;

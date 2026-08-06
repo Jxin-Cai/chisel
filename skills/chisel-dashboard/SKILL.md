@@ -12,7 +12,7 @@ allowed-tools: Bash, Read
 ## 执行流程
 
 1. 从 `$ARGUMENTS` 解析 idea-name
-2. 设 `{IDEA_DIR}` = `.chisel/<idea-name>/`
+2. 运行 `control-plane.mjs --project-root . --idea <idea-name>`，将输出设为 `{IDEA_DIR}`
 3. 运行生成器：
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard.mjs {IDEA_DIR}

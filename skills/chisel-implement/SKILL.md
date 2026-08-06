@@ -57,14 +57,14 @@ digraph implement_flow {
      - 升级记录写入 `task-metrics.mjs` 的 `escalated_model` 和 `fresh_agent` 字段
 2. 如果没有 rework task，运行 `--next-tasks code`
 3. **单 task** → 串行执行：
-   - `--start-task <task-id> --project-root .`（记录 task 开始前的 Git/工作区基线；已有脏改动不会被归到该 task）
+   - `--start-task <task-id> --project-root . --owner main-orchestrator`；保存返回的 `run_id`，后续 heartbeat 和 finish 必须使用它
    - 读取 task 文件 frontmatter 的 `task_complexity` 字段，选择 model override：
      - `trivial` / `standard` 或未指定 → `agent-chisel-coder`（默认 sonnet）
      - `complex` → `agent-chisel-coder`，model override: opus
    - 预打包 coder 上下文：`node ${CLAUDE_PLUGIN_ROOT}/scripts/coder-prepare.mjs {IDEA_DIR} <task-id> .`
    - 启动选定的 coder agent，传入 TASK：
      ```json
-     { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>", "task_file": "tasks/<task-id>.md" }
+     { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>", "task_file": "tasks/<task-id>.md", "run_id": "<run-id>" }
      ```
    - coder 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-metrics.mjs {IDEA_DIR} <task-id>`
    - 检查 coder 返回的 Completion Status：
@@ -75,9 +75,13 @@ digraph implement_flow {
 
 ### Post-coding Build Verification
 
-当所有 task 的 `--finish-task coded` 成功后（进入 review 前），执行构建验证：
+长耗时编码或验证前，运行 `workflow-status.mjs {IDEA_DIR} --heartbeat <task-id> --run-id <run-id>` 续租。coder 完成后使用 `--finish-task <task-id> coded --run-id <run-id>`；旧 run 不得提交。
+
+当所有 task 完成（进入 review 前），先生成并检查显式验证契约，再执行验证：
 
 ```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --init-contract
+# 检查 verification-contract.json 中每个 repo 的 required checks，必要时补充 CI/项目特有命令
 node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} .
 ```
 

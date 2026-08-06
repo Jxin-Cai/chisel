@@ -13,7 +13,8 @@ disable-model-invocation: true
 | 文件 | 用途 |
 |------|------|
 | `workflow.yaml` | 阶段定义和 task 状态机 |
-| `orchestration.yaml` | 编排步骤和 gate 映射 |
+| `workflow-definition.json` | 编排 step / phase / gate / complexity path 的唯一定义 |
+| `orchestration.yaml` | 从 canonical JSON 生成的旧消费者兼容投影 |
 | `references/task-template.md` | task 文件模板，包含 task frontmatter 元数据 |
 | `references/clarifications-template.md` | understand:confirm 产物模板 |
 | `references/knowledge-candidates-template.md` | 单次迭代结束后的长期知识候选模板 |
@@ -24,7 +25,7 @@ disable-model-invocation: true
 
 ## 运行态目录
 
-`.chisel/<idea-name>/`
+`control-plane.mjs --project-root . --idea <idea-name>` 的输出（默认 Git common root 下 `.chisel/<idea-name>/`）
 
 ## 长期知识目录
 

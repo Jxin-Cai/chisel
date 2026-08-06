@@ -6,7 +6,7 @@
 
 | 来源 | 读取 |
 |------|------|
-| TASK | `idea_dir`、`task_id`、`task_file`、`parallel`（可选） |
+| TASK | `idea_dir`、`task_id`、`task_file`、`run_id`、`parallel`（可选） |
 | task 文件 | 目标、修改范围 |
 | requirement | 目标和约束（快速过一遍） |
 | to-be/implementation-plan.md | 本 task 对应的方案段落 |
@@ -32,12 +32,13 @@
      - `implementation_plan_excerpt`（to-be 中本 task 的方案段落）
    - 不存在 → 按下方原流程手动读取（向后兼容）
 
-0. **建立执行归属** — 若 TASK 中 `parallel` 为 true，进入临时 worktree 后先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --rebase-baseline --project-root .`。然后检查不变量：若步骤 0.5 已获取 `invariants` 则使用预打包数据；否则若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束。
-1. **Wiki 查询** — 若步骤 0.5 已获取 `wiki_results` 则跳过；否则按 agent-shared-rules §1 执行查询
+0. **建立执行归属** — 若 TASK 中 `parallel` 为 true，进入临时 worktree 后先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --rebase-baseline --project-root . --run-id {run_id}`。然后检查不变量：若步骤 0.5 已获取 `invariants` 则使用预打包数据；否则若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束。
+1. **Wiki 查询** — 若步骤 0.5 已获取 `wiki_results` 则跳过；否则按 `chisel-core/references/agent-protocol.md` §1 执行查询
 2. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
 3. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。
 4. **实现** — 修改代码，靠齐 as-is 风格
 5. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
+长耗时构建/测试前，运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {idea_dir} --heartbeat {task_id} --run-id {run_id}` 续租。
 
 6. **Diff 自检** — 运行 `git diff` 查看自己的全部变更，按以下清单快速检查：
    - 是否引入了明显 bug（逻辑错误、空值处理、off-by-one）？
@@ -57,10 +58,10 @@
    - NEEDS_CONTEXT：缺少关键信息无法继续，不写 report，不标状态
    - BLOCKED：遇到无法绕过的阻碍（如依赖缺失、权限不足）
 9. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：
-   - DONE / DONE_WITH_CONCERNS → `--finish-task {task_id} coded`
-   - BLOCKED → `--finish-task {task_id} failed`
+   - DONE / DONE_WITH_CONCERNS → `--finish-task {task_id} coded --run-id {run_id}`
+   - BLOCKED → `--finish-task {task_id} failed --run-id {run_id}`
    - NEEDS_CONTEXT → 不更新状态，直接结束并在输出中说明缺失信息
-   - parallel task 在返回前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --finish`，只冻结结果归属，不更新 workflow 状态
+   - parallel task 在返回前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --finish --run-id {run_id}`，只冻结结果归属，不更新 workflow 状态
 
 ## 限制
 
@@ -69,4 +70,4 @@
 - 不跳过 task report
 - 不改 as-is/to-be 文档
 - 不修改 task 文件中 `Forbidden Files / Areas` 列出的文件
-- 如果发现代码坏味道，记录在 report 的 Knowledge Candidates 中，按 agent-shared-rules §2 写入候选 JSON
+- 如果发现代码坏味道，记录在 report 的 Knowledge Candidates 中，按 `chisel-core/references/agent-protocol.md` §2 写入候选 JSON

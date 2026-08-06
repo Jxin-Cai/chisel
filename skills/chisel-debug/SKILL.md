@@ -13,7 +13,7 @@ user-invocable: false
 
 - `idea-name`：需求名称
 - `task-id`：反复返修的 task ID
-- `{IDEA_DIR}` = `.chisel/<idea-name>/`
+- `{IDEA_DIR}` = `control-plane.mjs --project-root . --idea <idea-name>` 的输出
 
 ## 执行流程
 

@@ -3,6 +3,10 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 
+function contractFingerprint(contract) {
+  return createHash('sha256').update(JSON.stringify(contract)).digest('hex');
+}
+
 function gitOutput(projectRoot, args) {
   return execFileSync('git', args, {
     cwd: projectRoot,
@@ -50,6 +54,14 @@ export function validateVerificationResult(ideaDir, projectRoot = '.') {
   }
   if (result.schema_version !== 2) return 'verify-result.json schema_version must be 2';
   if (result.status !== 'pass') return `verification status must be pass but is ${result.status || 'missing'}`;
+  const contractPath = join(ideaDir, 'verification-contract.json');
+  if (existsSync(contractPath)) {
+    let contract;
+    try { contract = JSON.parse(readFileSync(contractPath, 'utf8')); }
+    catch (error) { return `verification-contract.json invalid JSON: ${error.message}`; }
+    if (result.verification_contract?.source !== 'explicit') return 'verification result is not bound to the explicit contract';
+    if (result.verification_contract.fingerprint !== contractFingerprint(contract)) return 'verification is stale: verification contract changed';
+  }
   const repositories = Array.isArray(result.repositories) && result.repositories.length > 0
     ? result.repositories
     : [{ project_root: projectRoot, git_head: result.git_head, workspace_fingerprint: result.workspace_fingerprint, checks: result.checks }];

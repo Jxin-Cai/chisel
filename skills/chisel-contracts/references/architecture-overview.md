@@ -2,7 +2,7 @@
 
 ## 设计原则
 
-所有执法机制均派生自 5 条不可违反的设计原则（详见 `_shared/references/iron-rules.md`）：
+所有执法机制均派生自 5 条不可违反的设计原则（详见 `chisel-core/references/iron-rules.md`）：
 
 - **P1 穷举枚举**：有限域路由表必须覆盖全部变体，新增变体原子更新所有消费者
 - **P2 状态转移完整性**：状态变更经唯一正规函数，附带全部副作用
@@ -10,17 +10,19 @@
 - **P4 副作用一致性**：修改可观测状态时更新所有下游消费者
 - **P5 唯一正规来源**：同一知识只定义一次，其他处导入
 
-原则到执法机制的完整映射见 `_shared/references/principle-enforcement-map.md`。
+原则到执法机制的完整映射见 `chisel-core/references/principle-enforcement-map.md`。
 
 ## 架构要点
 
 - 单一插件 `chisel`，主入口 skill 是 `/chisel`。
-- 运行态产物写入业务仓库的 `.chisel/<idea-name>/`。
+- 运行态产物写入 `control-plane.mjs` 解析的 Git common root `.chisel/<idea-name>/`；主工作区和 linked worktree 共享同一控制面，也可用 `CHISEL_CONTROL_ROOT` 覆盖。
 - `skills/chisel-contracts/workflow-definition.json` 是 step/phase/gate/complexity path 的唯一机器定义；脚本通过 `workflow-definition.mjs` 加载，不再复制枚举。
-- `scripts/orchestration-status.mjs` 是严格只读的恢复点判定入口。
+- `scripts/orchestration-status.mjs` 是严格只读的恢复点计算器；`orchestration-runner.mjs` 持久化 runner 租约、iteration 和最后决策，恢复事务后驱动显式 transition。
 - `scripts/orchestration-transition.mjs` 是 workflow step 的唯一写入口：校验权威 resume step 与 expected revision，持有 transition lock，记录 `events.ndjson`，再更新 dashboard 投影。
-- `scripts/workflow-status.mjs` 和 `scripts/workflow-lib.mjs` 管理 task 状态机。
-- `scripts/task-provenance.mjs` 为每个 task/attempt 记录执行前基线和执行后结果指纹；scope、报告 gate 与指标只归属基线之后的真实变更。
+- `scripts/workflow-status.mjs` 和 `scripts/workflow-lib.mjs` 管理 task 状态机；task state 与 provenance 通过 durable file transaction 原子提交。
+- `scripts/task-provenance.mjs` 为每个 task/attempt 记录 `run_id`、owner、lease/heartbeat、执行前基线和执行后结果指纹；过期 lease 会留下 abandoned 审计记录，旧 run 不能提交。
+- `scripts/verify-run.mjs` 将验证结果绑定到显式 `verification-contract.json` 以及当前 Git/workspace 指纹。
+- `scripts/review-budget.mjs` 从 `review-policy.json` 生成有界 review batches 和 skeptic 预算。
 - `scripts/gate-check.mjs` 管理每步 postcondition。
 - `scripts/scope-check.mjs` 检查变更文件是否越界或触碰禁区。
 - `scripts/multi-repo-worktree.mjs` 多仓 worktree 检测/创建/状态/清理（支持非 git 工作空间下的多 git 仓库场景）。
@@ -34,12 +36,12 @@
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check/wiki 数据写入 `cr-context.json`，D2-D9 agent 共用。
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
 - `scripts/session-metrics.mjs` 记录每个 idea 的步骤耗时、agent 调用次数、返修轮次等效率指标。
-- `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照（源码 HEAD/工作区指纹 + 完整 workflow artifact payload + 可选 git tag）。一致性恢复仅在源码身份与快照相同后执行；额外 artifact 会移动到 recovery 目录。`--force-state-only` 只用于人工应急，并明确标记为非一致恢复。
+- `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照，同时按数量（8）和总大小（25 MiB）双重上限清理，runner/events/transaction journal 不进入快照 payload。
 - **理解阶段**（`chisel-understand`）由主编排器调度三个 subagent：先调用原生 Explore subagent 侦察定位文件，然后调用 `agent-chisel-analyst`(sonnet) 深度走查产出结构化数据（evidence-ledger.json + coverage-matrix.json + ai-input/*.md），最后调用 `agent-chisel-writer`(sonnet) 从结构化数据生成面向人类的图文文档。主编排器只负责调度和质量验证，不直接 Read 业务代码。
 - **规划阶段**（`chisel-plan`）由主编排器直接执行：先调用原生 Plan subagent 设计方案框架，然后主编排器精化并写入 JSON 产物（tasks.json + traceability-matrix.json + impact-risk-report.json）+ 执行 6 步变更完整性自检，最后调用 `agent-chisel-writer`(sonnet) 生成 implementation-plan.md。
 - `agent-chisel-writer` 从结构化产物（JSON/md 表格）生成面向人类的图文中文文档（含 Mermaid），不探索代码、不做设计决策。支持 as-is 和 to-be 两种模式。
 - `agent-chisel-coder` 只按已确认 task 实现，完成后执行 diff 自检（bug/AC/scope 三项检查）。支持 model override：trivial/standard 用 sonnet，complex 用 opus，返修升级时也通过 model override 切换。
-- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查（非全文件），优先从 `cr-context.json` 预计算数据读取，每次加载一个维度定义文件（dim-spec/dim-d2~d9）执行单维度深度审查。dim-spec 包含伴生产物完整性检查（后端规则：加字段→DDL、加接口→路由+DTO；前端规则：DTO加字段→前端类型+页面适配、接口响应变更→前端渲染适配）和全链路字段透传验证。每个发现项附带 0-100 置信度评分，≥80 进 Rework Items 触发返修，60-79 进 Observations 供参考。D2/D7/D8/D9 按变更特征条件激活，D3-D6 始终激活。fail 项经对抗性验证（standard/complex: 3-agent skeptic 投票；trivial/moderate: 单次 sonnet 验证）确认后聚合。
+- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查，每次加载一个维度定义。维度 batch 与 skeptic 验证严格受 `review-policy.json` 限制；高风险 finding 使用 3 角度投票，low/medium 使用单次验证，超出预算时串行 fallback，不再无界 fan-out。
 
 ## As-Is 分层结构
 

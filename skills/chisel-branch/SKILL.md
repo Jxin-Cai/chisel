@@ -20,7 +20,7 @@ argument-hint: "<convert|merge-to-main|sync-from-main> [idea-name]"
 | `merge-to-main [idea-name]` | 将特性分支合并到主干（含冲突智能分析） |
 | `sync-from-main [idea-name]` | 将主干最新变更同步到特性分支（含冲突智能分析） |
 
-若未指定 idea-name，检查当前工作目录下的 `.chisel/` 是否有唯一活跃 idea（只有一个包含 `worktree-decision.json` 的子目录）。若有多个，列出让用户选择。
+若未指定 idea-name，先运行 `control-plane.mjs --project-root .` 获取共享控制面，检查其中是否有唯一活跃 idea。若有多个，列出让用户选择。
 
 ---
 
@@ -29,7 +29,8 @@ argument-hint: "<convert|merge-to-main|sync-from-main> [idea-name]"
 ### 1. 读取决策文件
 
 ```bash
-cat .chisel/<idea-name>/worktree-decision.json
+IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>)
+cat "$IDEA_DIR/worktree-decision.json"
 ```
 
 若文件不存在或 `mode` = `current-branch`，告知用户当前未使用 worktree 隔离，无需转换。

@@ -4,6 +4,7 @@ import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   allTasksApproved,
+  classifyChange,
   detectComplexity,
   detectRepairStall,
   getBlockedReworkTasks,
@@ -38,10 +39,17 @@ function readPreviousStep(ideaDir) {
 }
 
 function emit(resumeStep, reason, phaseDetail = {}) {
-  const complexity = phaseDetail.complexity || (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? detectComplexity(IDEA_DIR) : 'standard');
+  const assessment = IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)
+    ? classifyChange(IDEA_DIR)
+    : { delivery_complexity: 'standard', risk_level: 'low', uncertainty_level: 'low', routing_complexity: 'standard', reasons: [] };
+  const complexity = phaseDetail.complexity || assessment.routing_complexity;
   console.log(`resume_step: ${resumeStep}`);
   console.log(`reason: ${JSON.stringify(reason)}`);
   console.log(`complexity: ${complexity}`);
+  console.log(`delivery_complexity: ${assessment.delivery_complexity}`);
+  console.log(`risk_level: ${assessment.risk_level}`);
+  console.log(`uncertainty_level: ${assessment.uncertainty_level}`);
+  if (assessment.reasons.length > 0) console.log(`routing_reasons: ${JSON.stringify(assessment.reasons)}`);
   const currentStep = IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? readPreviousStep(IDEA_DIR) : null;
   const revision = IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? readWorkflowRevision(IDEA_DIR) : 0;
   console.log(`current_step: ${currentStep || 'none'}`);
@@ -92,8 +100,9 @@ function isInWorktree() {
 }
 
 function dryRunPlan() {
-  const complexity = (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR))
-    ? detectComplexity(IDEA_DIR) : 'standard';
+  const assessment = (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR))
+    ? classifyChange(IDEA_DIR) : { routing_complexity: 'standard' };
+  const complexity = assessment.routing_complexity;
 
   const steps = WORKFLOW_PATHS[complexity] || WORKFLOW_PATHS.standard;
   const currentStep = readPreviousStep(IDEA_DIR);
@@ -124,7 +133,7 @@ function main() {
     return;
   }
 
-  const complexity = detectComplexity(IDEA_DIR);
+  const complexity = classifyChange(IDEA_DIR).routing_complexity;
 
   // === HOTFIX QUICK PATH ===
   if (complexity === 'hotfix') {

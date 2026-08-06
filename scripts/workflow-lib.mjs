@@ -157,8 +157,7 @@ export function normalizeImpactSurface(surface = {}) {
   };
 }
 
-export function writeTaskState(file, state) {
-  ensureDir(dirname(file));
+export function serializeTaskState(state) {
   const out = [];
   out.push(`idea: ${state.idea || ''}`);
   out.push('tasks:');
@@ -180,7 +179,12 @@ export function writeTaskState(file, state) {
     out.push(`    loc_added: ${Number(task.loc_added || 0)}`);
     out.push(`    loc_deleted: ${Number(task.loc_deleted || 0)}`);
   }
-  atomicWriteFile(file, `${out.join('\n')}\n`);
+  return `${out.join('\n')}\n`;
+}
+
+export function writeTaskState(file, state) {
+  ensureDir(dirname(file));
+  atomicWriteFile(file, serializeTaskState(state));
 }
 
 export function initWorkflowState(ideaDir, ideaName) {
@@ -270,15 +274,12 @@ export function readWorkflowRevision(ideaDir) {
   return Number(readFileSync(file, 'utf8').match(/^revision:\s*(\d+)$/m)?.[1] || 0);
 }
 
-export function updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases = false, expectedRevision, incrementRevision = false } = {}) {
-  const file = workflowStateFile(ideaDir);
-  if (!existsSync(file)) return;
-  let text = readFileSync(file, 'utf8');
+export function renderWorkflowPhaseUpdate(sourceText, stepId, { resetLaterPhases = false, expectedRevision, incrementRevision = false, now = new Date().toISOString() } = {}) {
+  let text = String(sourceText || '');
   const currentRevision = Number(text.match(/^revision:\s*(\d+)$/m)?.[1] || 0);
   if (expectedRevision !== undefined && currentRevision !== Number(expectedRevision)) {
     throw new Error(`workflow revision conflict: expected ${expectedRevision}, actual ${currentRevision}`);
   }
-  const now = new Date().toISOString();
   const previousStep = text.match(/^current_step:\s*(.+)$/m)?.[1]?.trim() || '';
   text = text.replace(/^last_updated_at:.*$/m, `last_updated_at: ${now}`);
   text = text.replace(/^current_step:.*$/m, `current_step: ${stepId}`);
@@ -313,8 +314,18 @@ export function updateWorkflowPhase(ideaDir, stepId, { resetLaterPhases = false,
     history.push({ step: stepId, entered_at: now });
   }
 
-  atomicWriteFile(file, replaceWorkflowStepHistory(text, history));
-  return { previous_step: previousStep, current_step: stepId, previous_revision: currentRevision, revision: currentRevision + (incrementRevision ? 1 : 0) };
+  return {
+    content: replaceWorkflowStepHistory(text, history),
+    transition: { previous_step: previousStep, current_step: stepId, previous_revision: currentRevision, revision: currentRevision + (incrementRevision ? 1 : 0) },
+  };
+}
+
+export function updateWorkflowPhase(ideaDir, stepId, options = {}) {
+  const file = workflowStateFile(ideaDir);
+  if (!existsSync(file)) return;
+  const rendered = renderWorkflowPhaseUpdate(readFileSync(file, 'utf8'), stepId, options);
+  atomicWriteFile(file, rendered.content);
+  return rendered.transition;
 }
 
 export function transitionWorkflowPhase(ideaDir, stepId, expectedRevision) {
@@ -465,10 +476,8 @@ export function getTasksImpactOverlap(ideaDir, taskIds) {
   return [...unique.values()];
 }
 
-export function updateTaskStatus(ideaDir, taskId, nextStatus) {
+export function applyTaskStatus(state, taskId, nextStatus, { now = new Date().toISOString() } = {}) {
   if (!TASK_STATES.includes(nextStatus)) throw new Error(`invalid task status: ${nextStatus}`);
-  const file = taskStateFile(ideaDir);
-  const state = readTaskState(file);
   const task = state.tasks[taskId];
   if (!task) throw new Error(`unknown task: ${taskId}`);
   const current = task.status || 'pending';
@@ -477,8 +486,15 @@ export function updateTaskStatus(ideaDir, taskId, nextStatus) {
   }
   task.status = nextStatus;
   if (nextStatus === 'coding' || nextStatus === 'repairing') {
-    task.started_at = new Date().toISOString();
+    task.started_at = now;
   }
+  return task;
+}
+
+export function updateTaskStatus(ideaDir, taskId, nextStatus) {
+  const file = taskStateFile(ideaDir);
+  const state = readTaskState(file);
+  const task = applyTaskStatus(state, taskId, nextStatus);
   writeTaskState(file, state);
   return task;
 }
@@ -848,12 +864,31 @@ export function getStaleCodingTasks(ideaDir, thresholdMs = 30 * 60 * 1000) {
   const state = readTaskState(taskStateFile(ideaDir));
   const now = Date.now();
   return Object.entries(state.tasks)
-    .filter(([, task]) => {
+    .filter(([taskId, task]) => {
       if (task.status !== 'coding' && task.status !== 'repairing') return false;
+      const provenanceFile = join(ideaDir, 'task-runs', `${taskId}.json`);
+      if (existsSync(provenanceFile)) {
+        try {
+          const run = JSON.parse(readFileSync(provenanceFile, 'utf8'));
+          const attempt = run.attempts?.[run.attempts.length - 1];
+          if (attempt && !attempt.finished_at && !attempt.abandoned_at && attempt.lease_until) {
+            return new Date(attempt.lease_until).getTime() <= now;
+          }
+        } catch { /* malformed provenance falls back to legacy stale detection */ }
+      }
       if (!task.started_at) return false;
       return now - new Date(task.started_at).getTime() > thresholdMs;
     })
-    .map(([taskId, task]) => ({ taskId, status: task.status, started_at: task.started_at }));
+    .map(([taskId, task]) => {
+      const provenanceFile = join(ideaDir, 'task-runs', `${taskId}.json`);
+      let lease = {};
+      try {
+        const run = JSON.parse(readFileSync(provenanceFile, 'utf8'));
+        const attempt = run.attempts?.[run.attempts.length - 1] || {};
+        lease = { run_id: attempt.run_id, owner: attempt.owner, lease_until: attempt.lease_until };
+      } catch { /* legacy task */ }
+      return { taskId, status: task.status, started_at: task.started_at, ...lease };
+    });
 }
 
 export function detectRepairStall(ideaDir) {
@@ -938,4 +973,38 @@ export function detectComplexity(ideaDir) {
   }
   if (scopeItems > 5) return 'complex';
   return 'standard';
+}
+
+export function classifyChange(ideaDir) {
+  const delivery_complexity = detectComplexity(ideaDir);
+  let risk_level = 'low';
+  let uncertainty_level = 'low';
+  const reasons = [];
+  const requirementPath = join(ideaDir, 'requirement.md');
+  const requirement = existsSync(requirementPath) ? readFileSync(requirementPath, 'utf8') : '';
+  const explicitRisk = requirement.match(/^##\s*(?:风险|Risk)(?:[：:]\s*|\s*\n\s*)(low|medium|high)\s*$/im)?.[1]?.toLowerCase();
+  if (explicitRisk) risk_level = explicitRisk;
+  const reportPath = join(ideaDir, 'impact-risk-report.json');
+  if (existsSync(reportPath)) {
+    try {
+      const reportRisk = JSON.parse(readFileSync(reportPath, 'utf8'))?.summary?.risk_level;
+      if (['low', 'medium', 'high'].includes(reportRisk)) risk_level = reportRisk;
+    } catch { uncertainty_level = 'high'; reasons.push('impact-risk-report is malformed'); }
+  } else if (!explicitRisk && /(auth|permission|token|payment|billing|migration|ddl|delete|security|鉴权|权限|支付|迁移|删除|安全)/i.test(requirement)) {
+    risk_level = 'high';
+    reasons.push('requirement contains a high-risk change signal');
+  }
+  if (/\b(TBD|unknown|unclear|open question)\b|待定|未知|不明确|待确认/i.test(requirement)) {
+    uncertainty_level = 'high';
+    reasons.push('requirement contains unresolved uncertainty');
+  }
+  const order = ['hotfix', 'minor', 'trivial', 'moderate', 'standard', 'complex'];
+  let routing_complexity = delivery_complexity;
+  const promote = target => {
+    if (order.indexOf(routing_complexity) < order.indexOf(target)) routing_complexity = target;
+  };
+  if (risk_level === 'high' || uncertainty_level === 'high') promote('standard');
+  else if (risk_level === 'medium') promote('moderate');
+  if (routing_complexity !== delivery_complexity) reasons.push(`route promoted from ${delivery_complexity} to ${routing_complexity}`);
+  return { delivery_complexity, risk_level, uncertainty_level, routing_complexity, reasons };
 }

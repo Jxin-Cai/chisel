@@ -85,7 +85,12 @@ describe('workflow review recovery', () => {
     const result = runWorkflowStatus(ideaDir, '--start-task', 'task-001');
 
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout), { updated: true, task_id: 'task-001', status: 'repairing', provenance: 'started' });
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.updated, true);
+    assert.equal(output.task_id, 'task-001');
+    assert.equal(output.status, 'repairing');
+    assert.equal(output.owner, 'main-orchestrator');
+    assert.match(output.run_id, /^[0-9a-f-]{36}$/);
     assert.equal(readTaskState(taskStateFile(ideaDir)).tasks['task-001'].status, 'repairing');
   });
 });

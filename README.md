@@ -110,7 +110,7 @@ Or pass a requirement file:
 /chisel docs/requirements/user-phone-validation.md
 ```
 
-Chisel creates a runtime artifact directory `.chisel/<idea-name>/` in your business repo, recording requirement understanding, confirmation results, implementation plans, task states, CR conclusions, and knowledge candidates.
+Chisel stores runtime artifacts under the Git common root at `.chisel/<idea-name>/`, so the main checkout and linked worktrees share one control plane. Set `CHISEL_CONTROL_ROOT` to override it.
 
 <br/>
 
@@ -179,7 +179,8 @@ When multiple tasks have no file overlap:
 Preview rollback impact before executing:
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs .chisel/<idea-name> --rollback-step <step> --dry-run
+IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>)
+node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-step <step> --dry-run
 ```
 
 Rollback only cleans whitelisted runtime artifacts — never deletes business source code, wiki, or knowledge candidates.
@@ -270,7 +271,7 @@ After coding, `scope-check.mjs` verifies:
 
 ### Stale Detection
 
-Tasks in `coding`/`repairing` state for > 30 minutes trigger a stale warning in orchestration status.
+A task becomes stale when its `run_id` lease expires. Long operations renew the lease with a heartbeat instead of relying on a fixed 30-minute guess.
 
 <br/>
 
@@ -301,7 +302,9 @@ Tasks in `coding`/`repairing` state for > 30 minutes trigger a stale warning in 
 
 | Script | Description |
 |---|---|
-| `orchestration-status.mjs` | Side-effect-free recovery point and complexity detection |
+| `orchestration-runner.mjs` | Durable leased runner with crash recovery and idempotent transitions |
+| `orchestration-status.mjs` | Side-effect-free authoritative recovery-point calculation |
+| `control-plane.mjs` | Resolves the shared control plane across linked worktrees |
 | `orchestration-transition.mjs` | Explicit revision-checked state transition and event recording |
 | `gate-check.mjs` | Phase postcondition gate validation |
 | `task-init.mjs` | Initialize task files and state machine |

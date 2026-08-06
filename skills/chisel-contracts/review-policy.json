@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "max_concurrency": 3,
+  "max_dimension_agents": 9,
+  "max_skeptic_agents": 9,
+  "skeptic_votes": {
+    "low": 1,
+    "medium": 1,
+    "high": 3
+  }
+}

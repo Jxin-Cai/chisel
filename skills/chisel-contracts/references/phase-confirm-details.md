@@ -228,4 +228,4 @@ git -C <worktree-path> log --oneline <default-branch>..HEAD
 
 **前置条件**：仅当 `{IDEA_DIR}/confirmations/to-be.json` 中 `knowledge_extraction.enabled !== false` 时执行本节行为。若用户选择跳过知识沉淀，则本节所有监听和写入行为均不执行。
 
-在 `understand:confirm` 和 `plan:confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 agent-shared-rules §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。
+在 `understand:confirm` 和 `plan:confirm` 对话中，监听知识信号（"不能动"/"历史原因"/"以后再改"/业务术语映射）并按 `chisel-core/references/agent-protocol.md` §2 即时写入 `{IDEA_DIR}/knowledge-candidates/`。候选由 `knowledge:extract` 阶段统一去重和合入。无信号时不创建候选文件。

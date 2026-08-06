@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { basename, join, resolve } from 'node:path';
@@ -88,19 +88,75 @@ function writeTaskRun(ideaDir, taskId, run) {
   renameSync(temporary, target);
 }
 
-export function startTaskRun(ideaDir, taskId, { projectRoots, replaceCurrent = false } = {}) {
+export function serializeTaskRun(run) {
+  return `${JSON.stringify(run, null, 2)}\n`;
+}
+
+function leaseExpiry(now, leaseSeconds) {
+  const seconds = Number(leaseSeconds);
+  if (!Number.isFinite(seconds) || seconds < 30) throw new Error('leaseSeconds must be at least 30');
+  return new Date(new Date(now).getTime() + seconds * 1000).toISOString();
+}
+
+export function activeTaskAttempt(run) {
+  const attempt = run?.attempts?.[run.attempts.length - 1];
+  return attempt && !attempt.finished_at && !attempt.abandoned_at ? attempt : null;
+}
+
+export function taskAttemptLease(attempt, now = new Date().toISOString()) {
+  if (!attempt) return { active: false, expired: false };
+  const expiresAt = new Date(attempt.lease_until || attempt.started_at || 0).getTime();
+  const expired = !Number.isFinite(expiresAt) || expiresAt <= new Date(now).getTime();
+  return { active: !expired, expired, run_id: attempt.run_id || '', owner: attempt.owner || '', lease_until: attempt.lease_until || '' };
+}
+
+export function buildStartedTaskRun(ideaDir, taskId, { projectRoots, replaceCurrent = false, runId, owner = 'main-orchestrator', leaseSeconds = 3600, now = new Date().toISOString() } = {}) {
   const roots = projectRoots?.length ? projectRoots.map(root => resolve(root)) : verificationRoots(ideaDir, '.');
-  const run = readTaskRun(ideaDir, taskId) || { schema_version: 1, task_id: taskId, attempts: [] };
-  const current = run.attempts[run.attempts.length - 1];
+  const run = readTaskRun(ideaDir, taskId) || { schema_version: 2, task_id: taskId, attempts: [] };
+  run.schema_version = 2;
+  const current = activeTaskAttempt(run);
+  if (replaceCurrent && current?.run_id && current.run_id !== runId) throw new Error(`task ${taskId} run ownership mismatch`);
+  if (current && !replaceCurrent) {
+    const lease = taskAttemptLease(current, now);
+    if (lease.active) {
+      if (current.owner !== owner) throw new Error(`task ${taskId} is leased by ${current.owner} until ${current.lease_until}`);
+      current.last_heartbeat = now;
+      current.lease_until = leaseExpiry(now, leaseSeconds);
+      return { run, attempt: current, resumed: true };
+    }
+    current.abandoned_at = now;
+    current.abandon_reason = 'lease_expired';
+  }
   const attempt = {
-    attempt: replaceCurrent && current && !current.finished_at ? current.attempt : run.attempts.length + 1,
-    started_at: new Date().toISOString(),
+    attempt: replaceCurrent && current ? current.attempt : run.attempts.length + 1,
+    run_id: replaceCurrent && current?.run_id ? current.run_id : randomUUID(),
+    owner: replaceCurrent && current?.owner ? current.owner : owner,
+    started_at: replaceCurrent && current?.started_at ? current.started_at : now,
+    last_heartbeat: now,
+    lease_until: leaseExpiry(now, leaseSeconds),
     baseline: roots.map(snapshotRepository),
   };
   const failed = attempt.baseline.find(repository => repository.error);
   if (failed) throw new Error(failed.error);
-  if (replaceCurrent && current && !current.finished_at) run.attempts[run.attempts.length - 1] = attempt;
+  if (replaceCurrent && current) run.attempts[run.attempts.length - 1] = attempt;
   else run.attempts.push(attempt);
+  return { run, attempt, resumed: false };
+}
+
+export function startTaskRun(ideaDir, taskId, options = {}) {
+  const { run, attempt } = buildStartedTaskRun(ideaDir, taskId, options);
+  writeTaskRun(ideaDir, taskId, run);
+  return attempt;
+}
+
+export function heartbeatTaskRun(ideaDir, taskId, runId, { leaseSeconds = 3600, now = new Date().toISOString() } = {}) {
+  const run = readTaskRun(ideaDir, taskId);
+  const attempt = activeTaskAttempt(run);
+  if (!attempt) throw new Error(`task ${taskId} has no active attempt`);
+  if (!runId || attempt.run_id !== runId) throw new Error(`task ${taskId} run ownership mismatch`);
+  if (taskAttemptLease(attempt, now).expired) throw new Error(`task ${taskId} lease expired; claim a new run`);
+  attempt.last_heartbeat = now;
+  attempt.lease_until = leaseExpiry(now, leaseSeconds);
   writeTaskRun(ideaDir, taskId, run);
   return attempt;
 }
@@ -117,16 +173,23 @@ export function previewTaskChanges(ideaDir, taskId) {
   return { task_id: taskId, attempt: attempt.attempt, repositories };
 }
 
-export function finishTaskRun(ideaDir, taskId) {
+export function buildFinishedTaskRun(ideaDir, taskId, runId, { now = new Date().toISOString() } = {}) {
   const run = readTaskRun(ideaDir, taskId);
   const attempt = run?.attempts?.[run.attempts.length - 1];
   if (!attempt) throw new Error(`task provenance missing for ${taskId}`);
-  if (attempt.finished_at) return attempt;
+  if (attempt.finished_at) return { run, attempt };
+  if (attempt.run_id && (!runId || attempt.run_id !== runId)) throw new Error(`task ${taskId} run ownership mismatch`);
+  if (attempt.lease_until && taskAttemptLease(attempt, now).expired) throw new Error(`task ${taskId} lease expired; claim a new run`);
   const preview = previewTaskChanges(ideaDir, taskId);
-  attempt.finished_at = new Date().toISOString();
+  attempt.finished_at = now;
   attempt.result = preview.repositories.map(repo => repo.after);
   attempt.repositories = preview.repositories.map(({ project_root, changed_files }) => ({ project_root, changed_files }));
   attempt.changed_files = [...new Set(attempt.repositories.flatMap(repo => repo.changed_files))].sort();
+  return { run, attempt };
+}
+
+export function finishTaskRun(ideaDir, taskId, runId) {
+  const { run, attempt } = buildFinishedTaskRun(ideaDir, taskId, runId);
   writeTaskRun(ideaDir, taskId, run);
   return attempt;
 }
@@ -154,19 +217,27 @@ function main() {
   const ideaDir = args[0];
   const taskId = args[1];
   const mode = args[2];
-  if (!ideaDir || !taskId || !['--start', '--rebase-baseline', '--preview', '--finish'].includes(mode)) {
-    process.stderr.write('用法: task-provenance.mjs <idea-dir> <task-id> --start|--rebase-baseline|--preview|--finish [--project-root <path>]\n');
+  if (!ideaDir || !taskId || !['--start', '--rebase-baseline', '--heartbeat', '--preview', '--finish'].includes(mode)) {
+    process.stderr.write('用法: task-provenance.mjs <idea-dir> <task-id> --start|--rebase-baseline|--heartbeat|--preview|--finish [--project-root <path>] [--owner <id>] [--run-id <id>] [--lease-seconds <n>]\n');
     process.exit(1);
   }
   const rootIndex = args.indexOf('--project-root');
   const projectRoots = rootIndex >= 0 ? [args[rootIndex + 1]] : undefined;
+  const ownerIndex = args.indexOf('--owner');
+  const owner = ownerIndex >= 0 ? args[ownerIndex + 1] : undefined;
+  const runIdIndex = args.indexOf('--run-id');
+  const runId = runIdIndex >= 0 ? args[runIdIndex + 1] : undefined;
+  const leaseIndex = args.indexOf('--lease-seconds');
+  const leaseSeconds = leaseIndex >= 0 ? Number(args[leaseIndex + 1]) : undefined;
   try {
     const result = mode === '--start'
-      ? startTaskRun(ideaDir, taskId, { projectRoots })
+      ? startTaskRun(ideaDir, taskId, { projectRoots, owner, leaseSeconds })
       : mode === '--rebase-baseline'
-        ? startTaskRun(ideaDir, taskId, { projectRoots, replaceCurrent: true })
+        ? startTaskRun(ideaDir, taskId, { projectRoots, replaceCurrent: true, runId, owner, leaseSeconds })
+        : mode === '--heartbeat'
+          ? heartbeatTaskRun(ideaDir, taskId, runId, { leaseSeconds })
         : mode === '--finish'
-          ? finishTaskRun(ideaDir, taskId)
+          ? finishTaskRun(ideaDir, taskId, runId)
           : previewTaskChanges(ideaDir, taskId);
     console.log(JSON.stringify(result));
   } catch (error) {

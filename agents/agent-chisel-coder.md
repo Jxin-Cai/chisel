@@ -8,6 +8,7 @@ tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
 <HARD-GATE>
-Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/agent-shared-rules.md`。
-Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/coder-instructions.md`。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/SKILL.md`。
+按 coder 加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/references/agent-protocol.md`。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/coder-instructions.md`。
 </HARD-GATE>

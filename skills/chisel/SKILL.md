@@ -21,18 +21,18 @@ disable-model-invocation: true
 
 ## 启动
 
-1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/orchestration.yaml`
+1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/workflow-definition.json`。这是 step / phase / gate / complexity path 的唯一来源；`orchestration.yaml` 只是旧消费者的生成投影，不得作为编排依据
 2. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
-3. 设 `{IDEA_DIR}` = `.chisel/<idea-name>/`
+3. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>`，将输出设为 `{IDEA_DIR}`。该目录默认位于 Git common root，因此主工作区与所有 worktree 共享同一控制面；可用 `CHISEL_CONTROL_ROOT` 显式覆盖
 4. 如果目录不存在，设 idea-dir = `none`
-5. 进入步骤执行循环
+5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --start --idea-dir {IDEA_DIR} --owner main-orchestrator`，保存返回的 `runner_id`，进入步骤执行循环。每步完成后调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
 
 ---
 
 ## 铁律
 
 <HARD-GATE principle="P2,P4">
-Read `${CLAUDE_PLUGIN_ROOT}/skills/_shared/references/iron-rules.md`，严格遵守其中所有条目（含合理化预防）。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/SKILL.md`，再按主编排器加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/references/iron-rules.md`，严格遵守其中所有条目（含合理化预防）。
 
 核心摘要（compaction 后仍必须遵守）：
 1. orchestration-status.mjs 输出 = 唯一恢复点
@@ -94,11 +94,11 @@ digraph chisel_flow {
 ```
 
 <HARD-GATE principle="P2">
-每轮必须调用：
+每轮必须通过可恢复 runner 调用：
 ```
-node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-status.mjs <idea-dir|none>
+node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --next --idea-dir <idea-dir> --owner main-orchestrator
 ```
-该命令严格只读。只执行脚本返回的 `resume_step`。
+只执行 runner 返回的 `resume_step`。runner 持久化恢复点、恢复未完成事务、校验租约，并在需要时以 revision + 幂等 event 自动执行显式 transition。`orchestration-status.mjs` 仍是 runner 内部使用的唯一只读真值计算器。
 
 当输出 `transition_required: true` 时，在执行步骤动作前必须显式切换：
 
@@ -143,7 +143,7 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 
 ### Complexity 分级
 
-`orchestration-status.mjs` 的 emit 输出包含 `complexity` 字段（`hotfix` | `minor` | `trivial` | `moderate` | `standard` | `complex`）。
+`orchestration-status.mjs` 的 emit 输出同时包含 `delivery_complexity`、`risk_level`、`uncertainty_level` 和用于选路的 `complexity`。三条评估轴不得混为一个“大小”：高风险或高不确定性至少走 standard，medium risk 至少走 moderate，即使代码改动很小也不得降级。
 
 | complexity | 路径 | 判定条件 |
 |---|---|---|

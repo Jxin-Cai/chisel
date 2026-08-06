@@ -36,8 +36,9 @@
 | 执法层 | 机制 | 文件 |
 |--------|------|------|
 | 脚本 | `VALID_TRANSITIONS` 集合，非法转移抛错 | `scripts/workflow-lib.mjs` |
-| 脚本 | `updateTaskStatus()` 作为唯一状态变更入口 | `scripts/workflow-status.mjs` |
-| Hook | `pre-tool-write-guard` 禁止直接写 `task-workflow-state.yaml` | `hooks/pre-tool-write-guard.mjs` |
+| 脚本 | durable transaction journal 保证 workflow event/state 和 task provenance/state 崩溃后 roll-forward | `scripts/file-transaction.mjs` |
+| 脚本 | runner + task `run_id`/owner/lease/heartbeat 防止双重执行与旧 run 提交 | `scripts/orchestration-runner.mjs`, `scripts/task-provenance.mjs` |
+| Hook | `pre-tool-write-guard` 禁止 Write/Edit 及 Bash 直接写机器状态 | `hooks/pre-tool-write-guard.mjs` |
 | Hook | `stop-gate-guard` 阻止未满足 postcondition 的停止 | `hooks/stop-gate-guard.mjs` |
 | Prompt | Iron Rule #1/#2/#4: 状态文件是真相/禁止跳步/每轮调用 | `iron-rules.md` |
 
@@ -80,6 +81,7 @@
 |--------|------|------|
 | 脚本 | `workflow-lib.mjs` 导出共享枚举/函数供其他脚本导入 | `scripts/workflow-lib.mjs` |
 | 脚本 | `enum-coverage-check.mjs` 检测重复定义 | `scripts/enum-coverage-check.mjs` |
+| 脚本 | `workflow-projector.mjs` 从 canonical JSON 生成旧 YAML 投影 | `scripts/workflow-projector.mjs` |
 
 `dashboard.mjs`、`orchestration-status.mjs` 和状态机均从 `workflow-definition.json` 派生路径；复杂度检测统一复用 `workflow-lib.mjs`。
 

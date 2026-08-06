@@ -1,6 +1,6 @@
-# Agent 共享规则
+# Chisel Agent 公共协议
 
-所有 agent 在开始工作前必须 Read 本文件。
+所有 Chisel agent 在开始工作前必须通过 `skills/chisel-core/SKILL.md` 的角色加载协议 Read 本文件。
 
 ## 1. Wiki 渐进加载
 

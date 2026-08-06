@@ -22,9 +22,9 @@
 
 ### 1. 状态文件是唯一真相 `[P2, P5]`
 
-`orchestration-status.mjs` 的输出是唯一的恢复点判定。  
+`orchestration-status.mjs` 的输出是唯一的恢复点判定，`orchestration-runner.mjs` 是正常长程执行入口。
 `task-workflow-state.yaml` 是 task 状态的唯一权威来源。  
-`orchestration-status.mjs` 严格只读；正常 workflow step 只能由 `orchestration-transition.mjs` 显式更新（受控 rollback 是唯一例外，并同样递增 revision）。
+status 严格只读；runner 持久化租约/恢复点并通过 `orchestration-transition.mjs` 显式更新（受控 rollback 是唯一例外，并同样递增 revision）。
 不要依据上下文记忆、对话长度或自身推断来决定下一步。
 
 ### 2. 禁止跳步 `[P2]`
@@ -48,11 +48,10 @@
 ### 4. 每轮循环必须调用恢复点脚本 `[P2]`
 
 ```
-node ${SCRIPTS}/orchestration-status.mjs <idea-dir|none>
+node ${SCRIPTS}/orchestration-runner.mjs --next --idea-dir <idea-dir> --owner main-orchestrator
 ```
 
-只执行脚本返回的 `resume_step`。
-当 `transition_required: true` 时，先使用输出中的 `state_revision` 执行：
+只执行 runner 返回的 `resume_step`。runner 会使用输出中的 `state_revision` 自动执行：
 
 ```
 node ${SCRIPTS}/orchestration-transition.mjs <idea-dir> <resume_step> --expected-revision <state_revision>
@@ -114,7 +113,7 @@ gate 不通过时不能继续。
 | "用户应该不在意这个确认步骤" | 替用户决策 → 违反规则 3 |
 | "顺便把旁边的问题也修了吧" | scope 越界 → coder 最常见返修原因 |
 | "CR 的这个发现不太对，应该是误报" | 需要走 skeptic 验证，不是你单方面否决 |
-| "文件已经存在了，不用再读模板" | 违反模板优先 → 违反 agent-shared-rules 规则 4 |
+| "文件已经存在了，不用再读模板" | 违反模板优先 → 违反 agent-protocol 规则 4 |
 | "差不多了，可以声称完成了" | 无证据完成 → 违反规则 11 |
 | "这轮返修应该能过，不用那么仔细" | 惰性修复 → 导致第 N+1 轮返修 |
 

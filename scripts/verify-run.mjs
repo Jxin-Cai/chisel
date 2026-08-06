@@ -1,8 +1,10 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { isAbsolute, join, resolve } from 'node:path';
 import { workspaceIdentity } from './verification-lib.mjs';
+import { durableAtomicWrite } from './file-transaction.mjs';
 
 function readPackage(projectRoot) {
   const path = join(projectRoot, 'package.json');
@@ -44,7 +46,7 @@ function runCheck(check, projectRoot) {
     const output = execFileSync(check.command, check.args, {
       cwd: projectRoot,
       encoding: 'utf8',
-      timeout: 120000,
+      timeout: Number(check.timeout_ms || 120000),
       stdio: ['pipe', 'pipe', 'pipe'],
       maxBuffer: 4 * 1024 * 1024,
     });
@@ -53,6 +55,39 @@ function runCheck(check, projectRoot) {
     const output = `${error.stdout || ''}\n${error.stderr || ''}`.slice(-3000);
     return { ...check, status: 'fail', exit_code: Number.isInteger(error.status) ? error.status : 1, duration_ms: Date.now() - start, output };
   }
+}
+
+function contractPath(ideaDir) { return join(ideaDir, 'verification-contract.json'); }
+
+function contractFingerprint(contract) {
+  return createHash('sha256').update(JSON.stringify(contract)).digest('hex');
+}
+
+export function createVerificationContract(ideaDir, roots) {
+  const contract = {
+    schema_version: 1,
+    generated_at: new Date().toISOString(),
+    repositories: roots.map(root => ({
+      project_root: resolve(root),
+      checks: detectChecks(root).map(check => ({ ...check, timeout_ms: 120000, required: true })),
+    })),
+  };
+  durableAtomicWrite(contractPath(ideaDir), `${JSON.stringify(contract, null, 2)}\n`);
+  return contract;
+}
+
+function readVerificationContract(ideaDir) {
+  const path = contractPath(ideaDir);
+  if (!existsSync(path)) return null;
+  const contract = JSON.parse(readFileSync(path, 'utf8'));
+  if (contract.schema_version !== 1 || !Array.isArray(contract.repositories)) throw new Error('invalid verification-contract.json');
+  for (const repo of contract.repositories) {
+    if (!repo.project_root || !Array.isArray(repo.checks)) throw new Error('verification contract repository requires project_root and checks');
+    for (const check of repo.checks) {
+      if (!check.id || !check.command || !Array.isArray(check.args)) throw new Error('verification contract check requires id, command, and args[]');
+    }
+  }
+  return contract;
 }
 
 function verificationRoots(ideaDir, fallbackRoot) {
@@ -75,8 +110,27 @@ function main() {
     process.exit(1);
   }
 
-  const repositories = verificationRoots(ideaDir, projectRoot).map(root => {
-    const configuredChecks = detectChecks(root);
+  const roots = verificationRoots(ideaDir, projectRoot);
+  if (process.argv.includes('--init-contract')) {
+    let existing;
+    try { existing = readVerificationContract(ideaDir); }
+    catch (error) {
+      process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
+      process.exit(1);
+    }
+    const contract = existing && !process.argv.includes('--force-contract') ? existing : createVerificationContract(ideaDir, roots);
+    console.log(JSON.stringify({ initialized: !existing || process.argv.includes('--force-contract'), existing: Boolean(existing), contract: contractPath(ideaDir), repositories: contract.repositories }));
+    return;
+  }
+  let contract;
+  try { contract = readVerificationContract(ideaDir); }
+  catch (error) {
+    process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
+    process.exit(1);
+  }
+  const repositories = roots.map(root => {
+    const entry = contract?.repositories.find(repo => resolve(repo.project_root) === resolve(root));
+    const configuredChecks = entry?.checks || detectChecks(root);
     const checks = configuredChecks.map(check => runCheck(check, root));
     const identity = workspaceIdentity(root);
     const status = configuredChecks.length > 0 && checks.every(check => check.status === 'pass') && !identity.error ? 'pass' : 'fail';
@@ -95,13 +149,14 @@ function main() {
     schema_version: 2,
     status,
     generated_at: new Date().toISOString(),
+    verification_contract: contract ? { source: 'explicit', fingerprint: contractFingerprint(contract) } : { source: 'legacy-auto-detected', fingerprint: '' },
     repositories,
   };
-  writeFileSync(join(ideaDir, 'verify-result.json'), JSON.stringify(result, null, 2));
+  durableAtomicWrite(join(ideaDir, 'verify-result.json'), `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify({ status, repositories: repositories.map(repo => ({ project_root: repo.project_root, status: repo.status, checks: repo.checks.map(({ id, status: checkStatus }) => ({ id, status: checkStatus })) })) }));
   if (status !== 'pass') process.exit(1);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
 
-export { detectChecks, runCheck, verificationRoots };
+export { contractFingerprint, detectChecks, readVerificationContract, runCheck, verificationRoots };

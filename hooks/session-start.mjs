@@ -2,6 +2,7 @@
 // Enhanced SessionStart hook: injects workflow state and iron-rules digest.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { controlRoot } from '../scripts/control-plane.mjs';
 
 function readWorkflowState(ideaDir) {
   const wsFile = join(ideaDir, 'workflow-state.yaml');
@@ -31,13 +32,13 @@ function isDone(ideaDir) {
 
 function main() {
   const cwd = process.cwd();
-  const chiselDir = join(cwd, '.chisel');
+  const chiselDir = controlRoot(cwd);
 
   console.log('chisel plugin is available.');
   console.log('Use /chisel <需求描述或需求文件路径> for legacy system feature enhancement.');
 
   if (!existsSync(chiselDir)) {
-    console.log('Runtime artifacts are stored under .chisel/<idea-name>/ in the target project.');
+    console.log(`Runtime artifacts are stored in the shared control plane: ${chiselDir}/<idea-name>/.`);
     return;
   }
 

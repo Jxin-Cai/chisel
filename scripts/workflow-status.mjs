@@ -14,14 +14,30 @@ import {
   initWorkflowState,
   markCr,
   markCrRequirement,
+  applyTaskStatus,
   readTaskState,
   rollbackTask,
   rollbackWorkflow,
   taskStateFile,
-  updateTaskStatus,
-  writeTaskState
+  serializeTaskState,
+  updateTaskStatus
 } from './workflow-lib.mjs';
-import { finishTaskRun, readTaskRun, startTaskRun } from './task-provenance.mjs';
+import {
+  buildFinishedTaskRun,
+  buildStartedTaskRun,
+  heartbeatTaskRun,
+  readTaskRun,
+  serializeTaskRun,
+  taskRunPath,
+} from './task-provenance.mjs';
+import { commitFileTransaction } from './file-transaction.mjs';
+
+function option(argv, name, fallback) {
+  const index = argv.indexOf(name);
+  if (index < 0) return fallback;
+  if (!argv[index + 1] || argv[index + 1].startsWith('--')) fail(`${name} 需要值`);
+  return argv[index + 1];
+}
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -41,9 +57,10 @@ function help() {
     '  --init <idea-name>                 初始化 workflow-state.yaml',
     '  --init-tasks <idea-name> <spec...> 初始化 task-workflow-state.yaml',
     '  --next-tasks [code|review|rework]  输出下一批可执行 task',
-    '  --start-task <task-id> [--project-root <path>] 标记 task 开始编码/返修并记录执行基线',
+    '  --start-task <task-id> [--project-root <path>] [--owner <id>] [--lease-seconds <n>]',
+    '  --heartbeat <task-id> --run-id <id> [--lease-seconds <n>]',
     '  --start-review <task-id>           标记 task 开始 review',
-    '  --finish-task <task-id> coded|failed',
+    '  --finish-task <task-id> coded|failed --run-id <id>',
     '  --mark-cr <task-id> approved|needs_rework|blocked',
     '  --mark-cr-requirement approved|needs_rework|blocked [task-ids]',
     '  --rollback-step <step> [--dry-run]',
@@ -102,14 +119,41 @@ export async function main(argv) {
           fail(`task ${taskId} has reached max rework count (${task.rework_count}), use --rollback-task to reset`);
         }
         const next = ['needs_rework', 'repairing'].includes(current) ? 'repairing' : 'coding';
-        const rootIndex = argv.indexOf('--project-root');
-        if (rootIndex >= 0 && !argv[rootIndex + 1]) fail('--project-root 需要 path');
-        const projectRoots = rootIndex >= 0 ? [argv[rootIndex + 1]] : undefined;
-        const run = readTaskRun(ideaDir, taskId);
-        const activeAttempt = run?.attempts?.[run.attempts.length - 1];
-        if (!activeAttempt || activeAttempt.finished_at) startTaskRun(ideaDir, taskId, { projectRoots });
-        updateTaskStatus(ideaDir, taskId, next);
-        print({ updated: true, task_id: taskId, status: next, provenance: 'started' });
+        const projectRoot = option(argv, '--project-root', null);
+        const owner = option(argv, '--owner', process.env.CHISEL_RUN_OWNER || 'main-orchestrator');
+        const leaseSeconds = Number(option(argv, '--lease-seconds', '3600'));
+        const started = buildStartedTaskRun(ideaDir, taskId, {
+          projectRoots: projectRoot ? [projectRoot] : undefined,
+          owner,
+          leaseSeconds,
+        });
+        applyTaskStatus(state, taskId, next);
+        commitFileTransaction(ideaDir, [
+          { path: taskRunPath(ideaDir, taskId), content: serializeTaskRun(started.run) },
+          { path: taskStateFile(ideaDir), content: serializeTaskState(state) },
+        ], {
+          id: `task-start-${taskId}-${started.attempt.run_id}`,
+          failAfterWrites: Number(process.env.CHISEL_TX_FAIL_AFTER_WRITES || 0),
+        });
+        print({
+          updated: true,
+          task_id: taskId,
+          status: next,
+          run_id: started.attempt.run_id,
+          owner: started.attempt.owner,
+          lease_until: started.attempt.lease_until,
+          resumed: started.resumed,
+        });
+        break;
+      }
+      case '--heartbeat': {
+        const taskId = argv[2];
+        if (!taskId) fail('--heartbeat 需要 task-id');
+        const runId = option(argv, '--run-id', null);
+        if (!runId) fail('--heartbeat 需要 --run-id');
+        const leaseSeconds = Number(option(argv, '--lease-seconds', '3600'));
+        const attempt = heartbeatTaskRun(ideaDir, taskId, runId, { leaseSeconds });
+        print({ updated: true, task_id: taskId, run_id: runId, lease_until: attempt.lease_until });
         break;
       }
       case '--start-review': {
@@ -124,16 +168,21 @@ export async function main(argv) {
         const result = argv[3];
         if (!taskId || !result) fail('--finish-task 需要 task-id 和 coded|failed');
         if (!['coded', 'failed'].includes(result)) fail('--finish-task 仅支持 coded|failed');
+        const runId = option(argv, '--run-id', null);
         const run = readTaskRun(ideaDir, taskId);
-        const provenance = run ? finishTaskRun(ideaDir, taskId) : null;
-        updateTaskStatus(ideaDir, taskId, result);
-        if (provenance) {
-          const stateFile = taskStateFile(ideaDir);
-          const state = readTaskState(stateFile);
-          state.tasks[taskId].changed_files = provenance.changed_files || [];
-          writeTaskState(stateFile, state);
-        }
-        print({ updated: true, task_id: taskId, status: result, changed_files: provenance?.changed_files || null });
+        if (run && !runId) fail('--finish-task 对有 provenance 的 task 需要 --run-id');
+        const finished = run ? buildFinishedTaskRun(ideaDir, taskId, runId) : null;
+        const state = readTaskState(taskStateFile(ideaDir));
+        applyTaskStatus(state, taskId, result);
+        if (finished) state.tasks[taskId].changed_files = finished.attempt.changed_files || [];
+        const writes = [];
+        if (finished) writes.push({ path: taskRunPath(ideaDir, taskId), content: serializeTaskRun(finished.run) });
+        writes.push({ path: taskStateFile(ideaDir), content: serializeTaskState(state) });
+        commitFileTransaction(ideaDir, writes, {
+          id: `task-finish-${taskId}-${runId || 'legacy'}`,
+          failAfterWrites: Number(process.env.CHISEL_TX_FAIL_AFTER_WRITES || 0),
+        });
+        print({ updated: true, task_id: taskId, status: result, run_id: runId, changed_files: finished?.attempt.changed_files || null });
         break;
       }
       case '--mark-cr': {

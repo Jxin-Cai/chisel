@@ -16,10 +16,10 @@ describe('explicit orchestration transitions', () => {
   });
   afterEach(() => rmSync(ideaDir, { recursive: true, force: true }));
 
-  function transition(step, revision, eventId) {
+  function transition(step, revision, eventId, env = {}) {
     const args = ['scripts/orchestration-transition.mjs', ideaDir, step, '--expected-revision', String(revision)];
     if (eventId) args.push('--event-id', eventId);
-    return spawnSync('node', args, { cwd: process.cwd(), encoding: 'utf8' });
+    return spawnSync('node', args, { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...env } });
   }
 
   it('increments revision and appends an event', () => {
@@ -62,5 +62,22 @@ describe('explicit orchestration transitions', () => {
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readWorkflowRevision(ideaDir), 1);
     assert.equal(existsSync(join(ideaDir, '.transition.lock')), false);
+  });
+
+  it('rolls a partially written transition forward after a crash', () => {
+    const interrupted = transition('clarify:requirement', 0, 'evt-crash', { CHISEL_TX_FAIL_AFTER_WRITES: '1' });
+    assert.equal(interrupted.status, 2);
+    assert.match(interrupted.stderr, /injected transaction failure/);
+    assert.equal(readWorkflowRevision(ideaDir), 0);
+    assert.match(readFileSync(join(ideaDir, 'events.ndjson'), 'utf8'), /evt-crash/);
+
+    const recovered = transition('clarify:requirement', 0, 'evt-crash');
+    assert.equal(recovered.status, 0, recovered.stderr);
+    const output = JSON.parse(recovered.stdout);
+    assert.equal(output.idempotent_replay, true);
+    assert.deepEqual(output.recovered_transactions, ['workflow-evt-crash']);
+    assert.equal(readWorkflowRevision(ideaDir), 1);
+    assert.match(readFileSync(join(ideaDir, 'workflow-state.yaml'), 'utf8'), /^current_step: clarify:requirement$/m);
+    assert.equal(readFileSync(join(ideaDir, 'events.ndjson'), 'utf8').trim().split('\n').length, 1);
   });
 });

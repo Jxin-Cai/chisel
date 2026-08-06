@@ -2,15 +2,16 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync,
+  existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { verificationRoots } from './verify-run.mjs';
 import { workspaceIdentity } from './verification-lib.mjs';
 
-const MAX_SNAPSHOTS = 20;
+const MAX_SNAPSHOTS = 8;
+const MAX_TOTAL_SNAPSHOT_BYTES = 25 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES = 10 * 1024 * 1024;
-const EXCLUDED_TOP_LEVEL = new Set(['snapshots', 'dashboard.html', 'events.ndjson', '.transition.lock']);
+const EXCLUDED_TOP_LEVEL = new Set(['snapshots', 'dashboard.html', 'events.ndjson', 'runner-state.json', '.transition.lock', '.file-transaction.lock', '.transactions']);
 
 function getIdeaName(ideaDir) {
   const wsFile = join(ideaDir, 'workflow-state.yaml');
@@ -91,9 +92,14 @@ function createSnapshot(ideaDir, { projectRoot = '.' } = {}) {
 
 function pruneSnapshots(dir) {
   const files = readdirSync(dir).filter(file => file.endsWith('.json')).sort();
-  while (files.length > MAX_SNAPSHOTS) {
+  let totalBytes = files.reduce((total, file) => total + statSync(join(dir, file)).size, 0);
+  while (files.length > MAX_SNAPSHOTS || totalBytes > MAX_TOTAL_SNAPSHOT_BYTES) {
     const old = files.shift();
-    try { unlinkSync(join(dir, old)); } catch { /* non-critical retention cleanup */ }
+    try {
+      const path = join(dir, old);
+      totalBytes -= statSync(path).size;
+      unlinkSync(path);
+    } catch { /* non-critical retention cleanup */ }
   }
 }
 

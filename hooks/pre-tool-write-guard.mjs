@@ -3,6 +3,7 @@
 // Fail-open: non-chisel paths are always allowed.
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
+import { controlRoot } from '../scripts/control-plane.mjs';
 
 function readStdin() {
   try {
@@ -53,25 +54,43 @@ function main() {
     return;
   }
 
+  const cwd = input.cwd || process.cwd();
+  const chiselDir = controlRoot(cwd);
+  const toolName = input.tool_name || '';
+
+  if (toolName === 'Bash') {
+    const command = String(input.tool_input?.command || '');
+    const protectedState = /(workflow-state\.yaml|task-workflow-state\.yaml|events\.ndjson)/.test(command);
+    if (protectedState) {
+      deny('Machine state and event history may not be mutated through Bash; use the Chisel state transition scripts.');
+    }
+    return;
+  }
+
   const filePath = input.tool_input?.file_path;
   if (!filePath) return;
-
-  const cwd = input.cwd || process.cwd();
   const absPath = resolve(cwd, filePath);
-  const relPath = relative(cwd, absPath);
+  const relPath = relative(chiselDir, absPath);
+  const localRelPath = relative(cwd, absPath);
 
-  // Only guard .chisel/ paths
-  if (!relPath.startsWith('.chisel/') && !relPath.startsWith('.chisel\\')) return;
+  if ((localRelPath.startsWith('.chisel/') || localRelPath.startsWith('.chisel\\'))
+      && (relPath === '..' || relPath.startsWith('../') || relPath.startsWith('..\\'))) {
+    deny('Do not create a worktree-local shadow .chisel state; use the Git-common Chisel control plane.');
+    return;
+  }
 
-  // Extract idea directory name from path like .chisel/<idea-name>/...
+  // Only guard paths inside the shared Chisel control plane.
+  if (relPath === '..' || relPath.startsWith('../') || relPath.startsWith('..\\')) return;
+
+  // Extract idea directory name from path like <control-root>/<idea-name>/...
   const parts = relPath.split(/[/\\]/);
-  if (parts.length < 3) return;
-  const ideaName = parts[1];
+  if (parts.length < 2) return;
+  const ideaName = parts[0];
   // Skip wiki directories
   if (ideaName === 'wiki' || ideaName === 'wiki-candidates') return;
 
-  const ideaDir = join(cwd, '.chisel', ideaName);
-  const subPath = parts.slice(2).join('/');
+  const ideaDir = join(chiselDir, ideaName);
+  const subPath = parts.slice(1).join('/');
 
   // Rule 1: machine state and event history must not be written directly.
   if (subPath === 'task-workflow-state.yaml') {

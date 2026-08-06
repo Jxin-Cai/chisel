@@ -13,7 +13,7 @@
 1. 扫描候选来源：`{IDEA_DIR}/as-is/knowledge-candidates.md`、`knowledge-candidates/*.json`
 2. 去重：同 `category + content` 的 scope/name 合并
 3. 按需 Read 相关模板（knowledge-candidates-template / wiki category 模板）
-4. 在 `{IDEA_DIR}/knowledge-candidates/` 下补充或更新候选 JSON（必须满足 agent-shared-rules §2 要求）
+4. 在 `{IDEA_DIR}/knowledge-candidates/` 下补充或更新候选 JSON（必须满足 `chisel-core/references/agent-protocol.md` §2 要求）
 5. 运行 gate：`node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} knowledge-candidates-exists`
 6. 运行 health-check 检查候选完整性：`node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} health-check`
 7. 呈现候选摘要给用户（包含 `relevance` 字段供用户在 confirm 时指定：`"high"` | `"medium"` | `"low"`），逐条选择 confirmed / rejected / deferred，用脚本写回：

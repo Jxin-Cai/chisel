@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { appendFileSync, closeSync, existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSnapshot } from './checkpoint.mjs';
-import { initWorkflowState, readWorkflowRevision, transitionWorkflowPhase } from './workflow-lib.mjs';
+import { commitFileTransaction, recoverFileTransactions } from './file-transaction.mjs';
+import { initWorkflowState, readWorkflowRevision, renderWorkflowPhaseUpdate } from './workflow-lib.mjs';
 import { recordStepFinish, recordStepStart } from './session-metrics.mjs';
 import { WORKFLOW_STEPS } from './workflow-definition.mjs';
 
@@ -77,18 +78,19 @@ function main() {
   if (!Number.isInteger(expectedRevision) || expectedRevision < 0) fail('--expected-revision must be a non-negative integer');
   const eventId = option(args, '--event-id') || `transition:${expectedRevision}:${step}`;
 
-  const replay = readEvents(ideaDir).find(event => event.event_id === eventId);
-  if (replay) {
-    if (replay.to !== step) fail(`event_id already used for a different step: ${eventId}`);
-    console.log(JSON.stringify({ transitioned: false, idempotent_replay: true, ...replay }));
-    return;
-  }
-
   const lockPath = join(ideaDir, '.transition.lock');
   const lockFd = acquireTransitionLock(lockPath);
   if (lockFd === null) fail('another workflow transition is in progress', 2);
 
   try {
+    const recoveredTransactions = recoverFileTransactions(ideaDir);
+    const replay = readEvents(ideaDir).find(event => event.event_id === eventId);
+    if (replay) {
+      if (replay.to !== step) throw new Error(`event_id already used for a different step: ${eventId}`);
+      console.log(JSON.stringify({ transitioned: false, idempotent_replay: true, recovered_transactions: recoveredTransactions, ...replay }));
+      return;
+    }
+
     const actualRevision = readWorkflowRevision(ideaDir);
     if (actualRevision !== expectedRevision) throw new Error(`workflow revision conflict: expected ${expectedRevision}, actual ${actualRevision}`);
     const recommended = recommendedStep(ideaDir);
@@ -103,20 +105,30 @@ function main() {
       return;
     }
 
-    try { recordStepFinish(ideaDir, previousStep); } catch { /* metrics are non-critical */ }
     try { createSnapshot(ideaDir); } catch { /* snapshots are non-critical */ }
-    const transition = transitionWorkflowPhase(ideaDir, step, expectedRevision);
-    try { recordStepStart(ideaDir, step); } catch { /* metrics are non-critical */ }
+    const at = new Date().toISOString();
+    const rendered = renderWorkflowPhaseUpdate(stateText, step, { expectedRevision, incrementRevision: true, now: at });
+    const transition = rendered.transition;
     const event = {
       event_id: eventId,
       type: 'workflow.transition',
-      at: new Date().toISOString(),
+      at,
       from: previousStep,
       to: step,
       previous_revision: transition.previous_revision,
       revision: transition.revision,
     };
-    appendFileSync(join(ideaDir, 'events.ndjson'), `${JSON.stringify(event)}\n`);
+    const eventsPath = join(ideaDir, 'events.ndjson');
+    const eventsText = existsSync(eventsPath) ? readFileSync(eventsPath, 'utf8') : '';
+    const failAfterWrites = Number(process.env.CHISEL_TX_FAIL_AFTER_WRITES || 0);
+    const transaction = commitFileTransaction(ideaDir, [
+      // Write the event first and state last. If interrupted, the next transition
+      // still sees the old revision and can roll the prepared transaction forward.
+      { path: 'events.ndjson', content: `${eventsText}${JSON.stringify(event)}\n` },
+      { path: 'workflow-state.yaml', content: rendered.content },
+    ], { id: `workflow-${eventId}`, failAfterWrites });
+    try { recordStepFinish(ideaDir, previousStep); } catch { /* metrics are non-critical */ }
+    try { recordStepStart(ideaDir, step); } catch { /* metrics are non-critical */ }
 
     let dashboardUpdated = false;
     try {
@@ -126,7 +138,7 @@ function main() {
       execFileSync('node', dashboardArgs, { stdio: 'ignore', timeout: 5000 });
       dashboardUpdated = true;
     } catch { /* dashboard is observational, not transactional */ }
-    console.log(JSON.stringify({ transitioned: true, ...event, dashboard_updated: dashboardUpdated, dashboard_opened: dashboardUpdated && openDashboard }));
+    console.log(JSON.stringify({ transitioned: true, ...event, transaction_id: transaction.transaction_id, recovered_transactions: transaction.recovered, dashboard_updated: dashboardUpdated, dashboard_opened: dashboardUpdated && openDashboard }));
   } catch (error) {
     process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
     process.exitCode = 2;

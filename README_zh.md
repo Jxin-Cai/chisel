@@ -110,7 +110,7 @@ claude --plugin-dir /absolute/path/to/chisel
 /chisel docs/requirements/user-phone-validation.md
 ```
 
-chisel 会在业务仓库中创建运行态产物目录 `.chisel/<idea-name>/`，记录需求理解、确认结果、实施方案、task 状态、CR 结论和知识候选。
+chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，因此主工作区与 linked worktree 共享同一控制面；可用 `CHISEL_CONTROL_ROOT` 覆盖。
 
 <br/>
 
@@ -176,7 +176,8 @@ chisel 有 **3 个强制确认环节**，暂停流程等待用户逐项确认：
 ### 局部回退
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs .chisel/<idea-name> --rollback-step <step> --dry-run
+IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>)
+node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-step <step> --dry-run
 ```
 
 回退只清理白名单内运行态产物，不删除业务源码、wiki 或 knowledge-candidates。
@@ -265,7 +266,7 @@ chisel 把长期项目知识沉淀到业务仓库的 `.chisel/wiki/{project-name
 
 ### 中断检测
 
-task 处于 `coding`/`repairing` 状态超 30 分钟时，orchestration-status 输出 stale warning。
+task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；长耗时操作前通过 heartbeat 续租，不再依赖固定 30 分钟猜测。
 
 <br/>
 
@@ -296,7 +297,9 @@ task 处于 `coding`/`repairing` 状态超 30 分钟时，orchestration-status �
 
 | 脚本 | 说明 |
 |---|---|
-| `orchestration-status.mjs` | 只读恢复点判定和复杂度检测 |
+| `orchestration-runner.mjs` | 带租约的持久 runner、崩溃恢复与幂等 transition |
+| `orchestration-status.mjs` | 只读权威恢复点计算 |
+| `control-plane.mjs` | 解析 linked worktree 共享控制面 |
 | `orchestration-transition.mjs` | 校验 resume step 与 revision 后显式切换状态并记录事件 |
 | `gate-check.mjs` | 阶段 postcondition gate 校验 |
 | `task-init.mjs` | 初始化 task 文件和状态机 |

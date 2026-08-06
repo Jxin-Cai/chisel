@@ -220,30 +220,22 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 
 检测方式：对变更文件 `grep -l` 关键字模式。一个维度只要任一变更文件命中即激活。
 
-分三批启动已激活维度，避免过多 opus agent 同时竞争导致 stall：
+启动 agent 前必须运行 `review-budget.mjs`，该脚本以 `review-policy.json` 为唯一预算来源，返回有界的 batch 和 skeptic 数量：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/review-budget.mjs --dimensions d2,d3,d4,d5,d6,d7,d8,d9 --finding-count <n> --risk-level <low|medium|high>
+```
+
+严格按 `dimension_batches` 逐批启动，任何时候不得超过 `max_concurrency`；不得超过 `max_dimension_agents` / `max_skeptic_agents`。`overflow_findings` 不再继续 fan-out，由当前 reviewer 串行复核并在报告中标记 budget fallback。
+
+以下 Batch 仅为维度顺序示例，实际分批以脚本输出为准：
 
 **Scoped Re-review 模式判断**：当 `rework_cycle > 0` 时，对每个已激活维度检查上轮 CR 结果：
 - 上轮 `result: fail` → TASK 中追加 `"mode": "scoped-rework"`（增量复审，只验证修复 + 检查 fix diff 新问题）
 - 上轮 `result: pass` 但未命中 pass-cached（如新增文件导致缓存失效）→ 正常全量审查（不加 mode）
 - 首次审查（`rework_cycle = 0`）→ 正常全量审查
 
-6a. **Batch 1**——在一条消息中发起前 4 个已激活维度的 Agent 调用：
-   ```
-   Agent({ description: "CR D2", prompt: TASK({ dimension: "d2", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
-   Agent({ description: "CR D3", prompt: TASK({ dimension: "d3", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
-   Agent({ description: "CR D4", prompt: TASK({ dimension: "d4", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
-   Agent({ description: "CR D5", prompt: TASK({ dimension: "d5", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
-   ```
-
-6b. 等待 Batch 1 全部返回后，**Batch 2**——再发起 4 个 Agent 调用：
-   ```
-   Agent({ description: "CR D6", prompt: TASK({ dimension: "d6", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
-   Agent({ description: "CR D7", prompt: TASK({ dimension: "d7", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
-   Agent({ description: "CR D8", prompt: TASK({ dimension: "d8", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
-   Agent({ description: "CR D9", prompt: TASK({ dimension: "d9", ..., "base_ref": "{BASE_REF}", "mode": "<scoped-rework 或省略>" }) })
-   ```
-
-   每批 reviewer 并行执行，各自读取对应 `dim-{dimension}.md`（全量）或 `dim-re-review.md`（scoped）和 `cr-context.json`。
+6. 遍历 `dimension_batches`：对当前 batch 的每个 dimension 在同一条消息中发起 reviewer Agent，全部返回后才进入下一 batch。每个 reviewer 读取对应 `dim-{dimension}.md`（全量）或 `dim-re-review.md`（scoped）和 `cr-context.json`。
 
 ### 第三步：验证 + 聚合结果
 
@@ -251,21 +243,14 @@ pass-cached：上轮通过且 repair 范围与本维度无交集，复用上轮�
 
 8. **验证子阶段**（仅当存在 fail 维度时执行）：
 
-   **Standard/Complex 模式（对抗性验证 — 3-agent 投票）：**
-   对每个 fail 维度的 CR 文件中的 Rework Items（置信度 ≥ 80），启动 **3 个独立 sonnet skeptic agent**：
-   - Skeptic A（代码语义角度）：尝试证明该 finding 是误报——代码语义上不构成问题
-   - Skeptic B（运行时行为角度）：尝试证明该 finding 在运行时不会触发
-   - Skeptic C（设计意图角度）：尝试证明该 finding 符合设计意图而非缺陷
+   对每个 fail 维度的 Rework Items（置信度 ≥ 80），严格按 budget 输出的 `skeptic_votes_per_finding` 启动独立 sonnet skeptic：高风险使用 3 角度投票（代码语义/运行时行为/设计意图），low/medium 使用单次验证。
    - 每个 skeptic 获取：PR diff + Rework Item 描述 + 相关文件上下文
    - 每个 skeptic maxTurns=5，只读模式
-   - 投票规则：≥2/3 认为是真实问题 → 保留为 Rework Item；否则 → 降级为 Observation
+   - 3 票时≥2/3 认为真实问题才保留；1 票时由该验证结果决定
    - 全部 Rework Items 被否决 → 该维度的 result 改为 pass
    - 验证后更新 CR 文件的 frontmatter 和 Rework Items 表
 
-   **Trivial/Moderate 模式（单次验证）：**
-   对每个 fail item 启动单个 sonnet 验证 agent 确认是否为真实问题（旧行为，降本）。
-
-   每个 fail item 的 skeptic 组可并行发起。
+   skeptic 组的并行度同样不得超过 policy；超出 `skeptic_finding_budget` 的 item 使用串行 budget fallback。
 
 9. 聚合判定：
    - **全部 pass** → `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement approved`

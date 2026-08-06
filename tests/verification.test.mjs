@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { validateVerificationResult, workspaceIdentity } from '../scripts/verification-lib.mjs';
+import { contractFingerprint, createVerificationContract } from '../scripts/verify-run.mjs';
 
 describe('verification evidence', () => {
   let root;
@@ -81,5 +82,26 @@ describe('verification evidence', () => {
     assert.equal(validateVerificationResult(ideaDir, root), '');
     writeFileSync(join(secondRoot, 'service.js'), 'export const service = false;\n');
     assert.match(validateVerificationResult(ideaDir, root), /nested-repo/);
+  });
+
+  it('binds evidence to an explicit verification contract', () => {
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
+    const contract = createVerificationContract(ideaDir, [root]);
+    const identity = workspaceIdentity(root);
+    writeFileSync(join(ideaDir, 'verify-result.json'), JSON.stringify({
+      schema_version: 2,
+      status: 'pass',
+      verification_contract: { source: 'explicit', fingerprint: contractFingerprint(contract) },
+      repositories: [{
+        project_root: root,
+        git_head: identity.head,
+        workspace_fingerprint: identity.fingerprint,
+        checks: [{ id: 'test', status: 'pass', exit_code: 0 }],
+      }],
+    }));
+    assert.equal(validateVerificationResult(ideaDir, root), '');
+    contract.repositories[0].checks.push({ id: 'lint', command: 'npm', args: ['run', 'lint'], required: true });
+    writeFileSync(join(ideaDir, 'verification-contract.json'), JSON.stringify(contract));
+    assert.match(validateVerificationResult(ideaDir, root), /contract changed/);
   });
 });

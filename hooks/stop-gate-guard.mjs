@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { checkGate } from '../scripts/gate-check.mjs';
 import { readTaskState, STEP_GATE_MAP, taskStateFile } from '../scripts/workflow-lib.mjs';
 import { changedFilesForProject } from '../scripts/task-provenance.mjs';
+import { controlRoot } from '../scripts/control-plane.mjs';
 
 const HUMAN_WAIT_STEPS = new Set(['understand:confirm', 'clarify:requirement', 'plan:confirm', 'worktree:setup', 'blocked']);
 
@@ -80,7 +81,7 @@ export function evaluateStop(chiselDir, { projectRoot = '.', stopHookActive = fa
 function main() {
   const input = readInput();
   const cwd = typeof input.cwd === 'string' && input.cwd ? input.cwd : process.cwd();
-  const evaluation = evaluateStop(join(cwd, '.chisel'), { projectRoot: cwd, stopHookActive: input.stop_hook_active === true });
+  const evaluation = evaluateStop(controlRoot(cwd), { projectRoot: cwd, stopHookActive: input.stop_hook_active === true });
   if (evaluation.blockers.length === 0) return;
   const reason = `[chisel stop-gate] ${evaluation.blockers.join(' | ')}. Continue the automated workflow; yield only when a human decision or external authority is required.`;
   console.log(JSON.stringify({ decision: 'block', reason, systemMessage: reason }));

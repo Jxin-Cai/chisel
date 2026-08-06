@@ -2,6 +2,7 @@
 // Lightweight, side-effect-free workflow snapshot for !command injection and session-start.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { controlRoot } from './control-plane.mjs';
 
 function readWorkflowState(ideaDir) {
   const wsFile = join(ideaDir, 'workflow-state.yaml');
@@ -32,7 +33,7 @@ function isDone(ideaDir) {
 
 function main() {
   const cwd = process.cwd();
-  const chiselDir = join(cwd, '.chisel');
+  const chiselDir = controlRoot(cwd);
   if (!existsSync(chiselDir)) {
     console.log('无活跃工作流');
     return;

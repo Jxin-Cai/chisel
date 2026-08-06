@@ -15,7 +15,7 @@
 
 ## 渐进加载规则
 
-按 agent-shared-rules §1 按需查询加载。当前代码事实优先于 wiki；冲突时在产物中标记待更新。
+按 `chisel-core/references/agent-protocol.md` §1 按需查询加载。当前代码事实优先于 wiki；冲突时在产物中标记待更新。
 
 ## 知识更新规则
 

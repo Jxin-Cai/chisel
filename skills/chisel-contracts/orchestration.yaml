@@ -1,144 +1,58 @@
+# GENERATED COMPATIBILITY PROJECTION. Do not edit workflow structure here.
+# Canonical source: ./workflow-definition.json
 name: chisel-orchestration
-version: 1
-description: 遗留系统新增功能端到端编排
-
-variables:
-  RUNTIME_DIR: .chisel/{idea-name}
-  SCRIPTS: ../../scripts
+version: 2
+canonical_definition: ./workflow-definition.json
 
 steps:
   - id: receive-requirement
-    description: 接收需求并创建运行态目录
     postcondition:
       check: requirement-exists
-
   - id: understand:explore
-    description: 理解 as-is
-    action:
-      type: skill
-      name: chisel-understand
-      args: "{idea-name}"
     postcondition:
       check: as-is-complete
-
   - id: understand:confirm
-    description: 用户确认 as-is，回答待澄清问题并写入 clarifications.json/clarifications.md 和 confirmations/as-is.json；实时捕获知识候选
-    outputs:
-      - clarifications.json
-      - clarifications.md
-      - confirmations/as-is.json
     postcondition:
       check: as-is-confirmed
-
   - id: clarify:requirement
-    description: 基于 as-is 理解和原始需求，多维度澄清用户真实意图——功能范围、影响分析、兼容约束、非功能需求、优先级、验收标准、风险容忍度
-    action:
-      type: skill
-      name: chisel-clarify
-      args: "{idea-name}"
     postcondition:
       check: clarification-complete
-
-  - id: quick-dev:init
-    # complexity-aware: 仅 trivial 模式触发，跳过 as-is/plan/worktree，自动从 clarification 生成单 task
-    description: 自动从 requirement-clarification.json 生成 task + worktree-decision + traceability-matrix（trivial 快速通道）
-    postcondition:
-      check: task-workflow-exists
-
   - id: plan:design
-    description: planner 一次性产出 implementation-plan.md + tasks.json + traceability-matrix.json
-    action:
-      type: skill
-      name: chisel-plan
-      args: "{idea-name}"
     postcondition:
       check: to-be-exists
-
   - id: plan:confirm
-    description: 用户确认方案和 task 拆分，写入 confirmations/to-be.json；实时捕获知识候选
-    outputs:
-      - confirmations/to-be.json
     postcondition:
       check: to-be-confirmed
-
-  - id: knowledge:extract
-    # complexity-aware: trivial 模式跳过此步
-    # parallel: plan:confirm 后并行启动，不阻塞主链路，final:summary 前必须完成
-    # optional: 用户在 plan:confirm 后可选择跳过（knowledge_extraction.enabled=false）
-    optional: true
-    opt_in_at: plan:confirm
-    description: 从方案确认后的产物和实时捕获中提取长期知识候选，去重后写入 knowledge-candidates 目录，用户确认后合入 wiki 并激活 rule。并行于 worktree:setup/tasks:init/implement，在 final:summary 前同步。用户可在 plan:confirm 后选择跳过
-    parallel_with: [worktree:setup, tasks:init, implement:code, review:cr]
-    sync_before: final:summary
-    postcondition:
-      check: knowledge-extracted
-
   - id: worktree:setup
-    description: 检测工作空间下的 Git 仓库；询问用户是否创建隔离 worktree；yes → 在每个涉及的仓库创建同名分支 worktree；no → 在当前分支开发。支持多仓（schema_version=2）和单仓（schema_version=1）
     postcondition:
       check: worktree-decided
-
-  - id: tasks:init
-    description: 基于 tasks.json 初始化 task-workflow-state.yaml
+  - id: quick-dev:init
     postcondition:
       check: task-workflow-exists
-
+  - id: tasks:init
+    postcondition:
+      check: task-workflow-exists
   - id: implement:code
-    description: 按 task 依赖执行 coding subagent（无依赖 task 可并行）
-    action:
-      type: skill
-      name: chisel-implement
-      args: "{idea-name}"
     postcondition:
       check: implementation-verified
-
+  - id: repair:code
+    postcondition:
+      check: implementation-verified
   - id: review:cr
-    description: spec 门槛 + D2-D9 条件激活多维 CR；spec fail 直接返修，spec pass 后按变更特征激活 D2-D9 子集并行审查，fail 项经验证子阶段确认后聚合返修项
-    action:
-      type: skill
-      name: chisel-review
-      args: "{idea-name}"
     postcondition:
       check: cr-complete
-
   - id: review:cr-light
-    # complexity-aware: 仅 trivial 模式触发，只运行 spec 维度
-    description: Spec-only 轻量 CR（trivial 快速通道）；spec pass → approved，fail → needs_rework
-    action:
-      type: skill
-      name: chisel-review
-      args: "{idea-name}"
     postcondition:
       check: cr-complete
-
   - id: review:cr-moderate
-    description: moderate 路径执行 spec + D3 + D4 + D5 审查，其余维度记录显式跳过
-    action:
-      type: skill
-      name: chisel-review
-      args: "{idea-name}"
     postcondition:
       check: cr-complete
-
   - id: review:integration
-    description: standard/complex 多 task 全部通过 per-task CR 后执行跨 task 集成审查
-    action:
-      type: skill
-      name: chisel-review
-      args: "{idea-name}"
     postcondition:
       check: integration-cr-complete
-
-  - id: repair:code
-    description: 按 CR 返修清单修复代码
-    action:
-      type: skill
-      name: chisel-implement
-      args: "{idea-name}"
+  - id: knowledge:extract
     postcondition:
-      check: implementation-verified
-
+      check: knowledge-extracted
   - id: final:summary
-    description: 汇总变更、CR、返修、验证方法，呈现知识候选摘要
     postcondition:
       check: done
