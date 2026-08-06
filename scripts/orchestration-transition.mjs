@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { closeSync, existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSnapshot } from './checkpoint.mjs';
@@ -8,11 +8,6 @@ import { commitFileTransaction, recoverFileTransactions } from './file-transacti
 import { initWorkflowState, readWorkflowRevision, renderWorkflowPhaseUpdate } from './workflow-lib.mjs';
 import { recordStepFinish, recordStepStart } from './session-metrics.mjs';
 import { WORKFLOW_STEPS } from './workflow-definition.mjs';
-
-function fail(message, code = 1) {
-  process.stderr.write(`${JSON.stringify({ error: message })}\n`);
-  process.exit(code);
-}
 
 function option(args, name) {
   const index = args.indexOf(name);
@@ -27,7 +22,7 @@ function readEvents(ideaDir) {
   });
 }
 
-function recommendedStep(ideaDir) {
+function forkRecommendedStep(ideaDir) {
   const scriptDir = dirname(fileURLToPath(import.meta.url));
   const output = execFileSync('node', [join(scriptDir, 'orchestration-status.mjs'), ideaDir, '--compact'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
   const step = output.match(/^resume_step:\s*(.+)$/m)?.[1]?.trim();
@@ -35,12 +30,12 @@ function recommendedStep(ideaDir) {
   return step;
 }
 
-function processIsAlive(pid) {
+export function processIsAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-function acquireTransitionLock(lockPath) {
+export function acquireTransitionLock(lockPath) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       const fd = openSync(lockPath, 'wx');
@@ -63,37 +58,36 @@ function acquireTransitionLock(lockPath) {
   return null;
 }
 
-function main() {
-  const args = process.argv.slice(2);
-  const ideaDir = args[0];
-  const step = args[1];
-  const expectedRevisionRaw = option(args, '--expected-revision');
-  const openDashboard = args.includes('--open-dashboard');
-  if (!ideaDir || !step || expectedRevisionRaw === undefined) {
-    fail('用法: orchestration-transition.mjs <idea-dir> <step> --expected-revision <n> [--event-id <id>] [--open-dashboard]');
+export function performTransition(ideaDir, step, {
+  expectedRevision,
+  eventId,
+  openDashboard = false,
+  skipDashboard = false,
+  statusFn,
+} = {}) {
+  if (!existsSync(ideaDir)) throw new Error(`idea-dir not found: ${ideaDir}`);
+  if (!WORKFLOW_STEPS.includes(step)) throw new Error(`unknown workflow step: ${step}`);
+  if (expectedRevision === undefined || !Number.isInteger(expectedRevision) || expectedRevision < 0) {
+    throw new Error('expectedRevision must be a non-negative integer');
   }
-  if (!existsSync(ideaDir)) fail(`idea-dir not found: ${ideaDir}`);
-  if (!WORKFLOW_STEPS.includes(step)) fail(`unknown workflow step: ${step}`);
-  const expectedRevision = Number(expectedRevisionRaw);
-  if (!Number.isInteger(expectedRevision) || expectedRevision < 0) fail('--expected-revision must be a non-negative integer');
-  const eventId = option(args, '--event-id') || `transition:${expectedRevision}:${step}`;
+  const resolvedEventId = eventId || `transition:${expectedRevision}:${step}`;
+  const resolveStep = statusFn || forkRecommendedStep;
 
   const lockPath = join(ideaDir, '.transition.lock');
   const lockFd = acquireTransitionLock(lockPath);
-  if (lockFd === null) fail('another workflow transition is in progress', 2);
+  if (lockFd === null) throw new Error('another workflow transition is in progress');
 
   try {
     const recoveredTransactions = recoverFileTransactions(ideaDir);
-    const replay = readEvents(ideaDir).find(event => event.event_id === eventId);
+    const replay = readEvents(ideaDir).find(event => event.event_id === resolvedEventId);
     if (replay) {
-      if (replay.to !== step) throw new Error(`event_id already used for a different step: ${eventId}`);
-      console.log(JSON.stringify({ transitioned: false, idempotent_replay: true, recovered_transactions: recoveredTransactions, ...replay }));
-      return;
+      if (replay.to !== step) throw new Error(`event_id already used for a different step: ${resolvedEventId}`);
+      return { transitioned: false, idempotent_replay: true, recovered_transactions: recoveredTransactions, ...replay };
     }
 
     const actualRevision = readWorkflowRevision(ideaDir);
     if (actualRevision !== expectedRevision) throw new Error(`workflow revision conflict: expected ${expectedRevision}, actual ${actualRevision}`);
-    const recommended = recommendedStep(ideaDir);
+    const recommended = resolveStep(ideaDir);
     if (recommended !== step) throw new Error(`transition rejected: authoritative resume_step is ${recommended}, requested ${step}`);
 
     const statePath = join(ideaDir, 'workflow-state.yaml');
@@ -101,8 +95,7 @@ function main() {
     const stateText = readFileSync(statePath, 'utf8');
     const previousStep = stateText.match(/^current_step:\s*(.+)$/m)?.[1]?.trim() || 'receive-requirement';
     if (previousStep === step) {
-      console.log(JSON.stringify({ transitioned: false, current_step: step, revision: readWorkflowRevision(ideaDir), reason: 'already current' }));
-      return;
+      return { transitioned: false, current_step: step, revision: readWorkflowRevision(ideaDir), reason: 'already current' };
     }
 
     try { createSnapshot(ideaDir); } catch { /* snapshots are non-critical */ }
@@ -110,7 +103,7 @@ function main() {
     const rendered = renderWorkflowPhaseUpdate(stateText, step, { expectedRevision, incrementRevision: true, now: at });
     const transition = rendered.transition;
     const event = {
-      event_id: eventId,
+      event_id: resolvedEventId,
       type: 'workflow.transition',
       at,
       from: previousStep,
@@ -122,32 +115,54 @@ function main() {
     const eventsText = existsSync(eventsPath) ? readFileSync(eventsPath, 'utf8') : '';
     const failAfterWrites = Number(process.env.CHISEL_TX_FAIL_AFTER_WRITES || 0);
     const transaction = commitFileTransaction(ideaDir, [
-      // Write the event first and state last. If interrupted, the next transition
-      // still sees the old revision and can roll the prepared transaction forward.
       { path: 'events.ndjson', content: `${eventsText}${JSON.stringify(event)}\n` },
       { path: 'workflow-state.yaml', content: rendered.content },
-    ], { id: `workflow-${eventId}`, failAfterWrites });
+    ], { id: `workflow-${resolvedEventId}`, failAfterWrites });
     try { recordStepFinish(ideaDir, previousStep); } catch { /* metrics are non-critical */ }
     try { recordStepStart(ideaDir, step); } catch { /* metrics are non-critical */ }
 
     let dashboardUpdated = false;
-    try {
-      const scriptDir = dirname(fileURLToPath(import.meta.url));
-      const dashboardArgs = [join(scriptDir, 'dashboard.mjs'), ideaDir];
-      if (!openDashboard) dashboardArgs.push('--no-open');
-      execFileSync('node', dashboardArgs, { stdio: 'ignore', timeout: 5000 });
-      dashboardUpdated = true;
-    } catch { /* dashboard is observational, not transactional */ }
-    console.log(JSON.stringify({ transitioned: true, ...event, transaction_id: transaction.transaction_id, recovered_transactions: transaction.recovered, dashboard_updated: dashboardUpdated, dashboard_opened: dashboardUpdated && openDashboard }));
-  } catch (error) {
-    process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
-    process.exitCode = 2;
+    if (!skipDashboard) {
+      try {
+        const scriptDir = dirname(fileURLToPath(import.meta.url));
+        const dashboardArgs = [join(scriptDir, 'dashboard.mjs'), ideaDir];
+        if (!openDashboard) dashboardArgs.push('--no-open');
+        const child = spawn('node', dashboardArgs, { detached: true, stdio: 'ignore' });
+        child.unref();
+        dashboardUpdated = true;
+      } catch { /* dashboard is observational, not transactional */ }
+    }
+    return { transitioned: true, ...event, transaction_id: transaction.transaction_id, recovered_transactions: transaction.recovered, dashboard_updated: dashboardUpdated, dashboard_opened: dashboardUpdated && openDashboard };
   } finally {
     closeSync(lockFd);
     try { unlinkSync(lockPath); } catch { /* already removed */ }
   }
 }
 
-if (fileURLToPath(import.meta.url) === process.argv[1]) main();
+function main() {
+  const args = process.argv.slice(2);
+  const ideaDir = args[0];
+  const step = args[1];
+  const expectedRevisionRaw = option(args, '--expected-revision');
+  const openDashboard = args.includes('--open-dashboard');
+  if (!ideaDir || !step || expectedRevisionRaw === undefined) {
+    process.stderr.write('用法: orchestration-transition.mjs <idea-dir> <step> --expected-revision <n> [--event-id <id>] [--open-dashboard]\n');
+    process.exit(1);
+  }
+  const expectedRevision = Number(expectedRevisionRaw);
+  if (!Number.isInteger(expectedRevision) || expectedRevision < 0) {
+    process.stderr.write(`${JSON.stringify({ error: '--expected-revision must be a non-negative integer' })}\n`);
+    process.exit(1);
+  }
+  const eventId = option(args, '--event-id') || undefined;
 
-export { acquireTransitionLock, processIsAlive };
+  try {
+    const result = performTransition(ideaDir, step, { expectedRevision, eventId, openDashboard });
+    console.log(JSON.stringify(result));
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
+    process.exitCode = 2;
+  }
+}
+
+if (fileURLToPath(import.meta.url) === process.argv[1]) main();

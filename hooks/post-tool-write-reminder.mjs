@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// PostToolUse hook: injects workflow reminders after Write to .chisel/ paths.
+// PostToolUse hook: injects workflow reminders after Write to chisel control plane paths.
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
+import { controlRoot } from '../scripts/control-plane.mjs';
 
 function readStdin() {
   try {
@@ -43,18 +44,19 @@ function main() {
   if (!filePath) return;
 
   const cwd = input.cwd || process.cwd();
+  const chiselDir = controlRoot(cwd);
   const absPath = resolve(cwd, filePath);
-  const relPath = relative(cwd, absPath);
+  const relPath = relative(chiselDir, absPath);
 
-  if (!relPath.startsWith('.chisel/') && !relPath.startsWith('.chisel\\')) return;
+  if (relPath === '..' || relPath.startsWith('../') || relPath.startsWith('..\\')) return;
 
   const parts = relPath.split(/[/\\]/);
-  if (parts.length < 3) return;
-  const ideaName = parts[1];
+  if (parts.length < 2) return;
+  const ideaName = parts[0];
   if (ideaName === 'wiki' || ideaName === 'wiki-candidates') return;
 
-  const ideaDir = join(cwd, '.chisel', ideaName);
-  const subPath = parts.slice(2).join('/');
+  const ideaDir = join(chiselDir, ideaName);
+  const subPath = parts.slice(1).join('/');
   const step = getCurrentStep(ideaDir);
 
   const deliverableDirs = ['as-is/', 'to-be/', 'tasks/', 'task-reports/', 'cr/'];

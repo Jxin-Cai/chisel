@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { durableAtomicWrite, recoverFileTransactions } from './file-transaction.mjs';
 import { ideaDirectory } from './control-plane.mjs';
-
-const SCRIPT_DIR = new URL('.', import.meta.url).pathname;
+import { computeStatus } from './orchestration-status.mjs';
+import { performTransition } from './orchestration-transition.mjs';
 
 function parse(argv) {
   const result = { command: argv[0] || '--next' };
@@ -17,7 +16,7 @@ function parse(argv) {
   return result;
 }
 
-function parseStatus(text) {
+export function parseStatus(text) {
   const result = {};
   for (const line of text.split('\n')) {
     const match = line.match(/^([a-z_]+):\s*(.*)$/);
@@ -60,20 +59,18 @@ function claim(ideaDir, owner, leaseSeconds) {
 }
 
 function status(ideaDir) {
-  const output = execFileSync('node', [join(SCRIPT_DIR, 'orchestration-status.mjs'), ideaDir, '--compact'], { encoding: 'utf8' });
-  return parseStatus(output);
+  return computeStatus(ideaDir);
 }
 
 function tick(ideaDir, state) {
   const recovered_transactions = recoverFileTransactions(ideaDir);
   let decision = status(ideaDir);
-  const workflowFile = join(ideaDir, 'workflow-state.yaml');
-  if (decision.transition_required && existsSync(workflowFile)) {
-    execFileSync('node', [
-      join(SCRIPT_DIR, 'orchestration-transition.mjs'), ideaDir, decision.resume_step,
-      '--expected-revision', String(decision.state_revision),
-      '--event-id', `runner-${state.runner_id}-${state.iteration + 1}`,
-    ], { encoding: 'utf8' });
+  if (decision.transition_required) {
+    performTransition(ideaDir, decision.resume_step, {
+      expectedRevision: decision.state_revision,
+      eventId: `runner-${state.runner_id}-${state.iteration + 1}`,
+      statusFn: (dir) => computeStatus(dir).resume_step,
+    });
     decision = status(ideaDir);
   }
   state.iteration += 1;
@@ -121,4 +118,4 @@ function main() {
 
 if (import.meta.url === `file://${process.argv[1]}`) main();
 
-export { parseStatus, readRunner };
+export { readRunner };

@@ -21,15 +21,6 @@ import {
 import { checkGate } from './gate-check.mjs';
 import { WORKFLOW_PATHS } from './workflow-definition.mjs';
 
-const IDEA_DIR = process.argv[2];
-const compact = process.argv.includes('--compact');
-const dryRun = process.argv.includes('--dry-run');
-
-if (!IDEA_DIR) {
-  process.stderr.write('用法: node orchestration-status.mjs <idea-dir|none> [--compact] [--dry-run]\n');
-  process.exit(1);
-}
-
 function readPreviousStep(ideaDir) {
   const p = join(ideaDir, 'workflow-state.yaml');
   if (!existsSync(p)) return null;
@@ -38,56 +29,47 @@ function readPreviousStep(ideaDir) {
   return m ? m[1].trim() : null;
 }
 
-function emit(resumeStep, reason, phaseDetail = {}) {
-  const assessment = IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR)
-    ? classifyChange(IDEA_DIR)
+function buildResult(resumeStep, reason, ideaDir, phaseDetail = {}) {
+  const assessment = ideaDir && ideaDir !== 'none' && existsSync(ideaDir)
+    ? classifyChange(ideaDir)
     : { delivery_complexity: 'standard', risk_level: 'low', uncertainty_level: 'low', routing_complexity: 'standard', reasons: [] };
   const complexity = phaseDetail.complexity || assessment.routing_complexity;
-  console.log(`resume_step: ${resumeStep}`);
-  console.log(`reason: ${JSON.stringify(reason)}`);
-  console.log(`complexity: ${complexity}`);
-  console.log(`delivery_complexity: ${assessment.delivery_complexity}`);
-  console.log(`risk_level: ${assessment.risk_level}`);
-  console.log(`uncertainty_level: ${assessment.uncertainty_level}`);
-  if (assessment.reasons.length > 0) console.log(`routing_reasons: ${JSON.stringify(assessment.reasons)}`);
-  const currentStep = IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? readPreviousStep(IDEA_DIR) : null;
-  const revision = IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR) ? readWorkflowRevision(IDEA_DIR) : 0;
-  console.log(`current_step: ${currentStep || 'none'}`);
-  console.log(`state_revision: ${revision}`);
-  console.log(`transition_required: ${currentStep !== resumeStep}`);
+  const currentStep = ideaDir && ideaDir !== 'none' && existsSync(ideaDir) ? readPreviousStep(ideaDir) : null;
+  const revision = ideaDir && ideaDir !== 'none' && existsSync(ideaDir) ? readWorkflowRevision(ideaDir) : 0;
   const entries = Object.entries(phaseDetail).filter(([k, v]) => v !== undefined && v !== '' && k !== 'complexity');
-  if (entries.length > 0) {
-    if (compact) {
-      console.log(`phase_detail: ${entries.map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`).join('|')}`);
-    } else {
-      console.log('phase_detail:');
-      for (const [key, value] of entries) console.log(`  ${key}: ${Array.isArray(value) ? value.join(',') : value}`);
-    }
-  }
+  return {
+    resume_step: resumeStep,
+    reason,
+    complexity,
+    delivery_complexity: assessment.delivery_complexity,
+    risk_level: assessment.risk_level,
+    uncertainty_level: assessment.uncertainty_level,
+    routing_reasons: assessment.reasons.length > 0 ? assessment.reasons : undefined,
+    current_step: currentStep || 'none',
+    state_revision: revision,
+    transition_required: currentStep !== resumeStep,
+    phase_detail: entries.length > 0 ? Object.fromEntries(entries) : undefined,
+  };
 }
 
-function has(rel) {
-  return existsSync(join(IDEA_DIR, rel));
+function has(ideaDir, rel) {
+  return existsSync(join(ideaDir, rel));
 }
 
-function ensureVerificationBeforeReview(reviewTasks, reviewStep, reason, phaseDetail = {}) {
-  const state = readTaskState(taskStateFile(IDEA_DIR));
-  // A reviewing task is a recovery case: it already crossed the verification
-  // boundary in an earlier run, including legacy workflows created before v2.
+function ensureVerificationBeforeReview(ideaDir, reviewTasks, reviewStep, reason, phaseDetail = {}) {
+  const state = readTaskState(taskStateFile(ideaDir));
   const unstartedReviewTasks = reviewTasks.filter(taskId => state.tasks[taskId]?.status === 'coded');
   if (unstartedReviewTasks.length > 0) {
-    const gate = checkGate(IDEA_DIR, 'implementation-verified');
+    const gate = checkGate(ideaDir, 'implementation-verified');
     if (!gate.pass) {
-      emit('implement:code', 'post-coding verification is missing, failed, or stale', {
+      return buildResult('implement:code', 'post-coding verification is missing, failed, or stale', ideaDir, {
         ...phaseDetail,
         verification_reason: gate.reason,
         verification_tasks: unstartedReviewTasks,
       });
-      return false;
     }
   }
-  emit(reviewStep, reason, { ...phaseDetail, next_tasks: reviewTasks });
-  return true;
+  return buildResult(reviewStep, reason, ideaDir, { ...phaseDetail, next_tasks: reviewTasks });
 }
 
 
@@ -99,15 +81,15 @@ function isInWorktree() {
   } catch { return false; }
 }
 
-function dryRunPlan() {
-  const assessment = (IDEA_DIR && IDEA_DIR !== 'none' && existsSync(IDEA_DIR))
-    ? classifyChange(IDEA_DIR) : { routing_complexity: 'standard' };
+function computeDryRunPlan(ideaDir) {
+  const assessment = (ideaDir && ideaDir !== 'none' && existsSync(ideaDir))
+    ? classifyChange(ideaDir) : { routing_complexity: 'standard' };
   const complexity = assessment.routing_complexity;
 
   const steps = WORKFLOW_PATHS[complexity] || WORKFLOW_PATHS.standard;
-  const currentStep = readPreviousStep(IDEA_DIR);
+  const currentStep = readPreviousStep(ideaDir);
 
-  const output = {
+  return {
     dry_run: true,
     complexity,
     current_step: currentStep || 'none',
@@ -118,387 +100,352 @@ function dryRunPlan() {
       ...(currentStep && s.step === currentStep ? { current: true } : {}),
     })),
   };
-  console.log(JSON.stringify(output, null, 2));
 }
 
-function main() {
-  if (dryRun) { dryRunPlan(); return; }
+export function computeStatus(ideaDir, { dryRun = false } = {}) {
+  if (dryRun) return computeDryRunPlan(ideaDir);
 
-  if (IDEA_DIR === 'none' || !existsSync(IDEA_DIR)) {
-    emit('receive-requirement', 'idea directory does not exist');
-    return;
+  if (ideaDir === 'none' || !existsSync(ideaDir)) {
+    return buildResult('receive-requirement', 'idea directory does not exist', ideaDir);
   }
-  if (!checkGate(IDEA_DIR, 'requirement-exists').pass) {
-    emit('receive-requirement', 'requirement.md does not exist');
-    return;
+  if (!checkGate(ideaDir, 'requirement-exists').pass) {
+    return buildResult('receive-requirement', 'requirement.md does not exist', ideaDir);
   }
 
-  const complexity = classifyChange(IDEA_DIR).routing_complexity;
+  const complexity = classifyChange(ideaDir).routing_complexity;
 
   // === HOTFIX QUICK PATH ===
   if (complexity === 'hotfix') {
-    if (!has('task-workflow-state.yaml')) {
-      emit('quick-dev:init', 'auto-generating hotfix task (single-file, ≤5 lines)', { complexity });
-      return;
+    if (!has(ideaDir, 'task-workflow-state.yaml')) {
+      return buildResult('quick-dev:init', 'auto-generating hotfix task (single-file, ≤5 lines)', ideaDir, { complexity });
     }
-    const staleTasks = getStaleCodingTasks(IDEA_DIR);
+    const staleTasks = getStaleCodingTasks(ideaDir);
     if (staleTasks.length > 0) {
-      emit('implement:code', 'stale coding tasks detected', { stale_tasks: staleTasks.map(t => t.taskId), complexity });
-      return;
+      return buildResult('implement:code', 'stale coding tasks detected', ideaDir, { stale_tasks: staleTasks.map(t => t.taskId), complexity });
     }
-    const blocked = getBlockedReworkTasks(IDEA_DIR);
+    const blocked = getBlockedReworkTasks(ideaDir);
     if (blocked.length > 0) {
-      emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
-      return;
+      return buildResult('blocked', 'task reached max rework count', ideaDir, { blocked_tasks: blocked, complexity });
     }
-    const repairingTasks = getRepairingTasks(IDEA_DIR);
+    const repairingTasks = getRepairingTasks(ideaDir);
     if (repairingTasks.length > 0) {
-      emit('repair:code', 'tasks are already being repaired', { in_progress_tasks: repairingTasks, complexity });
-      return;
+      return buildResult('repair:code', 'tasks are already being repaired', ideaDir, { in_progress_tasks: repairingTasks, complexity });
     }
-    const reworkTasks = getReworkTasks(IDEA_DIR);
+    const reworkTasks = getReworkTasks(ideaDir);
     if (reworkTasks.length > 0) {
-      emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
-      return;
+      return buildResult('repair:code', 'there are tasks that need rework', ideaDir, { next_tasks: reworkTasks, complexity });
     }
-    const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
+    const reviewTasks = getReviewBacklogTasks(ideaDir);
     if (reviewTasks.length > 0) {
-      ensureVerificationBeforeReview(reviewTasks, 'review:cr-light', 'tasks are ready or already in review (hotfix: spec-only)', { complexity });
-      return;
+      return ensureVerificationBeforeReview(ideaDir, reviewTasks, 'review:cr-light', 'tasks are ready or already in review (hotfix: spec-only)', { complexity });
     }
-    const codingTasks = getCodingTasks(IDEA_DIR);
+    const codingTasks = getCodingTasks(ideaDir);
     if (codingTasks.length > 0) {
-      emit('implement:code', 'tasks are already being coded', { in_progress_tasks: codingTasks, complexity });
-      return;
+      return buildResult('implement:code', 'tasks are already being coded', ideaDir, { in_progress_tasks: codingTasks, complexity });
     }
-    const codeTasks = getNextTasks(IDEA_DIR);
+    const codeTasks = getNextTasks(ideaDir);
     if (codeTasks.length > 0) {
-      emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
-      return;
+      return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
     }
-    if (allTasksApproved(IDEA_DIR)) {
-      if (!checkGate(IDEA_DIR, 'done').pass) {
-        emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
-        return;
+    if (allTasksApproved(ideaDir)) {
+      if (!checkGate(ideaDir, 'done').pass) {
+        return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
       }
-      emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
-      return;
+      return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
     }
-    const state = readTaskState(taskStateFile(IDEA_DIR));
-    emit('blocked', 'no executable next step found (hotfix)', { task_count: Object.keys(state.tasks).length, complexity });
-    return;
+    const state = readTaskState(taskStateFile(ideaDir));
+    return buildResult('blocked', 'no executable next step found (hotfix)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
   }
 
   // === MINOR QUICK PATH ===
   if (complexity === 'minor') {
-    if (!checkGate(IDEA_DIR, 'clarification-complete').pass) {
-      emit('clarify:requirement', 'lightweight clarification needed (minor: functional_scope + acceptance_criteria)', { complexity });
-      return;
+    if (!checkGate(ideaDir, 'clarification-complete').pass) {
+      return buildResult('clarify:requirement', 'lightweight clarification needed (minor: functional_scope + acceptance_criteria)', ideaDir, { complexity });
     }
-    if (!has('task-workflow-state.yaml')) {
-      emit('quick-dev:init', 'auto-generating task from requirement-clarification (minor quick-dev)', { complexity });
-      return;
+    if (!has(ideaDir, 'task-workflow-state.yaml')) {
+      return buildResult('quick-dev:init', 'auto-generating task from requirement-clarification (minor quick-dev)', ideaDir, { complexity });
     }
-    const staleTasks = getStaleCodingTasks(IDEA_DIR);
+    const staleTasks = getStaleCodingTasks(ideaDir);
     if (staleTasks.length > 0) {
-      emit('implement:code', 'stale coding tasks detected', { stale_tasks: staleTasks.map(t => t.taskId), complexity });
-      return;
+      return buildResult('implement:code', 'stale coding tasks detected', ideaDir, { stale_tasks: staleTasks.map(t => t.taskId), complexity });
     }
-    const blocked = getBlockedReworkTasks(IDEA_DIR);
+    const blocked = getBlockedReworkTasks(ideaDir);
     if (blocked.length > 0) {
-      emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
-      return;
+      return buildResult('blocked', 'task reached max rework count', ideaDir, { blocked_tasks: blocked, complexity });
     }
-    const repairingTasks = getRepairingTasks(IDEA_DIR);
+    const repairingTasks = getRepairingTasks(ideaDir);
     if (repairingTasks.length > 0) {
-      emit('repair:code', 'tasks are already being repaired', { in_progress_tasks: repairingTasks, complexity });
-      return;
+      return buildResult('repair:code', 'tasks are already being repaired', ideaDir, { in_progress_tasks: repairingTasks, complexity });
     }
-    const reworkTasks = getReworkTasks(IDEA_DIR);
+    const reworkTasks = getReworkTasks(ideaDir);
     if (reworkTasks.length > 0) {
-      emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
-      return;
+      return buildResult('repair:code', 'there are tasks that need rework', ideaDir, { next_tasks: reworkTasks, complexity });
     }
-    const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
+    const reviewTasks = getReviewBacklogTasks(ideaDir);
     if (reviewTasks.length > 0) {
-      ensureVerificationBeforeReview(reviewTasks, 'review:cr-light', 'tasks are ready or already in review (minor: spec + light)', { complexity });
-      return;
+      return ensureVerificationBeforeReview(ideaDir, reviewTasks, 'review:cr-light', 'tasks are ready or already in review (minor: spec + light)', { complexity });
     }
-    const codingTasks = getCodingTasks(IDEA_DIR);
+    const codingTasks = getCodingTasks(ideaDir);
     if (codingTasks.length > 0) {
-      emit('implement:code', 'tasks are already being coded', { in_progress_tasks: codingTasks, complexity });
-      return;
+      return buildResult('implement:code', 'tasks are already being coded', ideaDir, { in_progress_tasks: codingTasks, complexity });
     }
-    const codeTasks = getNextTasks(IDEA_DIR);
+    const codeTasks = getNextTasks(ideaDir);
     if (codeTasks.length > 0) {
-      emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
-      return;
+      return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
     }
-    if (allTasksApproved(IDEA_DIR)) {
-      if (!checkGate(IDEA_DIR, 'done').pass) {
-        emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
-        return;
+    if (allTasksApproved(ideaDir)) {
+      if (!checkGate(ideaDir, 'done').pass) {
+        return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
       }
-      emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
-      return;
+      return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
     }
-    const state = readTaskState(taskStateFile(IDEA_DIR));
-    emit('blocked', 'no executable next step found (minor)', { task_count: Object.keys(state.tasks).length, complexity });
-    return;
+    const state = readTaskState(taskStateFile(ideaDir));
+    return buildResult('blocked', 'no executable next step found (minor)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
   }
 
   // === TRIVIAL QUICK-DEV PATH ===
   if (complexity === 'trivial') {
-    if (!checkGate(IDEA_DIR, 'clarification-complete').pass) {
-      emit('clarify:requirement', 'lightweight clarification needed (trivial: only functional_scope + acceptance_criteria)', { complexity });
-      return;
+    if (!checkGate(ideaDir, 'clarification-complete').pass) {
+      return buildResult('clarify:requirement', 'lightweight clarification needed (trivial: only functional_scope + acceptance_criteria)', ideaDir, { complexity });
     }
-    if (!has('task-workflow-state.yaml')) {
-      emit('quick-dev:init', 'auto-generating task from requirement-clarification (trivial quick-dev)', { complexity });
-      return;
+    if (!has(ideaDir, 'task-workflow-state.yaml')) {
+      return buildResult('quick-dev:init', 'auto-generating task from requirement-clarification (trivial quick-dev)', ideaDir, { complexity });
     }
-    // From here, trivial reuses the standard implement/review loop
-    const staleTasks = getStaleCodingTasks(IDEA_DIR);
+    const staleTasks = getStaleCodingTasks(ideaDir);
     if (staleTasks.length > 0) {
-      emit('implement:code', 'stale coding tasks detected', { stale_tasks: staleTasks.map(t => t.taskId), complexity });
-      return;
+      return buildResult('implement:code', 'stale coding tasks detected', ideaDir, { stale_tasks: staleTasks.map(t => t.taskId), complexity });
     }
-    const blocked = getBlockedReworkTasks(IDEA_DIR);
+    const blocked = getBlockedReworkTasks(ideaDir);
     if (blocked.length > 0) {
-      emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
-      return;
+      return buildResult('blocked', 'task reached max rework count', ideaDir, { blocked_tasks: blocked, complexity });
     }
-    const repairingTasks = getRepairingTasks(IDEA_DIR);
+    const repairingTasks = getRepairingTasks(ideaDir);
     if (repairingTasks.length > 0) {
-      emit('repair:code', 'tasks are already being repaired', { in_progress_tasks: repairingTasks, complexity });
-      return;
+      return buildResult('repair:code', 'tasks are already being repaired', ideaDir, { in_progress_tasks: repairingTasks, complexity });
     }
-    const reworkTasks = getReworkTasks(IDEA_DIR);
+    const reworkTasks = getReworkTasks(ideaDir);
     if (reworkTasks.length > 0) {
-      emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
-      return;
+      return buildResult('repair:code', 'there are tasks that need rework', ideaDir, { next_tasks: reworkTasks, complexity });
     }
-    const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
+    const reviewTasks = getReviewBacklogTasks(ideaDir);
     if (reviewTasks.length > 0) {
-      ensureVerificationBeforeReview(reviewTasks, 'review:cr-light', 'tasks are ready or already in review (trivial)', { complexity });
-      return;
+      return ensureVerificationBeforeReview(ideaDir, reviewTasks, 'review:cr-light', 'tasks are ready or already in review (trivial)', { complexity });
     }
-    const codingTasks = getCodingTasks(IDEA_DIR);
+    const codingTasks = getCodingTasks(ideaDir);
     if (codingTasks.length > 0) {
-      emit('implement:code', 'tasks are already being coded', { in_progress_tasks: codingTasks, complexity });
-      return;
+      return buildResult('implement:code', 'tasks are already being coded', ideaDir, { in_progress_tasks: codingTasks, complexity });
     }
-    const codeTasks = getNextTasks(IDEA_DIR);
+    const codeTasks = getNextTasks(ideaDir);
     if (codeTasks.length > 0) {
-      emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
-      return;
+      return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
     }
-    if (allTasksApproved(IDEA_DIR)) {
-      const traceGate = checkGate(IDEA_DIR, 'traceability-complete');
+    if (allTasksApproved(ideaDir)) {
+      const traceGate = checkGate(ideaDir, 'traceability-complete');
       if (!traceGate.pass && !traceGate.skipped) {
-        emit('blocked', 'traceability incomplete', { complexity, trace_reason: traceGate.reason });
-        return;
+        return buildResult('blocked', 'traceability incomplete', ideaDir, { complexity, trace_reason: traceGate.reason });
       }
-      if (!checkGate(IDEA_DIR, 'done').pass) {
-        emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
-        return;
+      if (!checkGate(ideaDir, 'done').pass) {
+        return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
       }
-      emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
-      return;
+      return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
     }
-    const state = readTaskState(taskStateFile(IDEA_DIR));
-    emit('blocked', 'no executable next step found (trivial)', { task_count: Object.keys(state.tasks).length, complexity });
-    return;
+    const state = readTaskState(taskStateFile(ideaDir));
+    return buildResult('blocked', 'no executable next step found (trivial)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
   }
 
   // === MODERATE PATH ===
   if (complexity === 'moderate') {
-    if (!checkGate(IDEA_DIR, 'clarification-complete').pass) {
-      emit('clarify:requirement', 'moderate clarification needed (4 dimensions: functional_scope, acceptance_criteria, compatibility_constraints, priority)', { complexity });
-      return;
+    if (!checkGate(ideaDir, 'clarification-complete').pass) {
+      return buildResult('clarify:requirement', 'moderate clarification needed (4 dimensions: functional_scope, acceptance_criteria, compatibility_constraints, priority)', ideaDir, { complexity });
     }
-    if (!checkGate(IDEA_DIR, 'to-be-exists').pass) {
-      emit('plan:design', 'lightweight plan needed (moderate: no impact-risk-report)', { complexity });
-      return;
+    if (!checkGate(ideaDir, 'to-be-exists').pass) {
+      return buildResult('plan:design', 'lightweight plan needed (moderate: no impact-risk-report)', ideaDir, { complexity });
     }
-    if (!checkGate(IDEA_DIR, 'to-be-confirmed').pass) {
-      emit('plan:confirm', 'plan confirmation is missing', { complexity });
-      return;
+    if (!checkGate(ideaDir, 'to-be-confirmed').pass) {
+      return buildResult('plan:confirm', 'plan confirmation is missing', ideaDir, { complexity });
     }
-    if (!checkGate(IDEA_DIR, 'worktree-decided').pass) {
-      emit('worktree:setup', 'worktree decision has not been made', { complexity });
-      return;
+    if (!checkGate(ideaDir, 'worktree-decided').pass) {
+      return buildResult('worktree:setup', 'worktree decision has not been made', ideaDir, { complexity });
     }
-    if (!has('task-workflow-state.yaml')) {
-      emit('tasks:init', 'task workflow state does not exist', { complexity });
-      return;
+    if (!has(ideaDir, 'task-workflow-state.yaml')) {
+      return buildResult('tasks:init', 'task workflow state does not exist', ideaDir, { complexity });
     }
-    const staleTasks = getStaleCodingTasks(IDEA_DIR);
+    const staleTasks = getStaleCodingTasks(ideaDir);
     if (staleTasks.length > 0) {
-      emit('implement:code', 'stale coding tasks detected', { stale_tasks: staleTasks.map(t => t.taskId), complexity });
-      return;
+      return buildResult('implement:code', 'stale coding tasks detected', ideaDir, { stale_tasks: staleTasks.map(t => t.taskId), complexity });
     }
-    const blocked = getBlockedReworkTasks(IDEA_DIR);
+    const blocked = getBlockedReworkTasks(ideaDir);
     if (blocked.length > 0) {
-      emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
-      return;
+      return buildResult('blocked', 'task reached max rework count', ideaDir, { blocked_tasks: blocked, complexity });
     }
-    const repairingTasks = getRepairingTasks(IDEA_DIR);
+    const repairingTasks = getRepairingTasks(ideaDir);
     if (repairingTasks.length > 0) {
-      emit('repair:code', 'tasks are already being repaired', { in_progress_tasks: repairingTasks, complexity });
-      return;
+      return buildResult('repair:code', 'tasks are already being repaired', ideaDir, { in_progress_tasks: repairingTasks, complexity });
     }
-    const reworkTasks = getReworkTasks(IDEA_DIR);
+    const reworkTasks = getReworkTasks(ideaDir);
     if (reworkTasks.length > 0) {
-      emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
-      return;
+      return buildResult('repair:code', 'there are tasks that need rework', ideaDir, { next_tasks: reworkTasks, complexity });
     }
-    const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
+    const reviewTasks = getReviewBacklogTasks(ideaDir);
     if (reviewTasks.length > 0) {
-      ensureVerificationBeforeReview(reviewTasks, 'review:cr-moderate', 'tasks are ready or already in review (moderate: spec+D3+D4+D5)', { complexity });
-      return;
+      return ensureVerificationBeforeReview(ideaDir, reviewTasks, 'review:cr-moderate', 'tasks are ready or already in review (moderate: spec+D3+D4+D5)', { complexity });
     }
-    const codingTasks = getCodingTasks(IDEA_DIR);
+    const codingTasks = getCodingTasks(ideaDir);
     if (codingTasks.length > 0) {
-      emit('implement:code', 'tasks are already being coded', { in_progress_tasks: codingTasks, complexity });
-      return;
+      return buildResult('implement:code', 'tasks are already being coded', ideaDir, { in_progress_tasks: codingTasks, complexity });
     }
-    const codeTasks = getNextTasks(IDEA_DIR);
+    const codeTasks = getNextTasks(ideaDir);
     if (codeTasks.length > 0) {
-      emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
-      return;
+      return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
     }
-    if (allTasksApproved(IDEA_DIR)) {
-      const traceGate = checkGate(IDEA_DIR, 'traceability-complete');
+    if (allTasksApproved(ideaDir)) {
+      const traceGate = checkGate(ideaDir, 'traceability-complete');
       if (!traceGate.pass && !traceGate.skipped) {
-        emit('blocked', 'traceability incomplete', { complexity, trace_reason: traceGate.reason });
-        return;
+        return buildResult('blocked', 'traceability incomplete', ideaDir, { complexity, trace_reason: traceGate.reason });
       }
-      if (!checkGate(IDEA_DIR, 'done').pass) {
-        emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
-        return;
+      if (!checkGate(ideaDir, 'done').pass) {
+        return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
       }
-      emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
-      return;
+      return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
     }
-    const state = readTaskState(taskStateFile(IDEA_DIR));
-    emit('blocked', 'no executable next step found (moderate)', { task_count: Object.keys(state.tasks).length, complexity });
-    return;
+    const state = readTaskState(taskStateFile(ideaDir));
+    return buildResult('blocked', 'no executable next step found (moderate)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
   }
 
   // === STANDARD / COMPLEX PATH ===
-  const asIsGate = checkGate(IDEA_DIR, 'as-is-complete');
+  const asIsGate = checkGate(ideaDir, 'as-is-complete');
   if (!asIsGate.pass) {
-    emit('understand:explore', 'as-is documents are incomplete', { gate_reason: asIsGate.reason });
-    return;
+    return buildResult('understand:explore', 'as-is documents are incomplete', ideaDir, { gate_reason: asIsGate.reason });
   }
-  if (!checkGate(IDEA_DIR, 'as-is-confirmed').pass) {
-    emit('understand:confirm', 'as-is structured confirmation is missing or invalid');
-    return;
+  if (!checkGate(ideaDir, 'as-is-confirmed').pass) {
+    return buildResult('understand:confirm', 'as-is structured confirmation is missing or invalid', ideaDir);
   }
-  if (!checkGate(IDEA_DIR, 'clarification-complete').pass) {
-    emit('clarify:requirement', 'requirement clarification is incomplete', { complexity });
-    return;
+  if (!checkGate(ideaDir, 'clarification-complete').pass) {
+    return buildResult('clarify:requirement', 'requirement clarification is incomplete', ideaDir, { complexity });
   }
-  if (!checkGate(IDEA_DIR, 'to-be-exists').pass) {
-    emit('plan:design', 'implementation plan does not exist', { complexity });
-    return;
+  if (!checkGate(ideaDir, 'to-be-exists').pass) {
+    return buildResult('plan:design', 'implementation plan does not exist', ideaDir, { complexity });
   }
-  if (!checkGate(IDEA_DIR, 'to-be-confirmed').pass) {
-    emit('plan:confirm', 'plan confirmation is missing', { complexity });
-    return;
+  if (!checkGate(ideaDir, 'to-be-confirmed').pass) {
+    return buildResult('plan:confirm', 'plan confirmation is missing', ideaDir, { complexity });
   }
-  // knowledge:extract is now a parallel side-branch, not blocking the main path.
-  // It runs concurrently after plan:confirm and is checked before final:summary.
-  if (!checkGate(IDEA_DIR, 'worktree-decided').pass) {
-    emit('worktree:setup', 'worktree decision has not been made', { complexity });
-    return;
+  if (!checkGate(ideaDir, 'worktree-decided').pass) {
+    return buildResult('worktree:setup', 'worktree decision has not been made', ideaDir, { complexity });
   }
-  if (!has('task-workflow-state.yaml')) {
-    emit('tasks:init', 'task workflow state does not exist', { complexity });
-    return;
+  if (!has(ideaDir, 'task-workflow-state.yaml')) {
+    return buildResult('tasks:init', 'task workflow state does not exist', ideaDir, { complexity });
   }
 
-  const staleTasks = getStaleCodingTasks(IDEA_DIR);
+  const staleTasks = getStaleCodingTasks(ideaDir);
   if (staleTasks.length > 0) {
-    emit('implement:code', 'stale coding tasks detected — may need rollback', { stale_tasks: staleTasks.map(t => t.taskId), complexity });
-    return;
+    return buildResult('implement:code', 'stale coding tasks detected — may need rollback', ideaDir, { stale_tasks: staleTasks.map(t => t.taskId), complexity });
   }
 
-  const blocked = getBlockedReworkTasks(IDEA_DIR);
+  const blocked = getBlockedReworkTasks(ideaDir);
   if (blocked.length > 0) {
-    emit('blocked', 'task reached max rework count', { blocked_tasks: blocked, complexity });
-    return;
+    return buildResult('blocked', 'task reached max rework count', ideaDir, { blocked_tasks: blocked, complexity });
   }
 
-  const repairingTasks = getRepairingTasks(IDEA_DIR);
+  const repairingTasks = getRepairingTasks(ideaDir);
   if (repairingTasks.length > 0) {
-    const stallInfo = detectRepairStall(IDEA_DIR);
+    const stallInfo = detectRepairStall(ideaDir);
     const detail = { in_progress_tasks: repairingTasks, complexity };
     if (stallInfo.length > 0) {
       detail.stall_detected = true;
       detail.stall_suggestions = stallInfo.map(s => `${s.taskId}: ${s.suggestion}`);
     }
-    emit('repair:code', 'tasks are already being repaired', detail);
-    return;
+    return buildResult('repair:code', 'tasks are already being repaired', ideaDir, detail);
   }
 
-  const reworkTasks = getReworkTasks(IDEA_DIR);
+  const reworkTasks = getReworkTasks(ideaDir);
   if (reworkTasks.length > 0) {
-    emit('repair:code', 'there are tasks that need rework', { next_tasks: reworkTasks, complexity });
-    return;
+    return buildResult('repair:code', 'there are tasks that need rework', ideaDir, { next_tasks: reworkTasks, complexity });
   }
 
-  const reviewTasks = getReviewBacklogTasks(IDEA_DIR);
+  const reviewTasks = getReviewBacklogTasks(ideaDir);
   if (reviewTasks.length > 0) {
-    ensureVerificationBeforeReview(reviewTasks, 'review:cr', 'tasks are ready or already in requirement-level review', { complexity });
-    return;
+    return ensureVerificationBeforeReview(ideaDir, reviewTasks, 'review:cr', 'tasks are ready or already in requirement-level review', { complexity });
   }
 
-  const codingTasks = getCodingTasks(IDEA_DIR);
+  const codingTasks = getCodingTasks(ideaDir);
   if (codingTasks.length > 0) {
-    emit('implement:code', 'tasks are already being coded', { in_progress_tasks: codingTasks, complexity });
-    return;
+    return buildResult('implement:code', 'tasks are already being coded', ideaDir, { in_progress_tasks: codingTasks, complexity });
   }
 
-  const codeTasks = getNextTasks(IDEA_DIR);
+  const codeTasks = getNextTasks(ideaDir);
   if (codeTasks.length > 0) {
-    emit('implement:code', 'there are confirmed tasks ready to code', { next_tasks: codeTasks, complexity });
-    return;
+    return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
   }
 
-  if (allTasksApproved(IDEA_DIR)) {
-    // Integration review: multi-task standard/complex only
-    const state = readTaskState(taskStateFile(IDEA_DIR));
+  if (allTasksApproved(ideaDir)) {
+    const state = readTaskState(taskStateFile(ideaDir));
     const taskCount = Object.keys(state.tasks).length;
     if (taskCount > 1 && (complexity === 'standard' || complexity === 'complex')) {
-      const integrationGate = checkGate(IDEA_DIR, 'integration-cr-complete');
+      const integrationGate = checkGate(ideaDir, 'integration-cr-complete');
       if (!integrationGate.pass) {
-        emit('review:integration', 'integration review is missing, incomplete, or did not pass', { complexity, task_count: taskCount, integration_reason: integrationGate.reason });
-        return;
+        return buildResult('review:integration', 'integration review is missing, incomplete, or did not pass', ideaDir, { complexity, task_count: taskCount, integration_reason: integrationGate.reason });
       }
     }
 
-    const traceGate = checkGate(IDEA_DIR, 'traceability-complete');
+    const traceGate = checkGate(ideaDir, 'traceability-complete');
     if (!traceGate.pass && !traceGate.skipped) {
-      emit('blocked', 'traceability incomplete — not all requirements covered by approved tasks', { complexity, trace_reason: traceGate.reason });
-      return;
+      return buildResult('blocked', 'traceability incomplete — not all requirements covered by approved tasks', ideaDir, { complexity, trace_reason: traceGate.reason });
     }
-    // Knowledge extraction runs in parallel; sync here before final summary
-    if (complexity !== 'trivial' && !checkGate(IDEA_DIR, 'knowledge-extracted').pass) {
-      emit('knowledge:extract', 'all tasks approved but knowledge extraction not yet complete — must finish before final summary', { complexity });
-      return;
+    if (complexity !== 'trivial' && !checkGate(ideaDir, 'knowledge-extracted').pass) {
+      return buildResult('knowledge:extract', 'all tasks approved but knowledge extraction not yet complete — must finish before final summary', ideaDir, { complexity });
     }
-    if (!checkGate(IDEA_DIR, 'done').pass) {
-      emit('final:summary', 'all tasks approved, final summary is pending', { complexity });
-      return;
+    if (!checkGate(ideaDir, 'done').pass) {
+      return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
     }
-    emit('done', 'workflow is done', { in_worktree: isInWorktree(), complexity });
+    return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
+  }
+
+  const state = readTaskState(taskStateFile(ideaDir));
+  return buildResult('blocked', 'no executable next step found', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
+}
+
+function formatOutput(result, compact) {
+  console.log(`resume_step: ${result.resume_step}`);
+  console.log(`reason: ${JSON.stringify(result.reason)}`);
+  console.log(`complexity: ${result.complexity}`);
+  console.log(`delivery_complexity: ${result.delivery_complexity}`);
+  console.log(`risk_level: ${result.risk_level}`);
+  console.log(`uncertainty_level: ${result.uncertainty_level}`);
+  if (result.routing_reasons) console.log(`routing_reasons: ${JSON.stringify(result.routing_reasons)}`);
+  console.log(`current_step: ${result.current_step}`);
+  console.log(`state_revision: ${result.state_revision}`);
+  console.log(`transition_required: ${result.transition_required}`);
+  if (result.phase_detail) {
+    const entries = Object.entries(result.phase_detail);
+    if (entries.length > 0) {
+      if (compact) {
+        console.log(`phase_detail: ${entries.map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`).join('|')}`);
+      } else {
+        console.log('phase_detail:');
+        for (const [key, value] of entries) console.log(`  ${key}: ${Array.isArray(value) ? value.join(',') : value}`);
+      }
+    }
+  }
+}
+
+function main() {
+  const ideaDir = process.argv[2];
+  const compact = process.argv.includes('--compact');
+  const dryRun = process.argv.includes('--dry-run');
+
+  if (!ideaDir) {
+    process.stderr.write('用法: node orchestration-status.mjs <idea-dir|none> [--compact] [--dry-run]\n');
+    process.exit(1);
+  }
+
+  if (dryRun) {
+    const plan = computeStatus(ideaDir, { dryRun: true });
+    console.log(JSON.stringify(plan, null, 2));
     return;
   }
 
-  const state = readTaskState(taskStateFile(IDEA_DIR));
-  emit('blocked', 'no executable next step found', { task_count: Object.keys(state.tasks).length, complexity });
+  const result = computeStatus(ideaDir);
+  formatOutput(result, compact);
 }
 
-main();
+if (import.meta.url === `file://${process.argv[1]}`) main();
