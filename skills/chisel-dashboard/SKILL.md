@@ -7,29 +7,42 @@ allowed-tools: Bash, Read
 
 # chisel-dashboard
 
-生成自包含 HTML 仪表板，展示当前工作流进度、task 状态、CR 维度结果、分层需求可追溯覆盖度、To-Be 拆解链路、DB/API 变更契约和 as-is 内容。
+生成分块 HTML 仪表板，每个维度一个独立 HTML 文件，展示当前工作流进度、task 状态、CR 维度结果、需求覆盖度、To-Be 方案和时间线。
 
 ## 执行流程
 
 1. 从 `$ARGUMENTS` 解析 idea-name
 2. 运行 `control-plane.mjs --project-root . --idea <idea-name>`，将输出设为 `{IDEA_DIR}`
-3. 运行生成器：
+3. 运行分块生成器：
    ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard.mjs {IDEA_DIR}
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR}
    ```
-4. 解析 stdout JSON 获取输出路径
-5. 提示用户在浏览器中打开生成的 HTML 文件
+4. 解析 stdout JSON 获取 `dir` 和 `generated` 数组
+5. **在消息中逐一输出每个生成文件的完整路径**，格式：
+   ```
+   📊 Dashboard 已生成：
+   - {dir}/overview.html
+   - {dir}/as-is.html
+   - {dir}/to-be.html
+   - {dir}/progress.html
+   - {dir}/cr-results.html
+   - {dir}/timeline.html
+   ```
+   用户可通过 Read tool 查看内容，或在浏览器中打开。
 
 ## 输出
 
-- `{IDEA_DIR}/dashboard.html` — 自包含 HTML（含 Mermaid CDN + Chart.js CDN）
-- 包含内容：
-  - 工作流步骤进度条（当前步高亮）
-  - Task 状态矩阵（着色表格，task ID 可点击查看 task/report/CR 详情）
-  - CR 维度雷达图
-  - 需求可追溯覆盖进度条（REQ/AC/C/VC 需求类统计，RISK 单独展示不计入覆盖率）
-  - To-Be 方案视图（方案概览、需求拆解链路、CP 改造点、Task 拆分、数据变更、API 契约、风险与缓解）
-  - DB 数据变更视图（优先读取 `to-be/data-change-plan.json` 渲染 ER 图和字段 diff，Markdown 兜底）
-  - API 契约变更视图（优先读取 `to-be/api-change-plan.json` 渲染 endpoint/request/response diff，Markdown 兜底）
-  - As-Is 查看器（Tab 切换：概览、核心走查、证据表、质量评分雷达图、覆盖矩阵）
-  - 步骤时间线
+- `{IDEA_DIR}/dashboard/` 目录下 6 个独立 HTML 文件：
+  - `overview.html` — 工作流总览（进度、Task 完成率、需求覆盖、耗时）
+  - `as-is.html` — 现状理解（概览、核心走查、证据索引、质量评分）
+  - `to-be.html` — 方案设计（需求覆盖、改造点、Task 拆分、风险矩阵）
+  - `progress.html` — 实现进度（Task 状态矩阵、需求覆盖度）
+  - `cr-results.html` — CR 审查结果（维度总览、Rework 项）
+  - `timeline.html` — 时间线与产出（环节耗时、步骤产出）
+
+## 指定分块
+
+可通过 `--blocks` 参数只生成部分分块：
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks overview,progress
+```
