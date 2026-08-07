@@ -1,6 +1,6 @@
 # Chisel Agent 公共协议
 
-所有 Chisel agent 在开始工作前必须通过 `skills/chisel-core/SKILL.md` 的角色加载协议 Read 本文件。
+所有 Chisel agent 在开始工作前必须通过 `skills/chisel-contracts/SKILL.md` 的角色加载协议 Read 本文件。
 
 ## 1. Scope Proof 格式
 

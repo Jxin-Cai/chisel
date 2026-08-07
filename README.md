@@ -286,7 +286,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `/chisel-plan` | To-be planning (strategy + decomposition) |
 | `/chisel-implement` | Orchestrate coding subagents |
 | `/chisel-review` | Architect CR review |
-| `/chisel-status` | View recovery point and task state |
+| `/chisel-report` | View recovery point, task state, and HTML dashboard |
 | `/chisel-wiki` | Standalone knowledge management |
 
 ### Agents

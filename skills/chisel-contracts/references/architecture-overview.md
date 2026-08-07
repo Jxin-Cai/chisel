@@ -2,7 +2,7 @@
 
 ## 设计原则
 
-所有执法机制均派生自 5 条不可违反的设计原则（详见 `chisel-core/references/iron-rules.md`）：
+所有执法机制均派生自 5 条不可违反的设计原则（详见 `chisel-contracts/references/protocols/iron-rules.md`）：
 
 - **P1 穷举枚举**：有限域路由表必须覆盖全部变体，新增变体原子更新所有消费者
 - **P2 状态转移完整性**：状态变更经唯一正规函数，附带全部副作用
@@ -10,7 +10,7 @@
 - **P4 副作用一致性**：修改可观测状态时更新所有下游消费者
 - **P5 唯一正规来源**：同一知识只定义一次，其他处导入
 
-原则到执法机制的完整映射见 `chisel-core/references/principle-enforcement-map.md`。
+原则到执法机制的完整映射见 `chisel-contracts/references/protocols/principle-enforcement-map.md`。
 
 ## 架构要点
 
@@ -78,7 +78,7 @@
 
 ## 可视化仪表板
 
-- `/chisel-dashboard <idea-name>` 手动生成 `{idea-dir}/dashboard.html`。
+- `/chisel-report <idea-name> --format html` 手动生成 `{idea-dir}/dashboard/` 下分块 HTML。
 - **每次显式步骤切换后更新 dashboard 投影**，默认不打开浏览器、不阻塞执行；用户主动查看或进入人工确认时再打开。浏览器页面打开后每 30s 自动刷新。
 - 自包含 HTML，使用 Mermaid CDN + Chart.js CDN 渲染图表。
 - 含"步骤产出详情"表：展示当前需求的完整执行步骤列表、每步状态（已完成/进行中/待执行/已跳过）和对应的产出文件完成情况。

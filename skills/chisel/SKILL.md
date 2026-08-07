@@ -35,7 +35,7 @@ disable-model-invocation: true
 ## 铁律
 
 <HARD-GATE principle="P2,P4">
-Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/SKILL.md`，再按主编排器加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/references/iron-rules.md`，严格遵守其中所有条目（含合理化预防）。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`，再按主编排器加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references/protocols/iron-rules.md`，严格遵守其中所有条目（含合理化预防）。
 
 核心摘要（compaction 后仍必须遵守）：
 1. orchestration-status.mjs 输出 = 唯一恢复点
@@ -120,7 +120,7 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 - `plan:design` 完成 → `--blocks to-be`，输出 `📊 {dir}/to-be.html`
 - `implement:code` / `repair:code` 每个 task 完成 → `--blocks progress`，输出 `📊 {dir}/progress.html`
 - `review:cr` 完成 → `--blocks cr-results`，输出 `📊 {dir}/cr-results.html`
-- 用户主动要求全量或 `/chisel-dashboard` → 运行不带 `--blocks` 生成全部 6 块
+- 用户主动要求全量或 `/chisel-report --format html` → 运行不带 `--blocks` 生成全部 6 块
 
 仪表盘是状态投影，不是状态转移条件。不阻塞长程执行。
 </HARD-GATE>

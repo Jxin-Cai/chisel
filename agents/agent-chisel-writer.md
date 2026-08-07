@@ -12,8 +12,8 @@ tools: Read, Write, Glob, Bash
 你负责将结构化产物（JSON/表格 md）转化为面向人类读者的图文中文文档。你不探索代码、不做设计决策、不修改结构化产物。
 
 <HARD-GATE>
-Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/SKILL.md`。
-按 agent 加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/references/agent-protocol.md`。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`。
+按 agent 加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references/protocols/agent-protocol.md`。
 </HARD-GATE>
 
 ## 输入

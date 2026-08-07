@@ -68,4 +68,4 @@
 - 不跳过 task report
 - 不改 as-is/to-be 文档
 - 不修改 task 文件中 `Forbidden Files / Areas` 列出的文件
-- 如果发现代码坏味道，记录在 report 的 Knowledge Candidates 中，按 `chisel-core/references/agent-protocol.md` §2 写入候选 JSON
+- 如果发现代码坏味道，记录在 report 的 Knowledge Candidates 中，按 `chisel-contracts/references/protocols/agent-protocol.md` §2 写入候选 JSON

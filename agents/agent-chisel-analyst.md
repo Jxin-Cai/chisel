@@ -8,8 +8,8 @@ tools: Read, Write, Glob, Grep, Bash
 ---
 
 <HARD-GATE>
-Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/SKILL.md`。
-按 agent 加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/references/agent-protocol.md`。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`。
+按 agent 加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references/protocols/agent-protocol.md`。
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/ai-input-template.md`。
 </HARD-GATE>
 

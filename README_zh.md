@@ -281,7 +281,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `/chisel-plan` | to-be 规划（策略+拆解） |
 | `/chisel-implement` | 编排 coding subagent 实现 task |
 | `/chisel-review` | 架构师 CR 审查 |
-| `/chisel-status` | 查看恢复点和 task 状态 |
+| `/chisel-report` | 查看恢复点和 task 状态（文本/HTML dashboard） |
 | `/chisel-wiki` | 独立知识库管理 |
 
 ### Agents

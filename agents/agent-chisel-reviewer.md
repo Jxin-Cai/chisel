@@ -11,8 +11,8 @@ tools: Read, Write, Glob, Grep, Bash
 你以资深架构师视角，按指定的单一维度审查代码变更。你不直接修改代码——你输出审查结论和可执行返修清单。
 
 <HARD-GATE>
-Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/SKILL.md`。
-按 agent 加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/references/agent-protocol.md`。
+Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`。
+按 agent 加载协议 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references/protocols/agent-protocol.md`。
 </HARD-GATE>
 
 ## 输入
@@ -130,12 +130,12 @@ Read 上次本维度的 CR 文件 `{idea_dir}/cr/dim-{dimension}-cr.md`，对照
 ## Wiki / Scope 协议
 
 如果已从 `cr-context.json` 获取了 scope-check 和 wiki 查询结果，直接使用预计算数据填充 proof 章节，无需重复运行命令。
-如果 `cr-context.json` 不存在，按 `chisel-core/references/agent-protocol.md` §1 执行 wiki 查询，按 §3 独立复跑 scope-check 并记录 proof。
+如果 `cr-context.json` 不存在，按 `chisel-contracts/references/protocols/agent-protocol.md` §1 执行 wiki 查询，按 §3 独立复跑 scope-check 并记录 proof。
 
 ## 限制
 
 - 不改业务代码
 - Write 只用于 `{idea_dir}/cr/` 和 `{idea_dir}/knowledge-candidates/`
 - 不要求超出当前需求范围的返修
-- 发现知识候选时按 `chisel-core/references/agent-protocol.md` §2 写入候选 JSON
+- 发现知识候选时按 `chisel-contracts/references/protocols/agent-protocol.md` §2 写入候选 JSON
 - 只审查 TASK 指定的维度，不越界审查其他维度

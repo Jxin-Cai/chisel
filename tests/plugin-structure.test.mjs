@@ -28,7 +28,7 @@ function referenceExists(reference) {
 }
 
 describe('plugin structure', () => {
-  it('uses chisel-core instead of an anonymous _shared skill', () => {
+  it('uses chisel-contracts instead of an anonymous _shared skill', () => {
     const sourceFiles = [
       ...filesUnder(join(ROOT, 'skills')),
       ...filesUnder(join(ROOT, 'agents')),
@@ -41,20 +41,20 @@ describe('plugin structure', () => {
       .map(path => relative(ROOT, path));
     assert.deepEqual(staleReferences, []);
     assert.equal(existsSync(join(ROOT, 'skills/_shared')), false);
-    assert.ok(existsSync(join(ROOT, 'skills/chisel-core/SKILL.md')));
-    assert.ok(existsSync(join(ROOT, 'skills/chisel-core/references/agent-protocol.md')));
-    assert.ok(existsSync(join(ROOT, 'skills/chisel-core/references/iron-rules.md')));
+    assert.ok(existsSync(join(ROOT, 'skills/chisel-contracts/SKILL.md')));
+    assert.ok(existsSync(join(ROOT, 'skills/chisel-contracts/references/protocols/agent-protocol.md')));
+    assert.ok(existsSync(join(ROOT, 'skills/chisel-contracts/references/protocols/iron-rules.md')));
   });
 
-  it('loads the public core skill before shared agent protocols', () => {
-    const coreReference = '${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/SKILL.md';
+  it('loads the public contracts skill before shared agent protocols', () => {
+    const coreReference = '${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md';
     const consumers = [
       join(ROOT, 'skills/chisel/SKILL.md'),
       ...filesUnder(join(ROOT, 'agents')).filter(path => path.endsWith('.md')),
     ];
     for (const path of consumers) {
       const content = readFileSync(path, 'utf8');
-      assert.ok(content.includes(coreReference), `${relative(ROOT, path)} must load chisel-core/SKILL.md`);
+      assert.ok(content.includes(coreReference), `${relative(ROOT, path)} must load chisel-contracts/SKILL.md`);
     }
   });
 
