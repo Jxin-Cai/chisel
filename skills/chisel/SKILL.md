@@ -26,8 +26,9 @@ disable-model-invocation: true
 3. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>`，将输出设为 `{IDEA_DIR}`。该目录默认位于 Git common root，因此主工作区与所有 worktree 共享同一控制面；可用 `CHISEL_CONTROL_ROOT` 显式覆盖
 4. 如果目录不存在，设 idea-dir = `none`
 5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --start --idea-dir {IDEA_DIR} --owner main-orchestrator`，保存返回的 `runner_id`
-6. 执行路线图初始化（见下方 §路线图协议）
-7. 进入步骤执行循环。每步完成后先 TaskUpdate 标记对应 task 为 `completed`，再调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
+6. 生成 Dashboard 分块并输出路径：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks overview`，解析 stdout JSON 的 `dir` 字段，**在消息中输出文件路径**：`📊 Dashboard: {dir}/overview.html`。用户可通过 Read tool 查看，或在浏览器中打开
+7. 执行路线图初始化（见下方 §路线图协议）
+8. 进入步骤执行循环。每步完成后先 TaskUpdate 标记对应 task 为 `completed`，再调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
 
 ---
 
@@ -114,7 +115,14 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 </HARD-GATE>
 
 <HARD-GATE principle="P2,P4">
-**仪表盘观察协议**：transition 成功后自动更新 dashboard，但默认不打开浏览器、不阻塞长程执行。用户主动要求查看或进入人工确认步骤时，再运行 `/chisel-dashboard <idea-name>`。仪表盘是状态投影，不是状态转移条件。
+**仪表盘观察协议**：关键阶段完成后生成对应的 dashboard 分块 HTML 并在消息中输出路径，便于用户通过 Read tool 查看（本地/远端均可）。规则：
+- `understand:explore` 完成 → `node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks as-is`，输出 `📊 {dir}/as-is.html`
+- `plan:design` 完成 → `--blocks to-be`，输出 `📊 {dir}/to-be.html`
+- `implement:code` / `repair:code` 每个 task 完成 → `--blocks progress`，输出 `📊 {dir}/progress.html`
+- `review:cr` 完成 → `--blocks cr-results`，输出 `📊 {dir}/cr-results.html`
+- 用户主动要求全量或 `/chisel-dashboard` → 运行不带 `--blocks` 生成全部 6 块
+
+仪表盘是状态投影，不是状态转移条件。不阻塞长程执行。
 </HARD-GATE>
 
 <HARD-GATE principle="P2,P4">
