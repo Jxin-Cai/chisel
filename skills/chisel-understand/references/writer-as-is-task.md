@@ -40,7 +40,6 @@ Writer 必须在 `{idea_dir}/as-is/` 下产出以下文件：
 | `core-walkthrough.md` | call-graph.md + facts.md | 核心链路 Mermaid sequenceDiagram + 分支走查叙事 |
 | `evidence-index.md` | evidence-ledger.json | 按文件分组的证据路径索引 |
 | `context-budget.md` | context-budget.json | 已读文件清单 + 覆盖度自评表格 |
-| `knowledge-candidates.md` | constraints.md + 探索中发现的信号 | 禁区/包袱/术语候选清单 |
 
 ### 条件产出（基于 coverage-matrix.json 判断）
 

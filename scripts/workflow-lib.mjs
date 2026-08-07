@@ -204,7 +204,6 @@ export function initWorkflowState(ideaDir, ideaName) {
     '  tasks: pending',
     '  implement: pending',
     '  review: pending',
-    '  knowledge: pending',
     '  final: pending',
     ''
   ].join('\n'));
@@ -266,7 +265,7 @@ export const STEP_TO_PHASE = {
   'plan:decompose-confirm': 'plan'
 };
 
-const PHASE_ORDER = ['requirement', 'understand', 'clarify', 'plan', 'tasks', 'implement', 'review', 'knowledge', 'final'];
+const PHASE_ORDER = ['requirement', 'understand', 'clarify', 'plan', 'tasks', 'implement', 'review', 'final'];
 
 export function readWorkflowRevision(ideaDir) {
   const file = workflowStateFile(ideaDir);
@@ -575,7 +574,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -594,7 +592,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -612,7 +609,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -628,7 +624,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -645,7 +640,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -661,7 +655,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -675,7 +668,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -691,7 +683,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -705,7 +696,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -717,7 +707,6 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
@@ -740,27 +729,23 @@ const ROLLBACK_STEPS = {
       'tasks',
       'task-reports',
       'cr',
-      '.knowledge-extracted',
       'final-summary.md',
       '.done'
     ]
   },
   'implement:code': {
-    remove: ['task-reports', 'cr', '.knowledge-extracted', 'final-summary.md', '.done'],
+    remove: ['task-reports', 'cr', 'final-summary.md', '.done'],
     reset: {
       from: ['coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'],
       to: 'confirmed'
     }
   },
   'review:cr': {
-    remove: ['cr', '.knowledge-extracted', 'final-summary.md', '.done'],
+    remove: ['cr', 'final-summary.md', '.done'],
     reset: {
       from: ['reviewing', 'approved', 'needs_rework', 'repairing', 'blocked'],
       to: 'coded'
     }
-  },
-  'knowledge:extract': {
-    remove: ['.knowledge-extracted', 'final-summary.md', '.done']
   },
   'final:summary': {
     remove: ['final-summary.md', '.done']

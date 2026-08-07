@@ -49,7 +49,6 @@
 
   "verification_surface": ["验证面描述"],
   "rollback_plan": "回滚方案叙事",
-  "knowledge_strategy": "知识候选处理策略（可选）",
 
   "self_check": {
     "companion_changes": [
@@ -101,5 +100,4 @@
 - `change_point_details[].design_rationale`
 - `change_point_details[].modification_approach`
 - `rollback_plan`
-- `knowledge_strategy`
 - `self_check.reverse_detection[].action`

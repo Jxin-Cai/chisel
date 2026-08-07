@@ -21,7 +21,6 @@ const AS_IS_MAIN_FILES = [
   'as-is/evidence-index.md',
   'as-is/evidence-ledger.json',
   'as-is/coverage-matrix.json',
-  'as-is/knowledge-candidates.md',
   'as-is/context-budget.md',
   'as-is/quality-score.json'
 ];
@@ -166,7 +165,7 @@ function validateClarificationsJson(ideaDir) {
   for (const id of requiredIds) {
     if (!actualIds.has(id)) return `clarifications.json missing decision for ${id}`;
   }
-  for (const field of ['answers', 'unresolved', 'constraints_added', 'knowledge_signals']) {
+  for (const field of ['answers', 'unresolved', 'constraints_added']) {
     if (doc[field] !== undefined && !Array.isArray(doc[field])) return `clarifications.json ${field} must be an array`;
   }
   return '';
@@ -229,17 +228,6 @@ function validateTaskIntegrity(ideaDir) {
   return '';
 }
 
-function validateWikiLoadProof(text) {
-  const required = ['## Wiki Entries Loaded', '## Progressive Load Proof'];
-  const missing = required.filter(section => !hasSection(text, section));
-  if (missing.length > 0) return `missing wiki proof sections: ${missing.join(', ')}`;
-  const proof = `${sectionText(text, 'Wiki Entries Loaded')}\n${sectionText(text, 'Progressive Load Proof')}`;
-  if (!/category\/min-score|load_plan/.test(proof)) return 'wiki proof must include category/min-score and load_plan';
-  const hasLoadedEntry = /^\|\s*(FZ|WBI|DNR|TERM|ADR|HOTSPOT|MODULE)[-_A-Za-z0-9]*\b/im.test(proof);
-  const hasEmptyDeclaration = /None matched|无命中/.test(proof);
-  if (!hasLoadedEntry && !hasEmptyDeclaration) return 'wiki proof must include loaded entries or explicit None matched/无命中';
-  return '';
-}
 
 function sectionTextAnyDepth(text, heading) {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -500,8 +488,6 @@ function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = [],
     });
     if (!hasEvidenceRow) return 'Traceability Evidence must contain at least one evidence row';
   }
-  const wikiProofReason = validateWikiLoadProof(text);
-  if (wikiProofReason) return wikiProofReason;
   const scopeReason = validateScopeProof(text, 'report', { behaviorInvariants });
   if (scopeReason) return scopeReason;
   if (isNewFileReportContract(ideaDir, taskText, taskFm, readFrontmatter(text))) {
@@ -522,8 +508,6 @@ function validateCrFile(crPath, status, behaviorInvariants = []) {
   const reworkCount = Number(readFrontmatter(text).rework_count || 0);
   if (reworkCount > 0 && !hasSection(text, '## Rework Verification'))
     return 'CR with rework_count > 0 must include ## Rework Verification section';
-  const wikiProofReason = validateWikiLoadProof(text);
-  if (wikiProofReason) return wikiProofReason;
   const crResult = readFrontmatter(text).result || status;
   const scopeProofReason = validateScopeProof(text, 'cr', { behaviorInvariants, requireAllInvariantPass: crResult === 'approved' });
   if (scopeProofReason) return scopeProofReason;
@@ -578,8 +562,6 @@ function validateDimensionCrFile(ideaDir, dimension) {
   const missing = required.filter(section => !hasSection(text, section));
   if (missing.length > 0) return { valid: false, reason: `cr/dim-${dimension}-cr.md missing sections: ${missing.join(', ')}` };
 
-  const wikiProofReason = validateWikiLoadProof(text);
-  if (wikiProofReason) return { valid: false, reason: `cr/dim-${dimension}-cr.md ${wikiProofReason}` };
   const invariants = behaviorInvariantsForTasks(ideaDir, affectedTasks(fm));
   const scopeProofReason = validateScopeProof(text, 'cr', { behaviorInvariants: invariants, requireAllInvariantPass: fm.result === 'pass' });
   if (scopeProofReason) return { valid: false, reason: `cr/dim-${dimension}-cr.md ${scopeProofReason}` };
@@ -664,30 +646,6 @@ function validateDimensionCrComplete(ideaDir, gateId) {
 }
 
 const MIN_EVIDENCE_LINES = 5;
-const KNOWLEDGE_CATEGORIES = new Set(['forbidden_zone', 'weird_but_intentional', 'smell', 'glossary']);
-const KNOWLEDGE_STATUSES = new Set(['proposed', 'confirmed', 'merged', 'rejected', 'deferred']);
-const KNOWLEDGE_TERMINAL_STATUSES = new Set(['merged', 'rejected', 'deferred']);
-const KNOWLEDGE_CONTENT_KEYS = {
-  forbidden_zone: ['范围', '原因'],
-  weird_but_intentional: ['现象', '原因'],
-  smell: ['坏味道', '位置', '本次不处理原因'],
-  glossary: ['术语', '定义']
-};
-
-function knowledgeCandidatesDir(ideaDir) {
-  return join(ideaDir, 'knowledge-candidates');
-}
-
-function knowledgeCandidateFiles(ideaDir) {
-  const dir = knowledgeCandidatesDir(ideaDir);
-  if (!existsSync(dir)) return { missing: true, jsonFiles: [], markdownFiles: [] };
-  const files = readdirSync(dir).filter(file => !file.startsWith('.'));
-  return {
-    missing: false,
-    jsonFiles: files.filter(file => file.endsWith('.json')).map(file => join(dir, file)),
-    markdownFiles: files.filter(file => file.endsWith('.md'))
-  };
-}
 
 function sanitizeSmartQuotes(text) {
   return text.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
@@ -1037,91 +995,12 @@ function validateToBeConfirmation(ideaDir) {
   return '';
 }
 
-function hasDecisionReason(candidate) {
-  return Boolean(candidate.decision && typeof candidate.decision.reason === 'string' && candidate.decision.reason.trim());
-}
-
-function validCandidateEvidence(evidence) {
-  if (typeof evidence === 'string') return /^[^\s:]+(?:\/[^\s:]+)*:\d+\b/.test(evidence.trim());
-  return Boolean(evidence && typeof evidence.file === 'string' && Number.isInteger(evidence.line_start) && evidence.line_start > 0);
-}
-
-function validateKnowledgeCandidate(candidate, mode = 'base') {
-  const missing = [];
-  for (const field of ['id', 'category', 'status', 'source_step']) {
-    if (!candidate?.[field]) missing.push(field);
-  }
-  if (typeof candidate?.confirmed !== 'boolean') missing.push('confirmed');
-  if (!Array.isArray(candidate?.evidence) || candidate.evidence.length === 0) missing.push('evidence');
-  if (!candidate?.content || typeof candidate.content !== 'object' || Array.isArray(candidate.content) || Object.keys(candidate.content).length === 0) missing.push('content');
-  if (missing.length > 0) return `missing required fields: ${missing.join(', ')}`;
-  if (!KNOWLEDGE_CATEGORIES.has(candidate.category)) return `unsupported category: ${candidate.category}`;
-  if (!KNOWLEDGE_STATUSES.has(candidate.status)) return `unsupported status: ${candidate.status}`;
-  if (candidate.quality_score !== undefined && (!Number.isFinite(candidate.quality_score) || candidate.quality_score < 0)) return 'quality_score must be >= 0 when provided';
-  if (!Array.isArray(candidate.keywords) || candidate.keywords.filter(Boolean).length === 0) return 'keywords must not be empty';
-  const invalidEvidenceIndex = candidate.evidence.findIndex(evidence => !validCandidateEvidence(evidence));
-  if (invalidEvidenceIndex >= 0) return `evidence[${invalidEvidenceIndex}] must be structured file/line_start or legacy file:line string`;
-  const missingContentKeys = (KNOWLEDGE_CONTENT_KEYS[candidate.category] || []).filter(key => !String(candidate.content[key] || '').trim());
-  if (missingContentKeys.length > 0) return `content missing required keys: ${missingContentKeys.join(', ')}`;
-  if (candidate.status === 'confirmed' && candidate.confirmed !== true) return 'confirmed candidate must set confirmed=true';
-
-  if (mode === 'extracted') {
-    if (!KNOWLEDGE_TERMINAL_STATUSES.has(candidate.status)) return `candidate is not in terminal status: ${candidate.status}`;
-    if (candidate.status === 'merged') {
-      if (candidate.confirmed !== true) return 'merged candidate must set confirmed=true';
-      if (!candidate.merge?.wiki_file || !candidate.merge?.entry_id) return 'merged candidate missing merge.wiki_file or merge.entry_id';
-    }
-    if (['rejected', 'deferred'].includes(candidate.status) && !hasDecisionReason(candidate)) {
-      return `${candidate.status} candidate missing decision.reason`;
-    }
-  }
-  return '';
-}
-
-function validateKnowledgeCandidatesExist(ideaDir) {
-  const files = knowledgeCandidateFiles(ideaDir);
-  if (files.missing) return 'knowledge-candidates directory missing';
-  if (files.markdownFiles.length > 0) return `legacy markdown candidate files are not gate-checkable: ${files.markdownFiles.join(', ')}`;
-  for (const file of files.jsonFiles) {
-    const parsed = readJsonFile(file);
-    if (parsed.error) return `${file} invalid JSON: ${parsed.error}`;
-    const reason = validateKnowledgeCandidate(parsed.value, 'base');
-    if (reason) return `${file} ${reason}`;
-  }
-  return '';
-}
-
-function isKnowledgeOptedOut(ideaDir) {
-  const confPath = join(ideaDir, 'confirmations/to-be.json');
-  if (!existsSync(confPath)) return false;
-  const parsed = readJsonFile(confPath);
-  return parsed.value?.knowledge_extraction?.enabled === false;
-}
-
-function validateKnowledgeExtracted(ideaDir) {
-  if (isKnowledgeOptedOut(ideaDir)) return '';
-  if (!has(ideaDir, '.knowledge-extracted')) return '.knowledge-extracted missing';
-  const baseReason = validateKnowledgeCandidatesExist(ideaDir);
-  if (baseReason) return baseReason;
-  const files = knowledgeCandidateFiles(ideaDir);
-  for (const file of files.jsonFiles) {
-    const parsed = readJsonFile(file);
-    const reason = validateKnowledgeCandidate(parsed.value, 'extracted');
-    if (reason) return `${file} ${reason}`;
-  }
-  return '';
-}
-
 function validateFinalSummary(ideaDir) {
   if (!has(ideaDir, '.done')) return '.done missing';
   const summaryPath = join(ideaDir, 'final-summary.md');
   if (!existsSync(summaryPath)) return 'final-summary.md missing';
   const text = readText(summaryPath);
-  const complexity = detectComplexity(ideaDir);
-  const knowledgeOff = isKnowledgeOptedOut(ideaDir) || ['hotfix', 'minor', 'trivial', 'moderate'].includes(complexity);
-  const requiredSections = knowledgeOff
-    ? ['## 变更摘要', '## Scope Control Summary']
-    : ['## 变更摘要', '## Scope Control Summary', '## Knowledge Candidates', '## Wiki Updates'];
+  const requiredSections = ['## 变更摘要', '## Scope Control Summary'];
   const missing = requiredSections.filter(section => !text.includes(section));
   if (missing.length > 0) return `final-summary.md missing sections: ${missing.join(', ')}`;
   for (const section of requiredSections.map(item => item.replace(/^##\s+/, ''))) {
@@ -1311,14 +1190,6 @@ export function checkGate(ideaDir, gateId) {
     }
     case 'all-approved':
       return result(gateId, has(ideaDir, 'task-workflow-state.yaml') && allTasksApproved(ideaDir), 'not all tasks approved');
-    case 'knowledge-candidates-exists': {
-      const reason = validateKnowledgeCandidatesExist(ideaDir);
-      return reason ? result(gateId, false, reason) : result(gateId, true);
-    }
-    case 'knowledge-extracted': {
-      const reason = validateKnowledgeExtracted(ideaDir);
-      return reason ? result(gateId, false, reason) : result(gateId, true);
-    }
     case 'clarification-complete': {
       if (has(ideaDir, 'confirmations/strategy.json') || has(ideaDir, 'confirmations/to-be.json')) return result(gateId, true, '', { legacy: true });
       const file = join(ideaDir, 'requirement-clarification.json');

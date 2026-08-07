@@ -28,7 +28,6 @@
 - `STEP_TO_PHASE` 缺 `review:cr-moderate`
 - `hooks.json` PostToolUse matcher 缺 `Edit`
 - `dashboard.mjs` detectComplexity 不支持 hotfix/minor/moderate
-- `gate-check` done gate 不兼容 knowledge-off 的 complexity 路径
 - `cr-parse` --type 索引在 splice 后错位
 
 ### P2: 状态转移完整性

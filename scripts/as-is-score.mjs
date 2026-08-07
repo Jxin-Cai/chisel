@@ -9,7 +9,6 @@ const AS_IS_MAIN_FILES = [
   'as-is/evidence-index.md',
   'as-is/evidence-ledger.json',
   'as-is/coverage-matrix.json',
-  'as-is/knowledge-candidates.md',
   'as-is/context-budget.md',
 ];
 
@@ -247,16 +246,11 @@ function scoreRiskAwareness(ideaDir) {
   const misconceptionRows = dataRows(sectionText(overview, '常见误解点'));
   if (misconceptionRows.length > 0) score += 0.3;
 
-  const kcText = readText(join(ideaDir, 'as-is/knowledge-candidates.md'));
-  const kcLines = kcText.split('\n').filter(l => l.trim() && !l.startsWith('#')).length;
-  if (kcLines >= 3) score += 0.3;
-
   return {
     score: round(score),
     detail: {
       risk_map_rows: riskRows.length,
       misconception_rows: misconceptionRows.length,
-      has_knowledge_candidates: kcLines >= 3,
     },
   };
 }
@@ -327,7 +321,6 @@ function generateWeaknesses(dimensions) {
       case 'risk_awareness':
         if (data.detail.risk_map_rows === 0) weaknesses.push('risk_awareness: 风险地图为空');
         if (data.detail.misconception_rows === 0) weaknesses.push('risk_awareness: 常见误解点为空');
-        if (!data.detail.has_knowledge_candidates) weaknesses.push('risk_awareness: knowledge-candidates 内容不足');
         break;
     }
   }

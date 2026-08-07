@@ -25,7 +25,9 @@ disable-model-invocation: true
 2. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
 3. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>`，将输出设为 `{IDEA_DIR}`。该目录默认位于 Git common root，因此主工作区与所有 worktree 共享同一控制面；可用 `CHISEL_CONTROL_ROOT` 显式覆盖
 4. 如果目录不存在，设 idea-dir = `none`
-5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --start --idea-dir {IDEA_DIR} --owner main-orchestrator`，保存返回的 `runner_id`，进入步骤执行循环。每步完成后调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
+5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --start --idea-dir {IDEA_DIR} --owner main-orchestrator`，保存返回的 `runner_id`
+6. 执行路线图初始化（见下方 §路线图协议）
+7. 进入步骤执行循环。每步完成后先 TaskUpdate 标记对应 task 为 `completed`，再调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
 
 ---
 
@@ -44,6 +46,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-core/SKILL.md`，再按主编排器加
 7. 同一 task 最多返修 5 次（第 4-5 轮 fresh agent 接管）
 8. 铁律 > 脚本输出 > skill 指令 > agent 默认
 9. 抵抗"需求已经很清楚了，直接开始编码"等合理化跳步冲动
+10. 启动/恢复时必须运行 roadmap.mjs 并用 TaskCreate+TaskUpdate 同步路线图状态（已完成=completed，当前=in_progress，未开始=pending）
 </HARD-GATE>
 
 ---
@@ -60,7 +63,6 @@ digraph chisel_flow {
   quickdev [label="quick-dev:init\n(trivial only)"];
   design [label="plan:design"];
   p_confirm [label="plan:confirm"];
-  knowledge [label="knowledge:extract\n(optional, skip if trivial\nor user opted out)"];
   worktree [label="worktree:setup"];
   tasks [label="tasks:init"];
   implement [label="implement:code"];
@@ -77,8 +79,8 @@ digraph chisel_flow {
   clarify -> quickdev [label="trivial"];
   clarify -> design [label="moderate/standard/complex"];
   quickdev -> implement;
-  design -> p_confirm -> knowledge;
-  knowledge -> worktree -> tasks;
+  design -> p_confirm -> worktree;
+  worktree -> tasks;
   tasks -> implement -> review;
   implement -> review_light [label="trivial"];
   review -> repair [label="needs_rework"];
@@ -115,6 +117,24 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 **仪表盘观察协议**：transition 成功后自动更新 dashboard，但默认不打开浏览器、不阻塞长程执行。用户主动要求查看或进入人工确认步骤时，再运行 `/chisel-dashboard <idea-name>`。仪表盘是状态投影，不是状态转移条件。
 </HARD-GATE>
 
+<HARD-GATE principle="P2,P4">
+**路线图协议（断点续传）**：启动、恢复（`--resume`）、compaction 后首次执行时，必须运行：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
+```
+
+脚本输出 JSON，包含 `steps[]` 数组，每项有 `step`、`status`（completed/in_progress/pending）、`description`。
+
+根据输出同步 TaskCreate / TaskUpdate：
+- 首次（TaskList 为空）：逐步 TaskCreate，subject = step 名，description = 脚本输出的 description；然后按 status 调用 TaskUpdate 标记 completed / in_progress
+- 恢复（TaskList 已有条目）：逐项对比，将新完成的步骤 TaskUpdate 为 completed，将当前步骤 TaskUpdate 为 in_progress
+
+每步执行完成后：TaskUpdate 当前步骤为 completed，下一步为 in_progress。
+
+这保证用户在任何时刻（包括 compaction 后、断线重连后）都能看到完整进度。
+</HARD-GATE>
+
 | resume_step | 动作 | postcondition |
 |---|---|---|
 | `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md`。若用户输入包含图片路径（.png/.jpg/.jpeg/.webp），用 Read tool 加载图片提取 UI 布局描述，写入 `{IDEA_DIR}/as-is/ui-snapshot.md` 作为需求补充上下文 | `requirement-exists` |
@@ -123,8 +143,7 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
 | `quick-dev:init` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}`（trivial only：自动生成 task + worktree-decision + traceability-matrix） | `task-workflow-exists` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
-| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行。确认完成后询问用户是否启用知识沉淀（AskUserQuestion），将决策写入 `confirmations/to-be.json` 的 `knowledge_extraction` 字段。如 enabled=true 且 complexity≠trivial，立即启动 knowledge:extract 作为后台并行任务（使用 Agent run_in_background:true 调用 phase-knowledge-extract.md 流程）；如 enabled=false 则跳过 knowledge 全部环节 | `to-be-confirmed` |
-| `knowledge:extract` | Read `${REF}/phase-knowledge-extract.md`，按其流程执行（仅当 knowledge_extraction.enabled≠false 时触发；通常已由 plan:confirm 后并行启动；若到 final:summary 前未完成则此处同步执行） | `knowledge-extracted` |
+| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-confirmed` |
 | `worktree:setup` | 多仓 worktree 设置：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --detect <workspace-root>` 检测工作空间下所有 Git 仓库；使用 `AskUserQuestion` 让用户确认涉及的仓库列表 + 是否 worktree 隔离；yes → 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --create <idea-name> --repos <repo1,repo2,...>` 在每个仓库创建同名分支 worktree；no → 当前分支开发。将决策写入 `{IDEA_DIR}/worktree-decision.json`（v2 含 `repos` 数组和各仓 `base_commit`，CR 阶段用它做 diff 基准）。单仓场景退化为 v1 schema + `EnterWorktree` | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `implementation-verified` |
@@ -139,7 +158,7 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references`
 > 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
-> 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `clarification-complete` | `quick-dev-ready` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `implementation-verified` | `cr-complete` | `integration-cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `knowledge-candidates-exists` | `knowledge-extracted` | `done`。不要发明其他 gate 名称。
+> 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `clarification-complete` | `quick-dev-ready` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `implementation-verified` | `cr-complete` | `integration-cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `done`。不要发明其他 gate 名称。
 
 ### Complexity 分级
 
@@ -156,9 +175,9 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 
 **hotfix**：无 clarify，直接进入 quick-dev:init 生成 task 并实现。适用于单文件 ≤5 行的明确修复。
 **minor**：需要轻量 clarify（2 维度），其余与 trivial 相同。适用于 ≤2 文件、有现成模式可循的改动。
-**moderate**：跳过完整 as-is/knowledge/integration CR，但保留方案确认、worktree、task 拆分和 spec+D3+D4+D5 审查。
+**moderate**：跳过完整 as-is/integration CR，但保留方案确认、worktree、task 拆分和 spec+D3+D4+D5 审查。
 
-**standard/complex 正常流程**：走完整步骤，其中 `knowledge:extract` 和多 task integration CR 仅 standard/complex 触发。
+**standard/complex 正常流程**：走完整步骤，其中多 task integration CR 仅 standard/complex 触发。
 
 当同时存在待 CR、待返修和待编码任务时，优先清空 review / rework backlog，再进入新 coding。
 
@@ -172,10 +191,10 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 
 确认清理范围后再执行不带 `--dry-run` 的命令。rollback 只清理白名单内的 chisel 运行态产物。
 
-支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`clarify:requirement`、`plan:design`、`plan:confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`knowledge:extract`。
+支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`clarify:requirement`、`plan:design`、`plan:confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`。
 
 ---
 
 ## 阶段详细行为
 
-当进入 `understand:confirm` / `plan:confirm` / `final:summary` / `done` 步骤时，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references/phase-confirm-details.md` 获取详细执行指南。实时知识捕获规则也在该文件中。
+当进入 `understand:confirm` / `plan:confirm` / `final:summary` / `done` 步骤时，Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references/phase-confirm-details.md` 获取详细执行指南。

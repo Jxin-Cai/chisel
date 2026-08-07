@@ -2,33 +2,7 @@
 
 所有 Chisel agent 在开始工作前必须通过 `skills/chisel-core/SKILL.md` 的角色加载协议 Read 本文件。
 
-## 1. Wiki 渐进加载
-
-按需查询，不一次性加载整个 wiki：
-
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "<task goal/scope>" --category <category|空> --min-score 2 --load-plan --limit 10
-```
-
-无命中时在产物中写 `None matched`。
-
-## 2. 候选创建协议
-
-**前置条件**：仅当 `{idea_dir}/confirmations/to-be.json` 中 `knowledge_extraction.enabled !== false` 时执行本节行为。若该字段为 `false`（用户选择跳过知识沉淀），则不创建任何知识候选文件。在 `plan:confirm` 之前的步骤（`understand:confirm` 等），若 `confirmations/to-be.json` 尚不存在，默认执行本协议。
-
-在用户对话中识别到代码无法推导的上下文时（禁区/包袱/术语映射/历史决策），写 `{idea_dir}/knowledge-candidates/{prefix}-*.json`（fz/wbi/dnr/term）。
-
-仅在以下场景创建候选：
-- 用户澄清了某个设计的历史原因（代码看不出为什么这样做）
-- 用户解释了业务术语与代码概念的映射关系
-- 用户声明某区域不能动且给出了代码之外的原因
-- 需求文档中明确了某个约束或决策
-
-不要从代码静态分析信号创建候选——坏味道、指标异常等属于 as-is 分析产物，不是知识。
-
-必须满足：`status=proposed`、`confirmed=false`、填写 `source_step`、`quality_score`（optional，取值 0–1）、非空 `keywords`、结构化 `evidence`（含 `file`/`line_start`）、按 category 填齐 `content` 必填键。格式见 `knowledge-candidates-template.md`。
-
-## 3. Scope / Wiki Proof 格式
+## 1. Scope Proof 格式
 
 **Scope Check Proof** 必须记录：
 
@@ -39,18 +13,13 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "<task goal/
 
 Invariant Proofs 必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须填写实际验证证据，不得为空或占位；`Result` 只能是 `pass` 或 `fail`；approved CR 必须全部为 `pass`。
 
-**Wiki Proof** 必须记录：
+**CR 维度 Proof 去重规则**：Scope Check 只在 spec 维度完整执行。D2-D9 维度的 CR 产物中写 `## Scope / Invariant Proof: 见 cr/dim-spec-cr.md` 即可，不重复执行。
 
-- Query command、Query summary、category/min-score、load_plan JSON
-- Wiki Entries Loaded 表（Entry / File / Why Loaded / Used For）
-
-**CR 维度 Proof 去重规则**：Scope Check 和 Wiki 查询只在 spec 维度完整执行。D2-D9 维度的 CR 产物中写 `## Scope / Wiki / Invariant Proof: 见 cr/dim-spec-cr.md` 即可，不重复执行。
-
-## 4. 模板优先
+## 2. 模板优先
 
 写产物前先 Read 对应模板文件，按模板结构填充。不凭记忆写格式。
 
-## 5. 上下文隔离纪律
+## 3. 上下文隔离纪律
 
 ### 禁止累积摘要注入
 

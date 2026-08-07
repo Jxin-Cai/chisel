@@ -43,7 +43,6 @@ Writer 必须产出 `{idea_dir}/to-be/implementation-plan.md`，严格按 `to-be
 | Verification Surface | design-notes.json → verification_surface |
 | 回滚方案 | design-notes.json → rollback_plan |
 | 风险清单 | impact-risk-report.json → risk_matrix |
-| 知识候选处理策略 | design-notes.json → knowledge_strategy（如有） |
 | Task 拆分建议 | tasks.json → 完整 JSON 结构 |
 | 变更完整性自检结果 | design-notes.json → self_check |
 

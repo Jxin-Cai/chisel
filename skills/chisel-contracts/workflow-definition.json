@@ -16,7 +16,6 @@
     "review:cr-light": { "phase": "review", "gate": "cr-complete" },
     "review:cr-moderate": { "phase": "review", "gate": "cr-complete" },
     "review:integration": { "phase": "review", "gate": "integration-cr-complete" },
-    "knowledge:extract": { "phase": "knowledge", "gate": "knowledge-extracted" },
     "final:summary": { "phase": "final", "gate": "done" },
     "blocked": { "phase": null, "gate": null },
     "done": { "phase": null, "gate": null }
@@ -26,7 +25,7 @@
     "minor": ["receive-requirement", "clarify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary"],
     "trivial": ["receive-requirement", "clarify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary"],
     "moderate": ["receive-requirement", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr-moderate", "final:summary"],
-    "standard": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "knowledge:extract", "final:summary"],
-    "complex": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "knowledge:extract", "final:summary"]
+    "standard": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "final:summary"],
+    "complex": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "final:summary"]
   }
 }

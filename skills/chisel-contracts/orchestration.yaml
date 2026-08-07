@@ -50,9 +50,6 @@ steps:
   - id: review:integration
     postcondition:
       check: integration-cr-complete
-  - id: knowledge:extract
-    postcondition:
-      check: knowledge-extracted
   - id: final:summary
     postcondition:
       check: done

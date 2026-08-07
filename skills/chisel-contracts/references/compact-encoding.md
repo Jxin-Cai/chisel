@@ -67,7 +67,6 @@ task-002|reviewing|5|1|medium
 - `tasks[id].task_content` → 只保留 frontmatter（`---` 之间的内容）
 - `tasks[id].report_content` → 只保留 frontmatter + "## Completion Status" 段
 - `unified_diff` → 超过 20KB 时替换为紧凑摘要
-- `wiki_query.matches` → 只保留 `id` + `score` + `category`
 - 新增 `mode: "compact"` 标记
 
 ## 解码规则

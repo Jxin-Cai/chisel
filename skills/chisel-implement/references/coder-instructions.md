@@ -11,7 +11,7 @@
 | requirement | 目标和约束（快速过一遍） |
 | to-be/implementation-plan.md | 本 task 对应的方案段落 |
 | `{idea_dir}/cr/{task_id}-cr.md`（如存在） | 返修模式——按 CR-xxx 清单逐项修改，并在 report 中填写 Rework Resolution Matrix |
-| task 文件 `Context to Load` | 按列表加载 wiki/模块地图/ADR（不要全加载） |
+| task 文件 `Context to Load` | 按列表加载模块地图/ADR（不要全加载） |
 
 <HARD-GATE principle="P2">
 在开始写代码前，先扫描 as-is/ai-input 中与本 task 相关的文件（至少 `constraints.md` 和 `change-surface.md`），
@@ -25,7 +25,6 @@
    - 存在 → Read 该文件作为主要上下文来源，从中获取：
      - `task_content`（可跳过单独读 task 文件）
      - `constraints_excerpt` / `change_surface_excerpt`（可跳过 as-is/ai-input 手动读取）
-     - `wiki_results`（可跳过步骤 1 的 wiki 查询）
      - `invariants`（可跳过步骤 0 的手动读取）
      - `style_samples`（快速了解文件现有风格）
      - `rework_items`（返修时直接获取上轮 CR findings）
@@ -33,8 +32,7 @@
    - 不存在 → 按下方原流程手动读取（向后兼容）
 
 0. **建立执行归属** — 若 TASK 中 `parallel` 为 true，进入临时 worktree 后先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --rebase-baseline --project-root . --run-id {run_id}`。然后检查不变量：若步骤 0.5 已获取 `invariants` 则使用预打包数据；否则若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束。
-1. **Wiki 查询** — 若步骤 0.5 已获取 `wiki_results` 则跳过；否则按 `chisel-core/references/agent-protocol.md` §1 执行查询
-2. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
+1. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
 3. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。
 4. **实现** — 修改代码，靠齐 as-is 风格
 5. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正

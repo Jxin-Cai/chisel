@@ -150,7 +150,6 @@ if (d.schema_version === 2 && Array.isArray(d.repos)) {
    - 所有待审查 task 的文件内容和 report
    - 统一 git diff（只跑一次）
    - 每个 task 的 scope-check 结果
-   - wiki 查询结果
 
    后续 D2-D9 agent 优先从 cr-context.json 读取，避免重复计算。
 
@@ -280,7 +279,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/review-budget.mjs --dimensions d2,d3,d4,d5,d6
    ```
 3. `node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-parse.mjs {IDEA_DIR} --dim integration`
 4. 按结果：
-   - **pass** → 流程继续到 knowledge/final（由 orchestrator 自动流转）
+   - **pass** → 流程继续到 final（由 orchestrator 自动流转）
    - **fail** → `--mark-cr-requirement needs_rework <affected_tasks>`，受影响 task 回到 `repair:code`
 
 **注意**：Integration Review 不走验证子阶段（skeptic voting），因为它本身就是最终质量关卡。如果 fail，直接进入返修。

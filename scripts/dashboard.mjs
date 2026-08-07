@@ -527,7 +527,6 @@ function generateStatusSentence(currentStep, taskStats, crStats) {
     'quick-dev:init': '正在初始化快速开发',
     'plan:design': '正在设计 TO-BE 方案',
     'plan:confirm': '等待用户确认方案',
-    'knowledge:extract': '正在提取领域知识',
     'worktree:setup': '等待配置工作分支',
     'tasks:init': '正在初始化 Task',
     'implement:code': '正在编码实现',
@@ -1290,10 +1289,6 @@ const STEP_OUTPUTS_MAP = {
   'plan:confirm': [
     { label: 'To-Be 确认', file: 'confirmations/to-be.json' },
   ],
-  'knowledge:extract': [
-    { label: '知识候选', file: 'knowledge-candidates/', isDir: true },
-    { label: '提取完成标记', file: '.knowledge-extracted' },
-  ],
   'worktree:setup': [
     { label: 'Worktree 决策', file: 'worktree-decision.json' },
   ],
@@ -1320,13 +1315,8 @@ const STEP_OUTPUTS_MAP = {
 
 function collectStepOutputs(ideaDir, steps, currentStep, stepHistory) {
   const visitedSteps = new Set((stepHistory || []).map(h => h.step));
-  const toBeConf = readJson(ideaDir, 'confirmations/to-be.json');
-  const knowledgeSkipped = toBeConf?.knowledge_extraction?.enabled === false;
 
   return steps.map(stepId => {
-    if (stepId === 'knowledge:extract' && knowledgeSkipped) {
-      return { step: stepId, status: 'skipped', outputs: [] };
-    }
     const status = stepId === currentStep ? 'current'
                  : visitedSteps.has(stepId) ? 'done' : 'pending';
     const outputs = (STEP_OUTPUTS_MAP[stepId] || []).map(o => ({

@@ -46,18 +46,6 @@ function computeDiff(baseRef, changedFiles, projectRoot) {
   }
 }
 
-function queryWiki(projectRoot, text) {
-  const scriptDir = new URL('.', import.meta.url).pathname;
-  try {
-    const result = execFileSync('node', [
-      join(scriptDir, 'wiki-manage.mjs'), '--query', projectRoot,
-      '--text', text, '--min-score', '2', '--load-plan', '--limit', '10'
-    ], { encoding: 'utf8', maxBuffer: 2 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
-    return JSON.parse(result);
-  } catch {
-    return { status: 'ok', matches: [], warnings: ['wiki query failed'] };
-  }
-}
 
 function computeFileHashes(projectRoot, files) {
   return Object.fromEntries(files.map(file => {
@@ -144,15 +132,6 @@ function main() {
 
   const diff = computeDiff(baseRef, [...allChangedFiles], projectRoot);
 
-  const wikiText = taskIds.map(id => {
-    const content = pathsOnly
-      ? (tasks[id].task_file_path && existsSync(tasks[id].task_file_path) ? readFileSync(tasks[id].task_file_path, 'utf8') : '')
-      : (tasks[id].task_content || '');
-    const fm = content.split('---')[1] || '';
-    return fm;
-  }).join(' ');
-  const wikiResult = queryWiki(projectRoot, wikiText.slice(0, 500));
-
   const context = {
     schema_version: 2,
     mode: compactMode ? 'compact' : pathsOnly ? 'paths-only' : 'inline',
@@ -163,8 +142,7 @@ function main() {
     task_ids: taskIds,
     tasks,
     unified_diff: diff,
-    file_hashes: computeFileHashes(projectRoot, [...allChangedFiles]),
-    wiki_query: wikiResult
+    file_hashes: computeFileHashes(projectRoot, [...allChangedFiles])
   };
 
   const crDir = join(ideaDir, 'cr');
@@ -207,9 +185,6 @@ function main() {
         .filter(l => l.startsWith('+++'))
         .map(l => l.replace('+++ b/', ''));
       context.unified_diff = `[compact: ${summary.length} files, full diff ${Math.round(context.unified_diff.length/1024)}KB — use git diff to read]\n` + summary.map(f => `+++ ${f}`).join('\n');
-    }
-    if (context.wiki_query?.matches) {
-      context.wiki_query.matches = context.wiki_query.matches.map(m => ({ id: m.id, score: m.score, category: m.category }));
     }
   }
 

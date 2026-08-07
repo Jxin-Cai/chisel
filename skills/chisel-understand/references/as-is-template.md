@@ -16,7 +16,6 @@
 | `as-is/evidence-index.md` | 所有结论的证据路径索引 |
 | `as-is/evidence-ledger.json` | `F-xxx` 事实证据账本，供 gate 和 ai-input 反查 |
 | `as-is/coverage-matrix.json` | 入口、链路、数据、副作用的结构化覆盖矩阵，供 gate 判断 as-is 是否覆盖关键影响面 |
-| `as-is/knowledge-candidates.md` | 本次发现的禁区/包袱/坏味道/术语候选 |
 | `as-is/context-budget.md` | 探索上下文预算：已读文件清单、未读相关文件、覆盖度自评 |
 
 ### 枝干文件（按需产出，主干引用时才创建）
@@ -218,12 +217,6 @@
 `ui_entries`（可选）：当项目有前端且需求涉及页面时产出。记录页面组件→API 调用的映射，供 planner 设计前端改造点。
 
 `field_traces`（可选）：当需求涉及字段增删改时产出。追踪每个目标字段从 DB 到 UI 的完整传递路径。`layers` 中每层为 `{ location, evidence }` 或省略（表示该层缺失）。缺失的层级名列入 `gaps`，标志链路断裂点。纯后端项目或不涉及字段变更时省略此维度。
-
----
-
-## knowledge-candidates.md
-
-本次发现的禁区/包袱/坏味道/术语候选（人类可读摘要）。JSON 候选写入 `knowledge-candidates/` 目录，格式见 `knowledge-candidates-template.md`。
 
 ---
 

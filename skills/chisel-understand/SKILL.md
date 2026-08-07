@@ -27,20 +27,7 @@ user-invocable: false
 
 ---
 
-### Phase 0: 代码地图 + 债务扫描 + Wiki 预加载
-
-**Wiki 预加载**（非阻塞）：
-
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-manage.mjs --query . --text "$(head -c 500 {idea_dir}/requirement.md)" --min-score 2 --limit 10 2>/dev/null
-```
-
-如果返回 matches，将其作为 Explore subagent 上下文：
-- forbidden_zone → 在侦察时避开该区域，不在 overview 中建议修改该区域
-- glossary → 使用正确术语
-- weird_but_intentional → 不将其标记为异常
-
-如果无匹配或 wiki 不存在 → 跳过。
+### Phase 0: 代码地图 + 债务扫描
 
 **代码地图生成**：
 
@@ -89,7 +76,6 @@ Explore agent 返回分层文件清单后，检查覆盖度报告：
   "idea_dir": "{idea_dir}",
   "explore_result": "<Phase 1 Explore 返回的分层文件清单>",
   "requirement_path": "{requirement_path}",
-  "wiki_context": "<Phase 0 wiki 查询结果（如有，含 forbidden_zone/glossary/weird_but_intentional）>"
 }
 ```
 
@@ -147,7 +133,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/writer-as-is-tas
 }
 ```
 
-Writer 产出人类可读文档：overview.md / core-walkthrough.md / evidence-index.md / context-budget.md / knowledge-candidates.md / details/*.md
+Writer 产出人类可读文档：overview.md / core-walkthrough.md / evidence-index.md / context-budget.md / details/*.md
 
 ---
 
@@ -195,7 +181,6 @@ Phase 4 通过后，确认以下产物全部存在：
 - `as-is/core-walkthrough.md`
 - `as-is/evidence-index.md`
 - `as-is/context-budget.md`
-- `as-is/knowledge-candidates.md`
 - `as-is/quality-score.json`（Phase 4 脚本生成）
 
 **条件产物：**

@@ -13,18 +13,6 @@ function safeRead(path) {
   try { return existsSync(path) ? readFileSync(path, 'utf8') : null; } catch { return null; }
 }
 
-function queryWiki(projectRoot, text) {
-  const scriptDir = new URL('.', import.meta.url).pathname;
-  try {
-    const result = execFileSync('node', [
-      join(scriptDir, 'wiki-manage.mjs'), '--query', projectRoot,
-      '--text', text, '--min-score', '2', '--load-plan', '--limit', '10'
-    ], { encoding: 'utf8', maxBuffer: 2 * 1024 * 1024, stdio: ['pipe', 'pipe', 'pipe'] });
-    return JSON.parse(result);
-  } catch {
-    return { status: 'ok', matches: [], warnings: ['wiki query failed'] };
-  }
-}
 
 function extractRelevantSection(content, keywords) {
   if (!content) return null;
@@ -131,9 +119,6 @@ function main() {
   const constraintsExcerpt = safeRead(join(ideaDir, 'as-is', 'ai-input', 'constraints.md'));
   const changeSurfaceExcerpt = safeRead(join(ideaDir, 'as-is', 'ai-input', 'change-surface.md'));
 
-  const wikiText = `${fm.description || ''} ${(fm.allowed_symbols || []).join(' ')} ${expectedFiles.join(' ')}`;
-  const wikiResults = queryWiki(projectRoot, wikiText.slice(0, 500));
-
   const invariants = readInvariants(ideaDir, expectedFiles);
   const styleSamples = readStyleSamples(expectedFiles, projectRoot);
   const reworkItems = readReworkItems(ideaDir, taskId);
@@ -146,7 +131,6 @@ function main() {
     task_content: taskContent,
     constraints_excerpt: constraintsExcerpt,
     change_surface_excerpt: changeSurfaceExcerpt,
-    wiki_results: wikiResults,
     invariants,
     style_samples: styleSamples,
     rework_items: reworkItems,
@@ -157,7 +141,7 @@ function main() {
   mkdirSync(outDir, { recursive: true });
   const outPath = join(outDir, `${taskId}.json`);
   writeFileSync(outPath, JSON.stringify(context, null, 2));
-  console.log(JSON.stringify({ status: 'ok', path: outPath, has_wiki: wikiResults.matches?.length > 0, has_invariants: !!invariants, has_rework: !!reworkItems }));
+  console.log(JSON.stringify({ status: 'ok', path: outPath, has_invariants: !!invariants, has_rework: !!reworkItems }));
 }
 
 export { extractRelevantSection, readInvariants, readReworkItems, readStyleSamples };

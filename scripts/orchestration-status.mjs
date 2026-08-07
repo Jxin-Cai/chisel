@@ -391,9 +391,6 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     if (!traceGate.pass && !traceGate.skipped) {
       return buildResult('blocked', 'traceability incomplete — not all requirements covered by approved tasks', ideaDir, { complexity, trace_reason: traceGate.reason });
     }
-    if (complexity !== 'trivial' && !checkGate(ideaDir, 'knowledge-extracted').pass) {
-      return buildResult('knowledge:extract', 'all tasks approved but knowledge extraction not yet complete — must finish before final summary', ideaDir, { complexity });
-    }
     if (!checkGate(ideaDir, 'done').pass) {
       return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
     }

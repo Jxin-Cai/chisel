@@ -69,7 +69,7 @@ function main() {
       : '未初始化';
     console.log(`活跃: ${w.idea} @ step=${w.step} rev=${w.revision} | tasks: ${taskLine}`);
   }
-  console.log('提示: 必须调用 orchestration-status.mjs 获取权威 resume_step');
+  console.log('提示: 必须调用 orchestration-runner.mjs --next 获取权威 resume_step，并运行 roadmap.mjs 同步 TaskList 进度');
 }
 
 main();

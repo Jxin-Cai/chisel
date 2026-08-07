@@ -8,11 +8,6 @@
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start.mjs",
             "async": false
-          },
-          {
-            "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/wiki-rule-inject.mjs .",
-            "async": true
           }
         ]
       }

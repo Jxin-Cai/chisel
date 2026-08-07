@@ -39,13 +39,6 @@
       "evidence": "用户确认 C-001"
     }
   ],
-  "knowledge_signals": [
-    {
-      "category": "forbidden_zone",
-      "description": "旧接口响应结构不能改",
-      "candidate_file": "knowledge-candidates/fz-001.json"
-    }
-  ]
 }
 ```
 
@@ -110,7 +103,4 @@
 
 <确认过程中发现的新约束条件>
 
-## 知识候选信号
-
-<对话中发现的禁区/包袱/坏味道/术语，已写入 knowledge-candidates/>
 ```
