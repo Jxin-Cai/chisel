@@ -97,6 +97,10 @@ function collectStepOutputs(ideaDir, steps, currentStep, stepHistory) {
     'implement:code': [{ label: 'Task 报告', file: 'task-reports/', isDir: true }],
     'review:cr': [{ label: 'CR 结果', file: 'cr/', isDir: true }],
     'final:summary': [{ label: '最终摘要', file: 'final-summary.md' }],
+    'review:merge': [
+      { label: '当前变更报告', file: 'cr/current-change-report.md' },
+      { label: '合并审阅确认', file: 'confirmations/merge-review.json' },
+    ],
   };
   const visited = new Set((stepHistory || []).map(h => h.step));
   return steps.map(stepId => {

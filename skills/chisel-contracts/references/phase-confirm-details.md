@@ -81,13 +81,15 @@
 | task-001 | ... | ... | PASS |
 ```
 
-只有写完后才允许 `touch {IDEA_DIR}/.done`。
+写完后运行 `final-summary-complete` gate。此时禁止创建 `.done`；必须先完成 `review:merge` 并获得用户对当前代码快照的明确批准。
 
 ---
 
 ## 完成后合并流程
 
 当 `resume_step` = `done` 时：
+
+先运行 `gate-check.mjs {IDEA_DIR} merge-review-confirmed`。通过后才允许 `touch {IDEA_DIR}/.done` 并展示合并选项。若 HEAD 或工作区在批准后发生变化，gate 会失效，必须重新生成 Current Change Report 并重新批准。
 
 ### 1. 环境检测
 
@@ -197,4 +199,3 @@ git -C <worktree-path> log --oneline <default-branch>..HEAD
 - **放弃变更**：展示所有仓库将被删除的内容，确认后执行 cleanup
 
 ---
-

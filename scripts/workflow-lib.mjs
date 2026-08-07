@@ -734,21 +734,31 @@ const ROLLBACK_STEPS = {
     ]
   },
   'implement:code': {
-    remove: ['task-reports', 'cr', 'final-summary.md', '.done'],
+    remove: ['task-reports', 'cr', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
     reset: {
       from: ['coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'],
       to: 'confirmed'
     }
   },
+  'repair:code': {
+    remove: ['task-reports', 'cr', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
+    reset: {
+      from: ['repairing', 'coded', 'reviewing', 'approved'],
+      to: 'needs_rework'
+    }
+  },
   'review:cr': {
-    remove: ['cr', 'final-summary.md', '.done'],
+    remove: ['cr', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
     reset: {
       from: ['reviewing', 'approved', 'needs_rework', 'repairing', 'blocked'],
       to: 'coded'
     }
   },
   'final:summary': {
-    remove: ['final-summary.md', '.done']
+    remove: ['final-summary.md', 'cr/current-change-report.json', 'cr/current-change-report.md', 'confirmations/merge-review.json', '.done']
+  },
+  'review:merge': {
+    remove: ['cr/current-change-report.json', 'cr/current-change-report.md', 'cr/merge-review-user-feedback.md', 'confirmations/merge-review.json', '.done']
   }
 };
 

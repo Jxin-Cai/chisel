@@ -5,6 +5,7 @@ import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, 
 import { validateTasksDocument } from './task-init.mjs';
 import { validateVerificationResult } from './verification-lib.mjs';
 import { readTaskRun } from './task-provenance.mjs';
+import { validateMergeReviewConfirmation, validateMergeReviewReport } from './merge-review.mjs';
 
 import { getTaskScope } from './scope-check.mjs';
 import { validateJsonFile } from './schemas/validate.mjs';
@@ -996,7 +997,6 @@ function validateToBeConfirmation(ideaDir) {
 }
 
 function validateFinalSummary(ideaDir) {
-  if (!has(ideaDir, '.done')) return '.done missing';
   const summaryPath = join(ideaDir, 'final-summary.md');
   if (!existsSync(summaryPath)) return 'final-summary.md missing';
   const text = readText(summaryPath);
@@ -1267,7 +1267,7 @@ export function checkGate(ideaDir, gateId) {
         return result(gateId, false, 'missing or empty acceptance_criteria');
       return result(gateId, true);
     }
-    case 'done': {
+    case 'final-summary-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
       if (!allTasksApproved(ideaDir)) return result(gateId, false, 'not all tasks are approved');
       const reason = validateFinalSummary(ideaDir);
@@ -1275,6 +1275,20 @@ export function checkGate(ideaDir, gateId) {
       const traceGate = checkGate(ideaDir, 'traceability-complete');
       if (!traceGate.pass && !traceGate.skipped) return result(gateId, false, `traceability incomplete: ${traceGate.reason}`);
       return result(gateId, true);
+    }
+    case 'merge-review-report-exists': {
+      const reason = validateMergeReviewReport(ideaDir);
+      return reason ? result(gateId, false, reason) : result(gateId, true);
+    }
+    case 'merge-review-confirmed': {
+      const reason = validateMergeReviewConfirmation(ideaDir);
+      return reason ? result(gateId, false, reason) : result(gateId, true);
+    }
+    case 'done': {
+      const summary = checkGate(ideaDir, 'final-summary-complete');
+      if (!summary.pass) return result(gateId, false, summary.reason);
+      const review = checkGate(ideaDir, 'merge-review-confirmed');
+      return review.pass ? result(gateId, true) : result(gateId, false, review.reason);
     }
     default:
       return { pass: false, gate: gateId, reason: `unknown gate: ${gateId}` };

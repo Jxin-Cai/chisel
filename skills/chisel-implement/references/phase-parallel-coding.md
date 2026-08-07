@@ -38,7 +38,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --check-overla
 
 ### 3. 并行派发
 
-对每个 task 使用 `Agent({ subagent_type: "agent-chisel-coder", model: <by_task_complexity>, isolation: "worktree" })`（`trivial`/`standard` 不传 model 使用默认 sonnet，`complex` 传 model: opus），所有 Agent 调用在同一条消息中发出。TASK 输入增加 `"parallel": true` 和该 task 的 `"run_id"`。coder 进入临时 worktree 后必须先运行：
+对每个 task 使用 `Agent({ subagent_type: "agent-chisel-coder", model: <by_task_complexity>, isolation: "worktree" })`（`trivial`/`standard` 不传 model，继承主编排器当前模型；`complex` 传 model: opus），所有 Agent 调用在同一条消息中发出。TASK 输入增加 `"parallel": true` 和该 task 的 `"run_id"`。coder 进入临时 worktree 后必须先运行：
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {IDEA_DIR} <task-id> --rebase-baseline --project-root . --run-id <run-id>

@@ -16,16 +16,17 @@
     "review:cr-light": { "phase": "review", "gate": "cr-complete" },
     "review:cr-moderate": { "phase": "review", "gate": "cr-complete" },
     "review:integration": { "phase": "review", "gate": "integration-cr-complete" },
-    "final:summary": { "phase": "final", "gate": "done" },
+    "final:summary": { "phase": "final", "gate": "final-summary-complete" },
+    "review:merge": { "phase": "final", "gate": "merge-review-confirmed" },
     "blocked": { "phase": null, "gate": null },
     "done": { "phase": null, "gate": null }
   },
   "complexity_paths": {
-    "hotfix": ["receive-requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary"],
-    "minor": ["receive-requirement", "clarify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary"],
-    "trivial": ["receive-requirement", "clarify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary"],
-    "moderate": ["receive-requirement", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr-moderate", "final:summary"],
-    "standard": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "final:summary"],
-    "complex": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "final:summary"]
+    "hotfix": ["receive-requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary", "review:merge"],
+    "minor": ["receive-requirement", "clarify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary", "review:merge"],
+    "trivial": ["receive-requirement", "clarify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary", "review:merge"],
+    "moderate": ["receive-requirement", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr-moderate", "final:summary", "review:merge"],
+    "standard": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "final:summary", "review:merge"],
+    "complex": ["receive-requirement", "understand:explore", "understand:confirm", "clarify:requirement", "plan:design", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "final:summary", "review:merge"]
   }
 }

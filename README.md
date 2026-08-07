@@ -14,7 +14,7 @@
 
 <br/>
 
-Chisel is a [Claude Code](https://github.com/anthropics/claude-code) plugin that enforces a structured workflow for adding features to legacy systems: understand as-is → confirm to-be plan → decompose tasks → implement → architect CR → rework loop, with project knowledge accumulated into a progressively-loaded wiki.
+Chisel is a [Claude Code](https://github.com/anthropics/claude-code) plugin that enforces a structured workflow for adding features to legacy systems: understand as-is → confirm to-be plan → decompose tasks → implement → architect CR → rework loop → review the current change report → approve merge, with project knowledge accumulated into a progressively-loaded wiki.
 
 Every step produces file-based artifacts, making it easy to resume after interruption and audit every AI decision.
 
@@ -44,9 +44,9 @@ Chisel solves this with a **gate-driven workflow**:
 | Phase | What it does |
 |---|---|
 | **Understand** | Read-only exploration of relevant code paths, producing human-readable as-is documentation with evidence |
-| **Confirm** | Three mandatory human checkpoints — as-is understanding, strategy direction, and task decomposition |
+| **Confirm** | Human gates for as-is, the complete to-be plan/task set, and the exact pre-merge change snapshot |
 | **Implement** | Scoped coding with file-boundary enforcement, parallel task execution when safe |
-| **Review** | Multi-dimension architect CR with automatic rework loop (max 5 rounds) |
+| **Review** | Multi-dimension architect CR with automatic rework, followed by a snapshot-bound human merge review |
 | **Knowledge** | Capture forbidden zones, legacy baggage, and terminology into a persistent project wiki |
 
 No step is skipped. No decision is made from memory alone — the orchestrator always reads the file-based state machine.
@@ -122,7 +122,7 @@ Chisel stores runtime artifacts under the Git common root at `.chisel/<idea-name
 Receive requirement → Understand as-is → User confirm → [Generate AI input]
 → Strategy design → User confirm strategy → Task decomposition → User confirm tasks
 → Init tasks → Code → Architect CR → [Rework loop] → [Knowledge extraction]
-→ Final summary → Done → [Worktree merge]
+→ Final summary → Current Change Report → User merge decision → Done → [Worktree merge]
 ```
 
 Bracketed steps may be skipped depending on complexity classification.
@@ -143,7 +143,8 @@ Bracketed steps may be skipped depending on complexity classification.
 | 10 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
 | 11 | **Rework loop** | Max 3 rounds per task, then blocked |
 | 12 | **Final summary** | Aggregate changes, scope control, wiki updates |
-| 13 | **Done** | Prompt worktree merge if applicable |
+| 13 | **Merge review** | Generate the current change report; require Approve, Request changes, or Comment/hold |
+| 14 | **Done** | Prompt worktree merge only after approval of the unchanged Git/workspace snapshot |
 
 ### Complexity Classification
 
@@ -154,11 +155,11 @@ Bracketed steps may be skipped depending on complexity classification.
 
 ### Human Checkpoints
 
-Chisel has **3 mandatory confirmation gates** that pause the workflow:
+Chisel has **3 mandatory human gates** that pause the workflow:
 
 1. **As-is confirmation** — verify understanding of current system behavior
-2. **Strategy confirmation** — approve implementation direction and design decisions
-3. **Task confirmation** — approve task decomposition and dependencies
+2. **To-be confirmation** — approve implementation direction, task decomposition, dependencies, and risk
+3. **Pre-merge review** — review the generated change report and explicitly approve the exact Git/workspace snapshot
 
 Knowledge signals detected during confirmation dialogues (forbidden zones, legacy baggage, terminology) are captured in real-time to `knowledge-candidates/`.
 
@@ -220,8 +221,19 @@ Rollback only cleans whitelisted runtime artifacts — never deletes business so
 ```text
 .chisel/<idea-name>/task-reports/    # Implementation reports
 .chisel/<idea-name>/cr/              # Code review results
+.chisel/<idea-name>/cr/current-change-report.md   # Human pre-merge report
+.chisel/<idea-name>/cr/current-change-report.json # Snapshot-bound report data
+.chisel/<idea-name>/confirmations/merge-review.json # Approve / request changes / hold decision
 .chisel/<idea-name>/final-summary.md # Final change summary
 ```
+
+After every completed workflow step, Chisel prints each deliverable as an absolute-path Markdown link in the conversation. The deterministic renderer can also be run directly:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs <idea-dir> <completed-step>
+```
+
+Dashboard links supplement these file links; they do not replace the underlying requirement, design, task report, review, and summary artifacts.
 
 <br/>
 
@@ -295,7 +307,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 |---|---|
 | `agent-chisel-writer` | Generate human-readable docs from structured artifacts (sonnet) |
 | `agent-chisel-analyst` | Deep code walkthrough, produce structured as-is data (sonnet) |
-| `agent-chisel-coder` | Implement confirmed tasks (sonnet/opus via model override) |
+| `agent-chisel-coder` | Implement and verify confirmed tasks (inherits the orchestrator model; opus override for complex/escalated work) |
 | `agent-chisel-reviewer` | Multi-dimension CR with single-dimension-per-pass (opus) |
 
 ### Scripts

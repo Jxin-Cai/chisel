@@ -8,7 +8,7 @@ import { readTaskState, STEP_GATE_MAP, taskStateFile } from '../scripts/workflow
 import { changedFilesForProject } from '../scripts/task-provenance.mjs';
 import { controlRoot } from '../scripts/control-plane.mjs';
 
-const HUMAN_WAIT_STEPS = new Set(['understand:confirm', 'clarify:requirement', 'plan:confirm', 'worktree:setup', 'blocked']);
+const HUMAN_WAIT_STEPS = new Set(['understand:confirm', 'clarify:requirement', 'plan:confirm', 'worktree:setup', 'review:merge', 'blocked']);
 
 function readInput() {
   try {
@@ -70,7 +70,7 @@ export function evaluateStop(chiselDir, { projectRoot = '.', stopHookActive = fa
       const emptyReason = gate.pass ? emptyCodingTaskReason(workflow, projectRoot) : '';
       if (!gate.pass) blockers.push(`${workflow.idea}: step "${workflow.step}" gate "${gateId}" failed: ${gate.reason}`);
       else if (emptyReason) blockers.push(`${workflow.idea}: ${emptyReason}`);
-      else blockers.push(`${workflow.idea}: gate "${gateId}" passed; run authoritative status + explicit transition before stopping`);
+      else blockers.push(`${workflow.idea}: gate "${gateId}" passed; run phase-artifacts.mjs for "${workflow.step}", publish its Markdown links, then run authoritative status + explicit transition before stopping`);
     } catch (error) {
       blockers.push(`${workflow.idea}: gate evaluation error for "${gateId}": ${error.message}`);
     }

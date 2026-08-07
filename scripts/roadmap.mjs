@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { WORKFLOW_PATHS } from './workflow-definition.mjs';
+import { STEP_GATE_MAP, WORKFLOW_PATHS } from './workflow-definition.mjs';
 import { detectComplexity } from './workflow-lib.mjs';
 import { checkGate } from './gate-check.mjs';
 
@@ -22,6 +22,7 @@ const STEP_DESCRIPTIONS = {
   'review:cr-moderate': 'Code Review（spec + D3-D5）',
   'review:integration': '跨 task 集成一致性审查',
   'final:summary': '生成最终变更摘要 + 验证证据汇总',
+  'review:merge': '生成当前变更报告，等待用户批准合并',
 };
 
 function resolveStepStatus(ideaDir, step, gateId) {
@@ -47,7 +48,7 @@ function main() {
   }
 
   const steps = path.map(({ step, phase }) => {
-    const status = resolveStepStatus(ideaDir, step, getGateForStep(step));
+    const status = resolveStepStatus(ideaDir, step, STEP_GATE_MAP[step]);
     return {
       step,
       phase: phase || null,
@@ -70,28 +71,6 @@ function main() {
     current_step: steps[currentIdx]?.step || null,
     steps,
   }, null, 2));
-}
-
-function getGateForStep(step) {
-  const map = {
-    'receive-requirement': 'requirement-exists',
-    'understand:explore': 'as-is-complete',
-    'understand:confirm': 'as-is-confirmed',
-    'clarify:requirement': 'clarification-complete',
-    'plan:design': 'to-be-exists',
-    'plan:confirm': 'to-be-confirmed',
-    'worktree:setup': 'worktree-decided',
-    'quick-dev:init': 'task-workflow-exists',
-    'tasks:init': 'task-workflow-exists',
-    'implement:code': 'implementation-verified',
-    'repair:code': 'implementation-verified',
-    'review:cr': 'cr-complete',
-    'review:cr-light': 'cr-complete',
-    'review:cr-moderate': 'cr-complete',
-    'review:integration': 'integration-cr-complete',
-    'final:summary': 'done',
-  };
-  return map[step] || null;
 }
 
 main();

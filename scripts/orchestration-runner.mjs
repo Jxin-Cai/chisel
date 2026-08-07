@@ -6,6 +6,8 @@ import { durableAtomicWrite, recoverFileTransactions } from './file-transaction.
 import { ideaDirectory } from './control-plane.mjs';
 import { computeStatus } from './orchestration-status.mjs';
 import { performTransition } from './orchestration-transition.mjs';
+import { collectPhaseArtifacts, formatPhaseArtifacts } from './phase-artifacts.mjs';
+import { WORKFLOW_STEPS } from './workflow-definition.mjs';
 
 function parse(argv) {
   const result = { command: argv[0] || '--next' };
@@ -65,12 +67,23 @@ function status(ideaDir) {
 function tick(ideaDir, state) {
   const recovered_transactions = recoverFileTransactions(ideaDir);
   let decision = status(ideaDir);
+  let completed_step_delivery = null;
   if (decision.transition_required) {
-    performTransition(ideaDir, decision.resume_step, {
+    const transition = performTransition(ideaDir, decision.resume_step, {
       expectedRevision: decision.state_revision,
       eventId: `runner-${state.runner_id}-${state.iteration + 1}`,
       statusFn: (dir) => computeStatus(dir).resume_step,
     });
+    const completedStep = transition.from;
+    if (completedStep && WORKFLOW_STEPS.includes(completedStep)) {
+      const artifacts = collectPhaseArtifacts(ideaDir, completedStep);
+      completed_step_delivery = {
+        step: completedStep,
+        artifacts,
+        markdown: formatPhaseArtifacts(ideaDir, completedStep, artifacts),
+        instruction: '将 markdown 字段原样输出到对话中，不得只说产物已生成。',
+      };
+    }
     decision = status(ideaDir);
   }
   state.iteration += 1;
@@ -81,7 +94,7 @@ function tick(ideaDir, state) {
   if (decision.resume_step === 'done') state.status = 'done';
   else if (decision.resume_step === 'blocked') state.status = 'blocked';
   writeRunner(ideaDir, state);
-  return { ...decision, runner_id: state.runner_id, owner: state.owner, lease_until: state.lease_until, runner_status: state.status, recovered_transactions };
+  return { ...decision, runner_id: state.runner_id, owner: state.owner, lease_until: state.lease_until, runner_status: state.status, recovered_transactions, completed_step_delivery };
 }
 
 function main() {

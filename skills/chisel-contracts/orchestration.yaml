@@ -52,4 +52,7 @@ steps:
       check: integration-cr-complete
   - id: final:summary
     postcondition:
-      check: done
+      check: final-summary-complete
+  - id: review:merge
+    postcondition:
+      check: merge-review-confirmed

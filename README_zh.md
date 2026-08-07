@@ -14,7 +14,7 @@
 
 <br/>
 
-Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件，用文件驱动的工作流帮助你在遗留系统上安全地增加功能：先理解 as-is，再确认 to-be 方案，然后拆 task、实现、架构师 CR、返修闭环，并把项目知识沉淀到可渐进加载的 wiki 中。
+Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件，用文件驱动的工作流帮助你在遗留系统上安全地增加功能：先理解 as-is，再确认完整 to-be 方案，然后拆 task、实现、架构师 CR、返修闭环，最后审阅当前变更报告并批准合并，同时把项目知识沉淀到可渐进加载的 wiki 中。
 
 每一步都产出文件化产物，方便中断后恢复，也方便人审查 AI 的每一步判断。
 
@@ -44,9 +44,9 @@ Chisel 通过**门控驱动的工作流**解决这个问题：
 | 阶段 | 作用 |
 |---|---|
 | **理解** | 只读探索相关代码路径，产出带证据的 as-is 文档 |
-| **确认** | 三个人工确认关卡 — as-is 理解、策略方向、task 拆分 |
+| **确认** | 三个人工关卡 — as-is 理解、完整 to-be 方案/task、合并前精确代码快照 |
 | **实现** | 受限编码，文件边界强制执行，安全时并行 |
-| **审查** | 多维度架构师 CR，自动返修闭环（单 task 最多 5 轮） |
+| **审查** | 多维度架构师 CR 自动返修，随后进行绑定代码快照的人工合并审查 |
 | **知识** | 捕获禁区、历史包袱、术语映射，沉淀到持久化项目 wiki |
 
 不跳步。不凭记忆决策 — 编排器始终读取文件化的状态机。
@@ -121,7 +121,7 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 ```
 接收需求 → 理解 as-is → 用户确认 → [生成 AI 输入] → 策略设计 → 用户确认策略
 → task 拆分 → 用户确认拆分 → 初始化 task → 编码 → 架构师 CR → [返修闭环]
-→ [知识沉淀] → 最终总结 → 完成 → [worktree 合并]
+→ [知识沉淀] → 最终总结 → 当前变更报告 → 用户合并决策 → 完成 → [worktree 合并]
 ```
 
 方括号表示可能跳过的步骤（取决于复杂度分级）。
@@ -142,7 +142,8 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 | 10 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
 | 11 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
 | 12 | **最终总结** | 汇总变更、scope control、wiki 更新 |
-| 13 | **完成** | 若在 worktree 中，提示合并分支 |
+| 13 | **合并前 CR** | 生成当前变更报告，要求用户选择批准、要求修改或评论/暂缓 |
+| 14 | **完成** | 仅在用户批准且 Git/工作区快照未变化时提示合并 |
 
 ### 复杂度分级
 
@@ -153,11 +154,11 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 
 ### 人工确认关卡
 
-chisel 有 **3 个强制确认环节**，暂停流程等待用户逐项确认：
+chisel 有 **3 个强制人工关卡**，暂停流程等待用户逐项确认：
 
 1. **As-is 确认** — 验证对当前系统行为的理解
-2. **策略确认** — 批准实现方向和设计决策
-3. **Task 确认** — 批准任务拆分和依赖关系
+2. **To-be 确认** — 批准实现方向、完整 task 拆分、依赖和风险
+3. **合并前 CR** — 审阅当前变更报告，明确批准精确的 Git/工作区快照
 
 确认对话中检测到的知识信号（禁区/包袱/术语）会实时写入 `knowledge-candidates/`。
 
@@ -215,8 +216,19 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-st
 ```text
 .chisel/<idea-name>/task-reports/    # 实现报告
 .chisel/<idea-name>/cr/              # 代码审查结果
+.chisel/<idea-name>/cr/current-change-report.md   # 人工审阅的合并前变更报告
+.chisel/<idea-name>/cr/current-change-report.json # 绑定代码快照的结构化报告
+.chisel/<idea-name>/confirmations/merge-review.json # 批准/要求修改/暂缓决定
 .chisel/<idea-name>/final-summary.md # 最终变更总结
 ```
+
+每个工作流步骤完成后，Chisel 会在对话中把该步骤的每个产物输出为绝对路径 Markdown 链接。也可以直接运行确定性渲染脚本：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs <idea-dir> <completed-step>
+```
+
+Dashboard 链接只是补充，不替代需求、方案、Task 报告、CR 和最终总结等原始文件链接。
 
 <br/>
 
@@ -290,7 +302,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 |---|---|
 | `agent-chisel-writer` | 从结构化产物生成人类可读文档（sonnet） |
 | `agent-chisel-analyst` | 深度代码走查，产出结构化 as-is 数据（sonnet） |
-| `agent-chisel-coder` | 按 confirmed task 编码实现（sonnet/opus model override） |
+| `agent-chisel-coder` | 按 confirmed task 持续实现并验证（默认继承主编排器模型，复杂/升级任务覆盖为 opus） |
 | `agent-chisel-reviewer` | 多维度 CR，单维度/次深度审查（opus） |
 
 ### Scripts

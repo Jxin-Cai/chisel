@@ -41,6 +41,19 @@ describe('long-running resilience', () => {
     assert.ok(existsSync(join(ideaDir, 'runner-state.json')));
   });
 
+  it('returns the completed phase files when the runner advances', () => {
+    const ideaDir = join(root, '.chisel', 'delivery');
+    const first = spawnSync('node', ['scripts/orchestration-runner.mjs', '--start', '--idea-dir', ideaDir, '--owner', 'agent-a'], { cwd: process.cwd(), encoding: 'utf8' });
+    assert.equal(first.status, 0, first.stderr);
+    writeFileSync(join(ideaDir, 'requirement.md'), '# Req\n## 复杂度: trivial\n## 目标\n实现小改动\n');
+    const next = spawnSync('node', ['scripts/orchestration-runner.mjs', '--next', '--idea-dir', ideaDir, '--owner', 'agent-a'], { cwd: process.cwd(), encoding: 'utf8' });
+    assert.equal(next.status, 0, next.stderr);
+    const output = JSON.parse(next.stdout);
+    assert.equal(output.completed_step_delivery.step, 'receive-requirement');
+    assert.equal(output.completed_step_delivery.artifacts[0].label, 'requirement.md');
+    assert.match(output.completed_step_delivery.markdown, /\[requirement\.md\]\(<\//);
+  });
+
   it('rolls a crashed task start transaction forward without duplicating the run', () => {
     const ideaDir = join(root, '.chisel', 'idea');
     mkdirSync(ideaDir, { recursive: true });

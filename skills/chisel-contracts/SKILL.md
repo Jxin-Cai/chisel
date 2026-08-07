@@ -19,6 +19,7 @@ disable-model-invocation: true
 | `references/clarifications-template.md` | understand:confirm 产物模板 |
 | `references/final-summary-template.md` | final:summary 产物模板 |
 | `references/phase-confirm-details.md` | confirm/final/merge 阶段的详细行为指南 |
+| `references/merge-review-guide.md` | Current Change Report 生成、人工决策和快照失效规则 |
 | `references/phase-task-init.md` | task 初始化阶段指南 |
 
 ## 协议文件

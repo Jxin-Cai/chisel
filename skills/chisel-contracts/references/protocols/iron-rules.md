@@ -38,10 +38,13 @@ status 严格只读；runner 持久化租约/恢复点并通过 `orchestration-t
 | coding | task 初始化且 `--next-tasks` 返回该 task |
 | 需求级 CR | 所有 task 编码完成（无待编码、无待返修 task） |
 | 返修 | CR 结论为 `needs_rework` 且返修次数 < 5 |
+| 最终总结 | 所有 task 已批准且需求追溯完整 |
+| 合并前 CR | 最终总结完成；验证和自动 CR 均通过且与当前 Git/workspace 快照一致 |
+| done / 合并 | 用户对 Current Change Report 明确 Approve，且批准后的 HEAD、工作区、总结和报告均未变化 |
 
 ### 3. 用户确认不可跳过 `[P2, P4]`
 
-`understand:confirm` 和 `plan:confirm` 必须等用户明确确认后才能创建结构化确认文件。  
+`understand:confirm`、`plan:confirm` 和 `review:merge` 必须等用户明确确认后才能创建结构化确认文件。
 旧 `.as-is-confirmed` / `.to-be-confirmed` marker 仅用于历史运行目录兼容，新流程不得只创建 marker。  
 不要因"需求描述很清楚"而绕过确认。
 

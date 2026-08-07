@@ -536,6 +536,7 @@ function generateStatusSentence(currentStep, taskStats, crStats) {
     'repair:code': '正在修复 CR 发现的问题',
     'review:integration': '正在进行集成审查',
     'final:summary': '正在生成最终总结',
+    'review:merge': '等待用户审阅当前变更并批准合并',
     'done': '需求已完成',
     'blocked': '流程被阻塞',
   };
@@ -1309,6 +1310,11 @@ const STEP_OUTPUTS_MAP = {
   ],
   'final:summary': [
     { label: '最终摘要', file: 'final-summary.md' },
+  ],
+  'review:merge': [
+    { label: '当前变更报告', file: 'cr/current-change-report.md' },
+    { label: '报告数据', file: 'cr/current-change-report.json' },
+    { label: '合并审阅确认', file: 'confirmations/merge-review.json' },
   ],
   'done': [],
 };

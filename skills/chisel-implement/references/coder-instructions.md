@@ -33,8 +33,13 @@
 
 0. **建立执行归属** — 若 TASK 中 `parallel` 为 true，进入临时 worktree 后先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --rebase-baseline --project-root . --run-id {run_id}`。然后检查不变量：若步骤 0.5 已获取 `invariants` 则使用预打包数据；否则若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束。
 1. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
-3. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。
-4. **实现** — 修改代码，靠齐 as-is 风格
+2. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。
+3. **实现** — 修改代码，靠齐 as-is 风格
+4. **验证—修复循环** — 读取 task 的 `Verification Plan` 和仓库现有测试约定，先运行最小相关验证，再运行 task 要求的完整验证。失败时定位根因：
+   - 本次修改导致 → 修复后重跑，直到通过
+   - 环境/依赖瞬态失败 → 保留输出，诊断后最多重试 2 次
+   - 既有失败或缺少外部权限 → 用可复现命令和原始错误证明，返回 BLOCKED 或 DONE_WITH_CONCERNS（仅当所有 AC 已实现且失败确属非阻塞既有问题）
+   不得把“已写代码”当作完成，不得用跳过测试、删除断言或降低检查标准换取通过。
 5. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
 长耗时构建/测试前，运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {idea_dir} --heartbeat {task_id} --run-id {run_id}` 续租。
 
@@ -50,7 +55,7 @@
      - `invariant_check_result`：从 Invariant Proofs 中取——全部 pass 则 `pass`，否则 `fail`
      - `completion_status`：与 `## Completion Status` 的 status 行一致
      - `concerns`：与 `## Completion Status` 的 concerns 行一致（无则空字符串）
-8. **Completion Status** — 填写模板中的 `## Completion Status`，不得省略该章节：
+8. **Completion Status** — 填写模板中的 `## Completion Status`，不得省略该章节。只有 Acceptance Criteria、scope-check 和要求的验证均有证据时才能填写 DONE：
    - DONE：正常完成
    - DONE_WITH_CONCERNS：完成但对某些决策不确定（如风格不一致的现有代码、不清楚的业务逻辑）
    - NEEDS_CONTEXT：缺少关键信息无法继续，不写 report，不标状态

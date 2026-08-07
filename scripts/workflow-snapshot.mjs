@@ -3,6 +3,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { controlRoot } from './control-plane.mjs';
+import { checkGate } from './gate-check.mjs';
 
 function readWorkflowState(ideaDir) {
   const wsFile = join(ideaDir, 'workflow-state.yaml');
@@ -28,7 +29,7 @@ function readTaskSummary(ideaDir) {
 }
 
 function isDone(ideaDir) {
-  return existsSync(join(ideaDir, '.done'));
+  return existsSync(join(ideaDir, '.done')) && checkGate(ideaDir, 'done').pass;
 }
 
 function main() {

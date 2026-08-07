@@ -72,6 +72,18 @@ function ensureVerificationBeforeReview(ideaDir, reviewTasks, reviewStep, reason
   return buildResult(reviewStep, reason, ideaDir, { ...phaseDetail, next_tasks: reviewTasks });
 }
 
+function ensureFinalAndMergeReview(ideaDir, complexity) {
+  const summary = checkGate(ideaDir, 'final-summary-complete');
+  if (!summary.pass) {
+    return buildResult('final:summary', 'all tasks approved, final summary is pending or stale', ideaDir, { complexity, gate_reason: summary.reason });
+  }
+  const mergeReview = checkGate(ideaDir, 'merge-review-confirmed');
+  if (!mergeReview.pass) {
+    return buildResult('review:merge', 'current change report and explicit user approval are required before merge', ideaDir, { complexity, gate_reason: mergeReview.reason });
+  }
+  return buildResult('done', 'workflow is done and merge review is approved', ideaDir, { in_worktree: isInWorktree(), complexity });
+}
+
 
 function isInWorktree() {
   try {
@@ -148,10 +160,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
     }
     if (allTasksApproved(ideaDir)) {
-      if (!checkGate(ideaDir, 'done').pass) {
-        return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
-      }
-      return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
+      return ensureFinalAndMergeReview(ideaDir, complexity);
     }
     const state = readTaskState(taskStateFile(ideaDir));
     return buildResult('blocked', 'no executable next step found (hotfix)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
@@ -194,10 +203,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
     }
     if (allTasksApproved(ideaDir)) {
-      if (!checkGate(ideaDir, 'done').pass) {
-        return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
-      }
-      return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
+      return ensureFinalAndMergeReview(ideaDir, complexity);
     }
     const state = readTaskState(taskStateFile(ideaDir));
     return buildResult('blocked', 'no executable next step found (minor)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
@@ -244,10 +250,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       if (!traceGate.pass && !traceGate.skipped) {
         return buildResult('blocked', 'traceability incomplete', ideaDir, { complexity, trace_reason: traceGate.reason });
       }
-      if (!checkGate(ideaDir, 'done').pass) {
-        return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
-      }
-      return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
+      return ensureFinalAndMergeReview(ideaDir, complexity);
     }
     const state = readTaskState(taskStateFile(ideaDir));
     return buildResult('blocked', 'no executable next step found (trivial)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
@@ -303,10 +306,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       if (!traceGate.pass && !traceGate.skipped) {
         return buildResult('blocked', 'traceability incomplete', ideaDir, { complexity, trace_reason: traceGate.reason });
       }
-      if (!checkGate(ideaDir, 'done').pass) {
-        return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
-      }
-      return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
+      return ensureFinalAndMergeReview(ideaDir, complexity);
     }
     const state = readTaskState(taskStateFile(ideaDir));
     return buildResult('blocked', 'no executable next step found (moderate)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
@@ -391,10 +391,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     if (!traceGate.pass && !traceGate.skipped) {
       return buildResult('blocked', 'traceability incomplete — not all requirements covered by approved tasks', ideaDir, { complexity, trace_reason: traceGate.reason });
     }
-    if (!checkGate(ideaDir, 'done').pass) {
-      return buildResult('final:summary', 'all tasks approved, final summary is pending', ideaDir, { complexity });
-    }
-    return buildResult('done', 'workflow is done', ideaDir, { in_worktree: isInWorktree(), complexity });
+    return ensureFinalAndMergeReview(ideaDir, complexity);
   }
 
   const state = readTaskState(taskStateFile(ideaDir));

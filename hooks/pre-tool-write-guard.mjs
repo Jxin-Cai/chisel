@@ -63,6 +63,10 @@ function main() {
     const protectedState = /(workflow-state\.yaml|task-workflow-state\.yaml|events\.ndjson)/.test(command);
     if (protectedState) {
       deny('Machine state and event history may not be mutated through Bash; use the Chisel state transition scripts.');
+      return;
+    }
+    if (/confirmations[/\\]merge-review\.json/.test(command)) {
+      deny('merge-review confirmation must be written through merge-review.mjs --confirm after an explicit user decision.');
     }
     return;
   }
@@ -103,6 +107,11 @@ function main() {
   }
   if (subPath === 'events.ndjson') {
     deny('events.ndjson is append-only and must be written through orchestration-transition.mjs.');
+    return;
+  }
+
+  if (subPath === 'confirmations/merge-review.json') {
+    deny('merge-review confirmation must be written through merge-review.mjs --confirm after an explicit user decision.');
     return;
   }
 

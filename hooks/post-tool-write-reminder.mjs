@@ -62,8 +62,8 @@ function main() {
   const deliverableDirs = ['as-is/', 'to-be/', 'tasks/', 'task-reports/', 'cr/'];
   if (deliverableDirs.some(d => subPath.startsWith(d))) {
     const reminder = step
-      ? `产物已写入: ${relPath}. 当前步骤: ${step}. 完成当前阶段全部产物后，运行 gate-check.mjs 验证 postcondition 再继续下一步。`
-      : `产物已写入: ${relPath}. 完成当前阶段全部产物后，运行 gate-check.mjs 验证 postcondition 再继续下一步。`;
+      ? `产物已写入: ${relPath}. 当前步骤: ${step}. 完成当前阶段全部产物后，运行 gate-check.mjs；gate 通过后运行 phase-artifacts.mjs 并把逐文件 Markdown 链接输出到对话，再继续下一步。`
+      : `产物已写入: ${relPath}. 完成当前阶段全部产物后，运行 gate-check.mjs；gate 通过后运行 phase-artifacts.mjs 并把逐文件 Markdown 链接输出到对话，再继续下一步。`;
     injectContext(reminder);
     return;
   }

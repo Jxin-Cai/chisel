@@ -46,7 +46,7 @@ digraph implement_flow {
    - **返修策略**（统一使用 `agent-chisel-coder`，通过 model override 区分档位）：
      - `rework_count 1-2`：保持当前 model 配置（保持上下文连续性）
      - `rework_count 3`：模型升级
-       - `trivial`/`standard` (原 sonnet) → model override: opus
+       - `trivial`/`standard`（原为继承主编排器模型）→ model override: opus
        - `complex` (原 opus) → 不变（已是最高）
      - `rework_count 4-5`：**Fresh Agent 重做**——启动一个全新的 `agent-chisel-coder`（不继承前序 repair 上下文），model override: opus，agent prompt 追加：
        ```
@@ -59,7 +59,7 @@ digraph implement_flow {
 3. **单 task** → 串行执行：
    - `--start-task <task-id> --project-root . --owner main-orchestrator`；保存返回的 `run_id`，后续 heartbeat 和 finish 必须使用它
    - 读取 task 文件 frontmatter 的 `task_complexity` 字段，选择 model override：
-     - `trivial` / `standard` 或未指定 → `agent-chisel-coder`（默认 sonnet）
+     - `trivial` / `standard` 或未指定 → `agent-chisel-coder`（继承主编排器当前模型）
      - `complex` → `agent-chisel-coder`，model override: opus
    - 预打包 coder 上下文：`node ${CLAUDE_PLUGIN_ROOT}/scripts/coder-prepare.mjs {IDEA_DIR} <task-id> .`
    - 启动选定的 coder agent，传入 TASK：
@@ -67,6 +67,7 @@ digraph implement_flow {
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>", "task_file": "tasks/<task-id>.md", "run_id": "<run-id>" }
      ```
    - coder 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-metrics.mjs {IDEA_DIR} <task-id>`
+   - coder 返回后不得直接视为完成：Read task report，确认实际 diff 非空（除非 task 明确证明为 no-op），运行 `scope-check`，并用 `gate-check.mjs {IDEA_DIR} task-report-exists` 校验报告；失败则把具体错误反馈给同一 coder 继续修复
    - 检查 coder 返回的 Completion Status：
      - **DONE / DONE_WITH_CONCERNS** → 正常流转（concerns 留在 report 中供 CR 关注）
      - **NEEDS_CONTEXT** → 不调用 `--finish-task`，向用户展示缺失信息，获取后重新派发 coder
@@ -92,6 +93,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} .
   - 修复后重新运行 `verify-run.mjs`
   - 最多尝试修复 2 次；仍失败则保持在 implement/repair，报告明确阻塞原因，不得进入 CR
 - 未检测到验证命令时结果为 `fail`；先从项目说明、CI 或用户输入补充可重复执行的验证命令，不得以 skip 代替验证
+
+验证通过后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} implement:code`（返修阶段用 `repair:code`），将 stdout 原样输出到对话，再继续 review。Task 多于一个时，每个 task 完成后也必须立即输出该 task report 的绝对路径 Markdown 链接，不等待所有 task 结束。
 
 <HARD-GATE principle="P2">
 只有 `--next-tasks` 返回的 task 才能启动。
