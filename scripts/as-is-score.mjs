@@ -262,6 +262,7 @@ function scoreRelevance(ideaDir) {
 
   const relevantDirs = new Set();
   for (const c of entryCandidates) {
+    if (!c?.file) continue;
     const parts = c.file.split('/');
     if (parts.length > 1) relevantDirs.add(parts[0] + '/');
     if (parts.length > 2) relevantDirs.add(parts.slice(0, 2).join('/') + '/');
