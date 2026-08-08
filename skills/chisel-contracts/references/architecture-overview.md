@@ -15,7 +15,7 @@
 ## 架构要点
 
 - 单一插件 `chisel`，主入口 skill 是 `/chisel`。
-- 运行态产物写入 `control-plane.mjs` 解析的 Git common root `.chisel/<idea-name>/`；主工作区和 linked worktree 共享同一控制面，也可用 `CHISEL_CONTROL_ROOT` 覆盖。
+- 运行态产物写入 `control-plane.mjs` locator 解析的持久 control root `.chisel/<idea-name>/`；外层 workspace 可以非 Git，locator 会从外层、原 repo 或 linked worktree 读取 registry，恢复 workspace_root、各 repo/worktree、branch、base/default ref 和 lifecycle，也可用 `CHISEL_CONTROL_ROOT` 覆盖。
 - `skills/chisel-contracts/workflow-definition.json` 是 step/phase/gate/complexity path 的唯一机器定义；脚本通过 `workflow-definition.mjs` 加载，不再复制枚举。
 - `scripts/orchestration-status.mjs` 是严格只读的恢复点计算器；`orchestration-runner.mjs` 持久化 runner 租约、iteration 和最后决策，恢复事务后驱动显式 transition。
 - `scripts/orchestration-transition.mjs` 是 workflow step 的唯一写入口：校验权威 resume step 与 expected revision，持有 transition lock，记录 `events.ndjson`，再更新 dashboard 投影。
@@ -26,6 +26,8 @@
 - `scripts/gate-check.mjs` 管理每步 postcondition。
 - `scripts/scope-check.mjs` 检查变更文件是否越界或触碰禁区。
 - `scripts/multi-repo-worktree.mjs` 多仓 worktree 检测/创建/状态/清理（支持非 git 工作空间下的多 git 仓库场景）。
+- `scripts/branch-merge.mjs` 在独立 integration worktree 中合并、验证、commit/push 和冲突现场管理，不切换已有主仓 checkout。
+- `scripts/review-selector.mjs` 基于实际 diff/path/content 选择 review 风险与维度；spec 永远必跑，旧 D2-D9 通过 skipped/auto-pass projection 兼容。
 - `scripts/repo-map.mjs` 产出语言统计、目录结构和前端框架/路由检测（无 LLM 依赖），explorer 探索前自动运行。
 - `scripts/debt-scan.mjs` 纯静态技术债务扫描器（无 LLM 依赖），explorer 探索前自动运行，产出 proposed 候选。
 - `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
@@ -54,13 +56,13 @@
 ## 并行开发
 
 - Worktree 粒度为 per-requirement：一个需求对应一组 worktree（用户在 `worktree:setup` 选择），内部 task 串行/并行执行。
-- **多仓支持**：工作空间可能是非 git 的目录，下包含多个独立 Git 仓库。一个需求可能跨多个仓库改动。`worktree:setup` 阶段通过 `multi-repo-worktree.mjs --detect` 扫描仓库，在每个涉及的仓库中创建同名分支 worktree（`worktree-decision.json` schema_version=2）。
-- 单仓场景退化为 schema_version=1，行为不变。
+- **多仓支持**：工作空间可能是非 git 的目录，下包含多个独立 Git 仓库。一个需求可能跨多个仓库改动。`worktree:setup` 阶段通过 `multi-repo-worktree.mjs --detect` 扫描仓库，在每个涉及的仓库中创建同名逻辑分支和独立 worktree；`worktree-decision.json` 与 registry 使用 v3，兼容 v1/v2。
+- locator 从 `git worktree list --porcelain` 验证/恢复记录路径，不拼接固定路径；每个仓库都有 delivery receipt，部分成功显式保留。
 - Worktree 决策在方案确认后（`plan:confirm` 之后、`tasks:init` 之前）由用户选择。
 - 用户选 `current-branch` 时，所有 task 串行执行，**不使用 Agent worktree 隔离**。
 - 用户选 `worktree` 时，`getNextTasks()` 返回多个 task 且文件/符号/不变量/共享资源均无冲突时，使用 `Agent(isolation: "worktree")` 并行编码（这是 Agent 工具的临时隔离，task 级，用完即弃），合并后统一更新状态。
 - 路径目录和 glob 交叉会保守判定为冲突；共享资源用 `impact_surface.reads/writes` 建模，read/read 可并行，任一 write 冲突。旧 `shared_state` 等价于 write lock。返修 task 始终串行。
-- `chisel-review` 在所有 task 编码完成后进行多维度 CR：spec 门槛（opus）通过后，D2-D9 按变更特征条件激活（D2 需并发/错误处理代码、D7 需删除/重命名、D8 需公共 API 变更、D9 需安全敏感代码，D3-D6 始终激活），已激活维度并行 opus 审查，每个发现附带置信度评分（≥80 返修、60-79 仅参考），fail 项经对抗性验证确认后聚合结果。Scope/Wiki Proof 只在 spec 维度执行一次，D2-D9 引用之。返修后从 spec 重新开始。
+- `chisel-review` 在所有 task 编码完成后进行动态 CR：spec 永远是门槛；小型低风险 diff 使用 lite，auth/payment/migration/concurrency/external boundary/verification mechanism 信号强制升级，其余维度按实际内容选择，输出理由与 batches。未选的旧 D2-D9 文件投影为 skipped/auto-pass，返修后从 spec 重新开始。
 - 自动 CR 通过后进入独立 `review:merge`：用户可 Approve / Request changes / Comment-hold；只有 Approve 且所有仓库快照未变化时 `merge-review-confirmed` gate 才通过。
 - 需求完成后（`done` 阶段），多仓场景对每个仓库分别创建 PR 或 merge。
 

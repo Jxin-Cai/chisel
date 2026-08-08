@@ -93,7 +93,13 @@
 
 ### 1. 环境检测
 
-读取 `{IDEA_DIR}/worktree-decision.json` 判断多仓 vs 单仓：
+先运行 locator（可从 outer workspace、原 repo 或 linked worktree 启动），再读取
+`{IDEA_DIR}/worktree-decision.json` 和 registry 判断多仓 vs 单仓：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --locate --project-root . --idea <idea-name>
+node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --resume <idea-name> --project-root .
+```
 
 **单仓模式**（schema_version=1 或无 repos 字段）：
 ```bash
@@ -106,9 +112,9 @@ BRANCH=$(git branch --show-current)
 - `GIT_DIR = GIT_COMMON` 且当前分支非主干 → 在主仓库功能分支上（选项 1/2/3）
 - `GIT_DIR = GIT_COMMON` 且当前分支是主干 → 已合并完成（仅提示）
 
-**多仓模式**（schema_version=2，repos 数组非空）：
+**多仓模式**（schema_version=2/3，repos 数组非空）：
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --status <idea-name> --repos <repo1,repo2,...>
+node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --status <idea-name>
 ```
 
 ### 2. 展示变更概要
@@ -155,23 +161,17 @@ git -C <worktree-path> log --oneline <default-branch>..HEAD
 - **创建 PR**：`git push -u origin {branch}`，然后用 `gh pr create` 创建 PR，展示 PR URL
 
 - **合并到主干（含冲突分析）**：
-  1. 若在 worktree 中，先执行转换：`node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --convert {branch} --repo <main-repo-path>`
-  2. 在主仓切换到主干分支：`git checkout {default-branch}`
-  3. 执行智能合并：`node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source {branch} --target {default-branch} --repo .`
-  4. 处理结果：
-     - `status: "merged"` → 告知合并成功
-     - `status: "conflicts_detected"` → 向用户展示冲突分析：
-       - 对 `auto_resolvable` 的文件：说明双方改动不在同一区域，可自动解决
-       - 对 `true_conflict` 的文件：展示冲突行范围、双方改动概述、推荐处理策略
-       - 使用 `AskUserQuestion` 让用户选择：自动解决可解冲突 / 全部手动处理 / 放弃合并
-     - 用户选"自动解决"→ 重新执行带 `--auto-resolve` 参数的合并
-  5. 合并完成后，若 worktree 仍存在则清理
+  1. 不转换、不 checkout 主仓；运行 `branch-merge.mjs --merge`，脚本在独立
+     integration worktree 中执行并返回 receipt。外部 merge/push 前必须得到
+     用户确认并传 `--confirm`，目标远端 fetch 后若漂移则停止，绝不 force push。
+  2. `status: "merged"` → 记录 receipt；`status: "conflicts_detected"` →
+     保留 integration worktree 和外部 `.chisel-merge-receipts/*-conflict.json`，进入专门冲突链路。
 
-- **转为常规分支**：
+- **转为常规分支**（只在用户选择此项时）：
   1. 展示当前分支提交数：`git log --oneline {default-branch}..HEAD | wc -l`
   2. 执行转换：`node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --convert {branch} --repo .`
   3. 处理结果：
-     - `status: "converted"` → 告知用户："Worktree 已移除，分支 `{branch}` 保留了 N 个提交。当前已在主仓库的 `{branch}` 分支上。后续可用 `/chisel-branch merge-to-main` 合并，或 `/chisel-branch sync-from-main` 同步主干变更。"
+     - `status: "converted"` → 告知用户："Worktree 已移除，分支 `{branch}` 保留了 N 个提交；主仓 checkout 未被切换。"
      - `status: "uncommitted_changes"` → 告知有未提交变更，列出脏文件，建议先 commit 或 stash
   4. 更新 `{IDEA_DIR}/worktree-decision.json`，添加 `"converted_at": "<ISO 8601>"`
 
@@ -184,10 +184,11 @@ git -C <worktree-path> log --oneline <default-branch>..HEAD
 - **创建 PR**：对每个仓库的 worktree 分支执行 `git -C <worktree-path> push -u origin {branch}`，然后在每个仓库创建 PR（`gh pr create`），汇总展示所有 PR URL
 
 - **合并到主干（含冲突分析）**：
-  1. 先对所有仓库执行 worktree 转换：`node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --convert <idea-name> --repos <...>`
-  2. 对每个仓库依次执行智能合并：`node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source {branch} --target {default-branch} --repo <repo-path>`
-  3. 汇总所有仓库的冲突分析结果展示给用户
-  4. 用户决策后统一执行
+  1. 不先转换 worktree；对每个仓库在独立 integration worktree 执行
+     `branch-merge.mjs --merge --source {branch} --target {default-branch} --repo <repo-path>`。
+  2. 持久化逐仓 receipt/delivery 状态，汇总成功、失败和冲突；部分成功必须显式记录。
+  3. 冲突按外部 receipt 的 base/ours/theirs 报告处理，用户确认后
+     `--continue --confirm`，验证无 unmerged 后 commit，再按需安全 push。
 
 - **转为常规分支**：
   1. 执行转换：`node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --convert <idea-name> --repos <...>`

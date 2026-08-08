@@ -13,26 +13,7 @@ user-invocable: false
 
 !`node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
 
-## Trivial 快速路径（review:cr-light）
-
-如果当前需求复杂度为 `trivial`（读取 `{IDEA_DIR}/requirement.md` 判断复杂度），则：
-- **只执行 Spec 门槛**（不使用 workflow）
-- 启动 `agent-chisel-reviewer`（opus），dimension=spec
-- `cr-parse.mjs {IDEA_DIR} --dim spec`
-- pass → `--mark-cr-requirement approved`
-- fail → `--mark-cr-requirement needs_rework`
-
-## Moderate 路径（review:cr-moderate）
-
-如果当前需求复杂度为 `moderate`，则：
-- 执行 Spec 门槛（同上）
-- Spec pass → 只启动 D3 + D4 + D5（不使用 workflow，逐个启动 reviewer）
-- D2/D6/D7/D8/D9 自动写入 pass CR 文件（理由: "moderate 路径仅审查 spec+D3+D4+D5"）
-- 不执行验证子阶段
-- 全 pass → `--mark-cr-requirement approved`
-- 任一 fail → `--mark-cr-requirement needs_rework`
-
-## Standard/Complex 路径（使用 Dynamic Workflow）
+## 动态路径（所有复杂度）
 
 ### 执行流程
 
@@ -55,18 +36,23 @@ user-invocable: false
    node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-prepare.mjs {IDEA_DIR} "{BASE_REF}" .
    ```
 
-5. **条件激活**
-   分析变更文件特征，决定哪些维度需要激活（D3/D4/D5/D6 始终激活；D2/D7/D8/D9 按 grep 条件激活）。
-   未激活维度自动写入 pass CR 文件。
+5. **风险选择（spec 永远必跑）**
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/review-selector.mjs \
+     --project-root . --base-ref "{BASE_REF}" --complexity "<complexity>"
+   ```
+   选择器读取实际 diff、路径和内容：≤2 个路径且 ≤80 行、无高风险信号时
+   使用 `review:cr-light`；auth/payment/migration/concurrency/external boundary/
+   verification mechanism 任一命中都强制升级并输出理由。结果中的
+   `dimension_batches` 直接传给 Dynamic Workflow；`skipped_dimensions` 以
+   `status: skipped, result: auto-pass` 投影为旧 D2-D9 文件，保持旧 gate 兼容。
 
 6. **增量复审判断**（rework_cycle > 0 时）
    读取 cr-context-prev.json，对上轮 pass 且 repair 未触及的维度写入 pass-cached。
 
 7. **获取 review budget**
-   ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/review-budget.mjs --dimensions <activated> --finding-count 0 --risk-level <level>
-   ```
-   从输出中获取 `dimension_batches`。
+   选择器已经调用 `review-budget.mjs` 生成有界 batches；若 finding 产生对抗性
+   验证，再用该脚本按 `finding-count` 补充 skeptic 预算。
 
 8. **调用 Dynamic Workflow**
    ```

@@ -1,7 +1,7 @@
 ---
 name: chisel-branch
 description: 当用户说"转分支"、"合并分支"、"merge"、"sync"、"冲突分析"、"合并到主干"、"同步主干"时触发。
-argument-hint: "<convert|merge-to-main|sync-from-main> [idea-name]"
+argument-hint: "<locate|resume|convert|merge-to-main|sync-from-main|conflict-continue|conflict-abort> [idea-name]"
 ---
 
 # 分支管理工具
@@ -33,7 +33,7 @@ IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root .
 cat "$IDEA_DIR/worktree-decision.json"
 ```
 
-若文件不存在或 `mode` = `current-branch`，告知用户当前未使用 worktree 隔离，无需转换。
+若文件不存在或 `decision` = `current-branch`，告知用户当前未使用 worktree 隔离，无需转换。
 
 ### 2. 执行转换
 
@@ -89,16 +89,20 @@ git log --oneline ${DEFAULT_BRANCH}..${FEATURE_BRANCH}
 ### 3. 执行合并（含冲突分析）
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source <feature-branch> --target <default-branch> --repo .
+node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge \
+  --source <feature-branch> --target <default-branch> --repo . --confirm
 ```
+
+脚本始终创建独立 integration worktree，不 checkout 或占用已有主仓
+checkout。执行外部 push 时还要显式添加 `--push --confirm`；脚本会 fetch
+目标分支并拒绝远端目标漂移，绝不 force push。
 
 ### 4. 处理结果
 
 - `status: "merged"` → 告知合并成功，展示合并后的分支状态
 - `status: "conflicts_detected"` → 展示冲突分析详情：
-  1. 列出所有冲突文件及分类（auto_resolvable / true_conflict）
-  2. 对 auto_resolvable 的文件说明双方改动不在同一区域
-  3. 对 true_conflict 的文件展示具体冲突行范围和推荐策略
+  1. 列出所有冲突文件及 `true_conflict` 分类
+  2. 展示 base/ours/theirs 摘要和推荐策略
   4. 使用 `AskUserQuestion` 询问用户：
 
   | 选项 | 描述 |
@@ -107,13 +111,44 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source <feature-br
   | 全部手动处理 | 不自动解决，我自己处理所有冲突 |
   | 放弃合并 | 取消本次合并操作 |
 
-  若用户选"自动解决可解冲突"且存在 true_conflict：
-  ```bash
-  node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source <feature-branch> --target <default-branch> --repo . --auto-resolve
-  ```
-  然后告知用户哪些文件已自动解决，哪些仍需手动处理。
+  若存在冲突，保留 integration worktree 和外部 `.chisel-merge-receipts/*-conflict.json` 现场，
+  转入下方的专门冲突链路；不得自动 abort 后丢失现场。
 
 **多仓模式**：对 `worktree-decision.json` 中每个 repo 依次执行上述流程，汇总结果。
+
+### 冲突解决链路（resolve / continue / abort）
+
+详细协议见 `${CLAUDE_PLUGIN_ROOT}/skills/chisel-branch/references/conflict-resolve.md`。
+
+1. 读取 integration worktree 中的机器可读报告：
+   `report_file` 指向的外部冲突报告。报告含
+   `base`、`ours`、`theirs`、冲突文件分类和建议。
+2. 在 integration worktree 中解决所有冲突并检查：
+
+   ```bash
+   git -C <integration-worktree> diff --name-only --diff-filter=U
+   git -C <integration-worktree> add <resolved-files>
+   ```
+
+3. 用户确认后继续（继续前脚本会再次拒绝 unmerged 文件并运行验证）：
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --continue \
+     --repo <repo> --integration-worktree <integration-worktree> \
+     --verify-command-json '["npm","test"]' --confirm
+   ```
+
+   `--verify-command-json` 应传该仓库 required checks 的安全 argv；脚本同时运行
+   `git diff --check` 并把命令/状态写入 receipt。需要推送目标分支时追加 `--push --remote origin --confirm`。每个仓库
+   都会返回独立 receipt，部分成功必须在交付汇总中显式记录。
+4. 放弃合并但保留开发分支：
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --abort \
+     --repo <repo> --integration-worktree <integration-worktree>
+   ```
+
+   确认现场不再需要后才追加 `--cleanup`；abort/cleanup 不删除开发分支。
 
 ---
 
@@ -134,7 +169,7 @@ git log --oneline ${FEATURE_BRANCH}..${DEFAULT_BRANCH}
 ### 3. 执行合并
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source <default-branch> --target <feature-branch> --repo .
+node ${CLAUDE_PLUGIN_ROOT}/scripts/branch-merge.mjs --merge --source <default-branch> --target <feature-branch> --repo . --confirm
 ```
 
 ### 4. 处理结果

@@ -23,7 +23,7 @@ disable-model-invocation: true
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/workflow-definition.json`。这是 step / phase / gate / complexity path 的唯一来源；`orchestration.yaml` 只是旧消费者的生成投影，不得作为编排依据
 2. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
-3. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>`，将输出设为 `{IDEA_DIR}`。该目录默认位于 Git common root，因此主工作区与所有 worktree 共享同一控制面；可用 `CHISEL_CONTROL_ROOT` 显式覆盖
+3. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --locate --project-root . --idea <idea-name>`。从外层 workspace、原 repo 或 linked worktree 启动时，locator 读取持久 registry（v1/v2/v3）恢复 `{IDEA_DIR}`、workspace_root、各 repo/worktree、branch、base/default ref 和 lifecycle；新 idea 再用不带 `--locate` 的路径命令创建目录。可用 `CHISEL_CONTROL_ROOT` 显式覆盖
 4. 如果目录不存在，设 idea-dir = `none`
 5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --start --idea-dir {IDEA_DIR} --owner main-orchestrator`，保存返回的 `runner_id`
 6. 生成 Dashboard 分块并输出路径：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks overview`，解析 stdout JSON 的 `dir` 字段，**在消息中输出文件路径**：`📊 Dashboard: {dir}/overview.html`。用户可通过 Read tool 查看，或在浏览器中打开
@@ -98,11 +98,11 @@ digraph chisel_flow {
   quickdev [label="quick-dev:init\n(trivial only)"];
   design [label="plan:design"];
   p_confirm [label="plan:confirm"];
-  worktree [label="worktree:setup"];
+  worktree [label="worktree:setup\nregistry + locator"];
   tasks [label="tasks:init"];
   implement [label="implement:code"];
-  review [label="review:cr\n(spec + D2-D9)"];
-  review_light [label="review:cr-light\n(spec only, trivial)"];
+  review [label="review:cr\ndynamic dimensions"];
+  review_light [label="review:cr-light\nspec + compatibility projection"];
   integration [label="review:integration\n(multi-task standard/complex)"];
   repair [label="repair:code"];
   final [label="final:summary"];
@@ -187,12 +187,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 | `quick-dev:init` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}`（trivial only：自动生成 task + worktree-decision + traceability-matrix） | `task-workflow-exists` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
 | `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-confirmed` |
-| `worktree:setup` | 多仓 worktree 设置：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --detect <workspace-root>` 检测工作空间下所有 Git 仓库；使用 `AskUserQuestion` 让用户确认涉及的仓库列表 + 是否 worktree 隔离；yes → 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/multi-repo-worktree.mjs --create <idea-name> --repos <repo1,repo2,...>` 在每个仓库创建同名分支 worktree；no → 当前分支开发。将决策写入 `{IDEA_DIR}/worktree-decision.json`（v2 含 `repos` 数组和各仓 `base_commit`，CR 阶段用它做 diff 基准）。单仓场景退化为 v1 schema + `EnterWorktree` | `worktree-decided` |
+| `worktree:setup` | 多仓 worktree 设置：先运行 `multi-repo-worktree.mjs --detect <workspace-root>`，由用户确认仓库列表和隔离策略；yes → `--create <idea-name> --workspace <workspace-root> --repos ...`，创建每仓同逻辑分支并写入持久 v3 registry；no → 仍需显式记录 current-branch 决策。恢复时必须先运行 `--locate/--resume`，读取 decision/registry 并用 `git worktree list --porcelain` 验证路径；旧 v1/v2 decision 继续接受 | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | `/chisel-implement <idea-name>` | `implementation-verified` |
-| `review:cr` | `/chisel-review <idea-name>`；`cr-complete` 检查 `dim-spec-cr.md` 与 D2-D9 维度 CR。spec fail 可只完成 spec CR 并进入 repair；spec pass 后才要求 D2-D9 全部完成并聚合。 | `cr-complete` |
-| `review:cr-moderate` | `/chisel-review <idea-name>`（moderate only：运行 spec + D3 + D4 + D5，D2/D6/D7/D8/D9 auto-pass） | `cr-complete` |
-| `review:cr-light` | `/chisel-review <idea-name>`（trivial only：只运行 spec 维度，pass → approved，fail → needs_rework） | `cr-complete` |
+| `review:cr` | `/chisel-review <idea-name>`；先运行 `review-selector.mjs`，spec 必跑，再按实际 diff/path/content 选择维度和 Dynamic Workflow batches；旧 D2-D9 通过 skipped/auto-pass projection 兼容。 | `cr-complete` |
+| `review:cr-moderate` | `/chisel-review <idea-name>`（默认 moderate 维度由 selector 决定；高风险信号会升级） | `cr-complete` |
+| `review:cr-light` | `/chisel-review <idea-name>`（仅小型低风险 diff 使用；spec 必跑并记录 lite 理由） | `cr-complete` |
 | `review:integration` | `/chisel-review <idea-name>`（standard/complex 且多 task：验证跨 task 组合一致性） | `integration-cr-complete` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `implementation-verified` |
 | `final:summary` | Read `${REF}/phase-confirm-details.md`；按其 final:summary 详细行为执行 | `final-summary-complete` |

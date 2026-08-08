@@ -2,7 +2,7 @@
 // Enhanced SessionStart hook: injects workflow state and iron-rules digest.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { controlRoot } from '../scripts/control-plane.mjs';
+import { controlRoot, locateRegistry } from '../scripts/control-plane.mjs';
 
 function readWorkflowState(ideaDir) {
   const wsFile = join(ideaDir, 'workflow-state.yaml');
@@ -32,7 +32,8 @@ function isDone(ideaDir) {
 
 function main() {
   const cwd = process.cwd();
-  const chiselDir = controlRoot(cwd);
+  const locatedRegistry = locateRegistry(cwd);
+  const chiselDir = locatedRegistry?.control_root || controlRoot(cwd);
 
   console.log('chisel plugin is available.');
   console.log('Use /chisel <需求描述或需求文件路径> for legacy system feature enhancement.');
@@ -43,6 +44,9 @@ function main() {
   }
 
   let entries;
+  const registryIdeas = Object.values(locatedRegistry?.registry?.ideas || {})
+    .filter(record => record?.idea_dir)
+    .map(record => ({ name: record.idea_name || record.idea_dir.split('/').pop(), path: record.idea_dir, record }));
   try {
     entries = readdirSync(chiselDir, { withFileTypes: true })
       .filter(e => e.isDirectory() && !e.name.startsWith('.') && e.name !== 'wiki' && e.name !== 'wiki-candidates');
@@ -51,13 +55,17 @@ function main() {
   }
 
   const workflows = [];
-  for (const entry of entries) {
-    const ideaDir = join(chiselDir, entry.name);
+  const candidates = [...registryIdeas, ...entries.map(entry => ({ name: entry.name, path: join(chiselDir, entry.name), record: null }))];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const ideaDir = candidate.path;
+    if (seen.has(ideaDir)) continue;
+    seen.add(ideaDir);
     if (isDone(ideaDir)) continue;
     const ws = readWorkflowState(ideaDir);
     if (!ws) continue;
     const tasks = readTaskSummary(ideaDir);
-    workflows.push({ ...ws, tasks });
+    workflows.push({ ...ws, tasks, ideaDir, registry: candidate.record });
   }
 
   if (workflows.length > 0) {
@@ -67,7 +75,10 @@ function main() {
       const taskLine = w.tasks
         ? Object.entries(w.tasks).map(([s, c]) => `${s}=${c}`).join(', ')
         : 'tasks not initialized';
-      console.log(`  - ${w.idea}: step=${w.step} rev=${w.revision} | ${taskLine}`);
+      const locator = w.registry
+        ? ` | workspace=${w.registry.workspace_root || 'unknown'} repos=${(w.registry.repos || []).length}`
+        : '';
+      console.log(`  - ${w.idea}: step=${w.step} rev=${w.revision} | ${taskLine}${locator}`);
     }
     console.log('');
     console.log('DESIGN PRINCIPLES (root cause of all rules):');

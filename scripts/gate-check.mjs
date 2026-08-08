@@ -163,9 +163,8 @@ function validateClarificationsJson(ideaDir) {
   }
   const requiredIds = confirmationItemIds(ideaDir);
   const actualIds = decisionIds(doc.decisions);
-  for (const id of requiredIds) {
-    if (!actualIds.has(id)) return `clarifications.json missing decision for ${id}`;
-  }
+  const missingDecisionIds = requiredIds.filter(id => !actualIds.has(id));
+  if (missingDecisionIds.length > 0) return `clarifications.json missing decisions for ${missingDecisionIds.join(', ')}`;
   for (const field of ['answers', 'unresolved', 'constraints_added']) {
     if (doc[field] !== undefined && !Array.isArray(doc[field])) return `clarifications.json ${field} must be an array`;
   }
@@ -646,6 +645,54 @@ function validateDimensionCrComplete(ideaDir, gateId) {
   return statusReason ? result(gateId, false, statusReason) : result(gateId, true, '', { review_result: 'needs_rework', dimensions: REVIEW_DIMENSIONS });
 }
 
+function validateReviewSelection(ideaDir, gateId) {
+  const selectionPath = [join(ideaDir, 'cr/review-selection.json'), join(ideaDir, 'review-selection.json')]
+    .find(file => existsSync(file));
+  if (!selectionPath) return null;
+  const parsed = readJsonFile(selectionPath);
+  if (parsed.error) return result(gateId, false, `review-selection.json invalid JSON: ${parsed.error}`);
+  const selection = parsed.value;
+  if (selection?.schema_version !== 1) return result(gateId, false, 'review-selection.json schema_version must be 1');
+  if (!Array.isArray(selection.dimensions) || !selection.dimensions.includes('spec')) return result(gateId, false, 'review-selection.json dimensions must include spec');
+  const unknown = selection.dimensions.filter(dimension => !REVIEW_DIMENSIONS.includes(dimension));
+  if (unknown.length) return result(gateId, false, `review-selection.json has unknown dimensions: ${unknown.join(', ')}`);
+  const skipped = Array.isArray(selection.skipped_dimensions) ? selection.skipped_dimensions : REVIEW_DIMENSIONS.filter(d => !selection.dimensions.includes(d));
+  const invalidSkipped = skipped.filter(d => !REVIEW_DIMENSIONS.includes(d) || selection.dimensions.includes(d));
+  if (invalidSkipped.length) return result(gateId, false, `review-selection.json invalid skipped_dimensions: ${invalidSkipped.join(', ')}`);
+  const reasons = Array.isArray(selection.reasons) ? selection.reasons : [];
+  if (reasons.length === 0) return result(gateId, false, 'review-selection.json reasons must be non-empty');
+  const spec = validateDimensionCrFile(ideaDir, 'spec');
+  if (!spec.valid) return result(gateId, false, spec.reason);
+  if (spec.fm.result === 'fail') {
+    const affected = affectedTasks(spec.fm);
+    if (!affected.length) return result(gateId, false, 'dim-spec fail result must include affected_tasks');
+    const statusReason = validateAffectedTaskStatuses(ideaDir, affected, ['needs_rework', 'blocked']);
+    return statusReason ? result(gateId, false, statusReason) : result(gateId, true, '', { review_result: 'needs_rework', dimensions: ['spec'], selection });
+  }
+  for (const dimension of selection.dimensions.filter(d => d !== 'spec')) {
+    const parsedDimension = validateDimensionCrFile(ideaDir, dimension);
+    if (!parsedDimension.valid) return result(gateId, false, parsedDimension.reason);
+  }
+  const projections = selection.compatibility_projection || {};
+  for (const dimension of skipped) {
+    const projection = projections[dimension];
+    if (projection && (projection.status !== 'skipped' || projection.result !== 'auto-pass')) {
+      return result(gateId, false, `review-selection.json ${dimension} projection must be skipped/auto-pass`);
+    }
+  }
+  const parsedDimensions = selection.dimensions.map(dimension => validateDimensionCrFile(ideaDir, dimension)).filter(parsed => parsed?.valid);
+  const failed = parsedDimensions.filter(parsed => parsed.fm.result === 'fail');
+  if (failed.length === 0) {
+    return allTasksApproved(ideaDir)
+      ? result(gateId, true, '', { review_result: 'approved', dimensions: selection.dimensions, skipped_dimensions: skipped, selection })
+      : result(gateId, false, 'selected dimension CRs passed but not all tasks are approved');
+  }
+  const failedTasks = [...new Set(failed.flatMap(parsed => affectedTasks(parsed.fm)))];
+  if (!failedTasks.length) return result(gateId, false, 'failed dimension CRs must include affected_tasks');
+  const statusReason = validateAffectedTaskStatuses(ideaDir, failedTasks, ['needs_rework', 'blocked']);
+  return statusReason ? result(gateId, false, statusReason) : result(gateId, true, '', { review_result: 'needs_rework', dimensions: selection.dimensions, skipped_dimensions: skipped, selection });
+}
+
 const MIN_EVIDENCE_LINES = 5;
 
 function sanitizeSmartQuotes(text) {
@@ -948,16 +995,17 @@ function validateAsIsConfirmation(ideaDir) {
   if (!doc.confirmed_at || typeof doc.confirmed_at !== 'string') return 'confirmations/as-is.json missing confirmed_at';
   if (!doc.confirmed_by || typeof doc.confirmed_by !== 'string') return 'confirmations/as-is.json missing confirmed_by';
   if (!Array.isArray(doc.source_files)) return 'confirmations/as-is.json source_files must be an array';
-  for (const source of ['as-is/overview.md', 'as-is/core-walkthrough.md', 'as-is/evidence-index.md', 'as-is/evidence-ledger.json', 'as-is/coverage-matrix.json', 'clarifications.json']) {
-    if (!doc.source_files.includes(source)) return `confirmations/as-is.json source_files missing ${source}`;
-  }
+  const missingSourceFiles = ['as-is/overview.md', 'as-is/core-walkthrough.md', 'as-is/evidence-index.md', 'as-is/evidence-ledger.json', 'as-is/coverage-matrix.json', 'clarifications.json'].filter(source => !doc.source_files.includes(source));
+  if (missingSourceFiles.length > 0) return `confirmations/as-is.json source_files missing ${missingSourceFiles.join(', ')}`;
   if (!Array.isArray(doc.checklist)) return 'confirmations/as-is.json checklist must be an array';
   const checklistById = new Map(doc.checklist.map(item => [item?.id, item]));
+  const checklistErrors = [];
   for (const id of confirmationItemIds(ideaDir)) {
     const item = checklistById.get(id);
-    if (!item) return `confirmations/as-is.json checklist missing ${id}`;
-    if (!DECISION_STATUSES.has(item.status)) return `${id} confirmation status must be confirmed/defaulted/deferred`;
+    if (!item) { checklistErrors.push(`checklist missing ${id}`); continue; }
+    if (!DECISION_STATUSES.has(item.status)) checklistErrors.push(`${id} confirmation status must be confirmed/defaulted/deferred`);
   }
+  if (checklistErrors.length > 0) return `confirmations/as-is.json ${checklistErrors.join('; ')}`;
   return validateClarificationsJson(ideaDir);
 }
 
@@ -973,9 +1021,8 @@ function validateToBeConfirmation(ideaDir) {
   if (!doc.confirmed_at || typeof doc.confirmed_at !== 'string') return 'confirmations/to-be.json missing confirmed_at';
   if (!doc.confirmed_by || typeof doc.confirmed_by !== 'string') return 'confirmations/to-be.json missing confirmed_by';
   if (!Array.isArray(doc.source_files)) return 'confirmations/to-be.json source_files must be an array';
-  for (const source of ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json']) {
-    if (!doc.source_files.includes(source)) return `confirmations/to-be.json source_files missing ${source}`;
-  }
+  const missingToBeSourceFiles = ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json'].filter(source => !doc.source_files.includes(source));
+  if (missingToBeSourceFiles.length > 0) return `confirmations/to-be.json source_files missing ${missingToBeSourceFiles.join(', ')}`;
   const planContent = readText(join(ideaDir, 'to-be/implementation-plan.md'));
   if (!planContent.includes('## 变更完整性自检结果')) return 'to-be/implementation-plan.md missing "## 变更完整性自检结果" section (planner self-review required)';
   if (!planContent.includes('### 伴生变更推断')) return 'to-be/implementation-plan.md missing "### 伴生变更推断" section';
@@ -988,9 +1035,8 @@ function validateToBeConfirmation(ideaDir) {
     return `to-be/tasks.json ${error.message}`;
   }
   const acknowledged = new Set(doc.task_acknowledgement?.task_ids || []);
-  for (const task of tasks) {
-    if (!acknowledged.has(task.task_id)) return `confirmations/to-be.json task_acknowledgement missing ${task.task_id}`;
-  }
+  const missingAcknowledgements = tasks.filter(task => !acknowledged.has(task.task_id)).map(task => task.task_id);
+  if (missingAcknowledgements.length > 0) return `confirmations/to-be.json task_acknowledgement missing ${missingAcknowledgements.join(', ')}`;
   if (doc.task_acknowledgement?.dependencies_reviewed !== true) return 'confirmations/to-be.json dependencies_reviewed must be true';
   if (doc.risk_acknowledgement?.reviewed !== true) return 'confirmations/to-be.json risk_acknowledgement.reviewed must be true';
   return '';
@@ -1131,6 +1177,8 @@ export function checkGate(ideaDir, gateId) {
     }
     case 'cr-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
+      const selectedReview = validateReviewSelection(ideaDir, gateId);
+      if (selectedReview) return selectedReview;
       const crComplexity = detectComplexity(ideaDir);
       if (crComplexity === 'moderate') {
         const hasAnyDimCr = REVIEW_DIMENSIONS.some(d => existsSync(dimensionCrPath(ideaDir, d)));
@@ -1220,15 +1268,16 @@ export function checkGate(ideaDir, gateId) {
       const parsed = readJsonFile(file);
       if (parsed.error) return result(gateId, false, `worktree-decision.json invalid JSON: ${parsed.error}`);
       const doc = parsed.value;
-      if (![1, 2].includes(doc?.schema_version)) return result(gateId, false, 'worktree-decision.json schema_version must be 1 or 2');
+      if (![1, 2, 3].includes(doc?.schema_version)) return result(gateId, false, 'worktree-decision.json schema_version must be 1, 2, or 3');
       if (!['worktree', 'current-branch'].includes(doc.decision)) return result(gateId, false, 'decision must be worktree or current-branch');
       if (!doc.decided_at) return result(gateId, false, 'missing decided_at');
-      if (doc.schema_version === 2) {
-        if (!doc.branch_name || typeof doc.branch_name !== 'string') return result(gateId, false, 'v2 schema requires branch_name');
-        if (!Array.isArray(doc.repos) || doc.repos.length === 0) return result(gateId, false, 'v2 schema requires non-empty repos array');
+      if (doc.schema_version === 2 || doc.schema_version === 3) {
+        if (!doc.branch_name || typeof doc.branch_name !== 'string') return result(gateId, false, `v${doc.schema_version} schema requires branch_name`);
+        if (!Array.isArray(doc.repos) || doc.repos.length === 0) return result(gateId, false, `v${doc.schema_version} schema requires non-empty repos array`);
         for (const [index, repo] of doc.repos.entries()) {
-          if (!repo?.path || typeof repo.path !== 'string') return result(gateId, false, `repos[${index}] missing path`);
-          if (!repo.base_commit || typeof repo.base_commit !== 'string') return result(gateId, false, `repos[${index}] missing base_commit`);
+          if (!(repo?.path || repo?.repo_path) || typeof (repo.path || repo.repo_path) !== 'string') return result(gateId, false, `repos[${index}] missing path/repo_path`);
+          if (!repo.base_commit && !repo.base_ref) return result(gateId, false, `repos[${index}] missing base_commit/base_ref`);
+          if (doc.schema_version === 3 && (!repo.worktree_path || !repo.branch)) return result(gateId, false, `v3 repos[${index}] missing worktree_path/branch`);
         }
       }
       return result(gateId, true);

@@ -14,7 +14,7 @@
 
 <br/>
 
-Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件，用文件驱动的工作流帮助你在遗留系统上安全地增加功能：先理解 as-is，再确认完整 to-be 方案，然后拆 task、实现、架构师 CR、返修闭环，最后审阅当前变更报告并批准合并，同时把项目知识沉淀到可渐进加载的 wiki 中。
+Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件，用文件驱动的工作流帮助你在遗留系统上安全地增加功能：先理解 as-is，再确认完整 to-be 方案，然后拆 task、实现、架构师 CR、返修闭环，最后审阅当前变更报告并批准交付。
 
 每一步都产出文件化产物，方便中断后恢复，也方便人审查 AI 的每一步判断。
 
@@ -27,7 +27,6 @@ Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件
 - [快速使用](#快速使用)
 - [核心工作流](#核心工作流)
 - [主要产物](#主要产物)
-- [项目知识系统](#项目知识系统)
 - [质量控制](#质量控制)
 - [架构](#架构)
 - [贡献](#贡献)
@@ -47,7 +46,6 @@ Chisel 通过**门控驱动的工作流**解决这个问题：
 | **确认** | 三个人工关卡 — as-is 理解、完整 to-be 方案/task、合并前精确代码快照 |
 | **实现** | 受限编码，文件边界强制执行，安全时并行 |
 | **审查** | 多维度架构师 CR 自动返修，随后进行绑定代码快照的人工合并审查 |
-| **知识** | 捕获禁区、历史包袱、术语映射，沉淀到持久化项目 wiki |
 
 不跳步。不凭记忆决策 — 编排器始终读取文件化的状态机。
 
@@ -121,7 +119,7 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 ```
 接收需求 → 理解 as-is → 用户确认 → [生成 AI 输入] → 策略设计 → 用户确认策略
 → task 拆分 → 用户确认拆分 → 初始化 task → 编码 → 架构师 CR → [返修闭环]
-→ [知识沉淀] → 最终总结 → 当前变更报告 → 用户合并决策 → 完成 → [worktree 合并]
+→ 最终总结 → 当前变更报告 → 用户合并决策 → 交付
 ```
 
 方括号表示可能跳过的步骤（取决于复杂度分级）。
@@ -133,24 +131,27 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 | 1 | **接收需求** | 解析用户输入，按模板保存 `requirement.md` |
 | 2 | **理解 as-is** | explorer agent 只读扫描代码，产出 overview、core-walkthrough、evidence-index |
 | 3 | **确认 as-is** | 人类审查 3 分钟摘要、风险地图、误解点，逐项确认 |
-| 4 | **生成 AI 输入** | 人类版文档提炼为结构化 AI 输入格式（trivial 跳过） |
+| 4 | **生成 AI 输入** | 人类版文档提炼为结构化 AI 输入格式（短路径可跳过） |
 | 5 | **方案设计** | planner 产出实现计划、task 定义、追溯矩阵 |
 | 6 | **确认方案** | 人类审查策略方向和 task 拆分，确认通过 |
-| 7 | **知识提取** | 提取长期知识候选（trivial 跳过） |
-| 8 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
-| 9 | **编码** | coder agent 在受限文件范围内编码 |
-| 10 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
-| 11 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
-| 12 | **最终总结** | 汇总变更、scope control、wiki 更新 |
-| 13 | **合并前 CR** | 生成当前变更报告，要求用户选择批准、要求修改或评论/暂缓 |
-| 14 | **完成** | 仅在用户批准且 Git/工作区快照未变化时提示合并 |
+| 7 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
+| 8 | **编码** | coder agent 在受限文件范围内编码 |
+| 9 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
+| 10 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
+| 11 | **最终总结** | 汇总变更、scope control 和交付回执 |
+| 12 | **合并前 CR** | 生成当前变更报告，要求用户选择批准、要求修改或评论/暂缓 |
+| 13 | **交付** | 用户确认后通过隔离 integration worktree 转分支、合并或进入冲突链路 |
 
 ### 复杂度分级
 
 | 复杂度 | 判定条件 | 影响 |
 |---|---|---|
-| `trivial` | 涉及范围 ≤ 2 文件，无新增表/接口，跨模块目录 < 3 | 跳过 AI 输入生成和知识沉淀 |
-| `standard` | 默认 | 完整流程 |
+| `hotfix` | 显式紧急修复且范围受限 | 快速路径，仅 spec 审查 |
+| `minor` | 小型兼容行为变更 | 澄清、快速路径、仅 spec 审查 |
+| `trivial` | 涉及范围 ≤ 2 文件，无新增表/接口，跨模块目录 < 3 | 快速路径，仅 spec 审查 |
+| `moderate` | 3–4 个范围项且无新增表/接口 | 方案/task + spec、D3–D5 审查 |
+| `standard` | 跨模块或边界变更 | 完整 as-is/to-be 流程和集成审查 |
+| `complex` | 高风险、多仓、迁移或大范围变更 | 全流程、全维度和集成审查 |
 
 ### 人工确认关卡
 
@@ -160,11 +161,11 @@ chisel 有 **3 个强制人工关卡**，暂停流程等待用户逐项确认：
 2. **To-be 确认** — 批准实现方向、完整 task 拆分、依赖和风险
 3. **合并前 CR** — 审阅当前变更报告，明确批准精确的 Git/工作区快照
 
-确认对话中检测到的知识信号（禁区/包袱/术语）会实时写入 `knowledge-candidates/`。
+确认决策持久化在 idea 目录中，编排器每次恢复都会重新读取；不依赖隐藏的旁路知识库。
 
 ### Worktree 隔离
 
-遗留系统改动风险高，chisel 强烈建议在隔离的 worktree 中工作。一个需求 = 一个 worktree。完成后协助创建 PR 或直接合并。
+chisel 支持外层非 Git workspace 包含一个或多个 Git 仓库。持久化 idea registry 记录控制面、仓库路径、分支、base/default ref 和生命周期，因此可从外层、任一仓库或任一 linked worktree 定位并恢复。一个需求在每个仓库使用同一逻辑分支名，并通过独立 worktree 并行开发。
 
 ### 并行开发
 
@@ -181,7 +182,7 @@ IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root .
 node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-step <step> --dry-run
 ```
 
-回退只清理白名单内运行态产物，不删除业务源码、wiki 或 knowledge-candidates。
+回退只清理白名单内运行态产物，不删除业务源码。
 
 <br/>
 
@@ -232,33 +233,6 @@ Dashboard 链接只是补充，不替代需求、方案、Task 报告、CR 和�
 
 <br/>
 
-## 项目知识系统
-
-chisel 把长期项目知识沉淀到业务仓库的 `.chisel/wiki/{project-name}/`：
-
-| 分类 | 用途 |
-|---|---|
-| **禁区** | 不能直接修改的代码 |
-| **包袱** | 有历史原因的奇怪设计 |
-| **坏味道** | 看起来该重构但当前不能动的代码 |
-| **术语** | 业务概念 ↔ 代码概念映射 |
-| **ADR / module map / hotspot** | 辅助后续 task 按需加载上下文 |
-
-### 独立使用 `/chisel-wiki`
-
-知识管理不依赖主流程，随时可用：
-
-```text
-/chisel-wiki init                    # 初始化 wiki
-/chisel-wiki feed forbidden_zone ... # 喂入一条知识
-/chisel-wiki query 支付              # 查询相关知识
-/chisel-wiki health                  # 检查引用有效性
-/chisel-wiki list                    # 列出所有条目
-/chisel-wiki import file.json        # 批量导入
-```
-
-<br/>
-
 ## 质量控制
 
 ### 风险分级
@@ -294,7 +268,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `/chisel-implement` | 编排 coding subagent 实现 task |
 | `/chisel-review` | 架构师 CR 审查 |
 | `/chisel-report` | 查看恢复点和 task 状态（文本/HTML dashboard） |
-| `/chisel-wiki` | 独立知识库管理 |
+| `/chisel-debug` | reproduce-first 根因工作流（独立模式或返修诊断模式） |
 
 ### Agents
 
@@ -319,8 +293,10 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `task-provenance.mjs` | 记录 task 执行基线/结果指纹与 changed-files 归属 |
 | `verify-run.mjs` | 绑定工作区指纹的多仓构建/测试验证 |
 | `checkpoint.mjs` | 绑定源码身份、保存完整 artifact 的一致性快照恢复 |
-| `wiki-manage.mjs` | wiki 初始化、合入、查询、health-check |
 | `scope-check.mjs` | 文件边界和禁区校验 |
+| `multi-repo-worktree.mjs` | registry 驱动的多仓 worktree、定位/恢复/状态和回执 |
+| `branch-merge.mjs` | 隔离 integration 合并和机器可读冲突分析 |
+| `review-selector.mjs` | 基于 diff/路径/内容的风险和审查维度选择 |
 | `repo-map.mjs` | 代码地图生成 |
 | `debt-scan.mjs` | 静态技术债务扫描 |
 | `as-is-score.mjs` | as-is 产物质量评分 |

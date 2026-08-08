@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { detectComplexity, initTaskState, atomicWriteFile, ensureDir } from './workflow-lib.mjs';
 
 const IDEA_DIR = process.argv[2];
+const modeFlag = process.argv.find(arg => arg === '--current-branch' || arg === '--worktree');
+const requestedMode = process.env.CHISEL_QUICK_DEV_MODE || (modeFlag === '--current-branch' ? 'current-branch' : modeFlag === '--worktree' ? 'worktree' : 'worktree');
 
 if (!IDEA_DIR) {
   process.stderr.write('用法: node quick-dev-init.mjs <idea-dir>\n');
@@ -132,11 +135,26 @@ ${acSection}
     status: 'confirmed'
   }]);
 
+  if (!['current-branch', 'worktree'].includes(requestedMode)) {
+    process.stderr.write(JSON.stringify({ error: 'quick-dev mode must be current-branch or worktree' }) + '\n');
+    process.exit(1);
+  }
+  let repoPath = process.cwd();
+  let baseCommit = null;
+  try {
+    repoPath = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: process.cwd(), encoding: 'utf8' }).trim();
+    baseCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoPath, encoding: 'utf8' }).trim();
+  } catch { /* current-branch may be used from a non-Git outer workspace */ }
   const worktreeDecision = {
-    schema_version: 1,
-    decision: 'current-branch',
+    schema_version: requestedMode === 'worktree' && repoPath ? 2 : 1,
+    decision: requestedMode,
     decided_at: new Date().toISOString(),
-    reason: `${complexity} complexity — always current-branch`
+    reason: `${complexity} quick path — explicit ${requestedMode} isolation decision`,
+    ...(requestedMode === 'worktree' && repoPath ? {
+      branch_name: `feat/${ideaName}`,
+      repos: [{ path: repoPath, base_commit: baseCommit || 'unknown', requested_worktree: true }],
+      setup_required: true,
+    } : {}),
   };
   atomicWriteFile(join(IDEA_DIR, 'worktree-decision.json'), JSON.stringify(worktreeDecision, null, 2));
 

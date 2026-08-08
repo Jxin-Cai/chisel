@@ -14,7 +14,7 @@
 
 <br/>
 
-Chisel is a [Claude Code](https://github.com/anthropics/claude-code) plugin that enforces a structured workflow for adding features to legacy systems: understand as-is → confirm to-be plan → decompose tasks → implement → architect CR → rework loop → review the current change report → approve merge, with project knowledge accumulated into a progressively-loaded wiki.
+Chisel is a [Claude Code](https://github.com/anthropics/claude-code) plugin that enforces a structured workflow for adding features to legacy systems: understand as-is → confirm to-be plan → decompose tasks → implement → architect CR → rework loop → review the current change report → approve delivery.
 
 Every step produces file-based artifacts, making it easy to resume after interruption and audit every AI decision.
 
@@ -27,7 +27,6 @@ Every step produces file-based artifacts, making it easy to resume after interru
 - [Quick Start](#quick-start)
 - [Core Workflow](#core-workflow)
 - [Artifacts](#artifacts)
-- [Knowledge System](#knowledge-system)
 - [Quality Control](#quality-control)
 - [Architecture](#architecture)
 - [Contributing](#contributing)
@@ -47,7 +46,6 @@ Chisel solves this with a **gate-driven workflow**:
 | **Confirm** | Human gates for as-is, the complete to-be plan/task set, and the exact pre-merge change snapshot |
 | **Implement** | Scoped coding with file-boundary enforcement, parallel task execution when safe |
 | **Review** | Multi-dimension architect CR with automatic rework, followed by a snapshot-bound human merge review |
-| **Knowledge** | Capture forbidden zones, legacy baggage, and terminology into a persistent project wiki |
 
 No step is skipped. No decision is made from memory alone — the orchestrator always reads the file-based state machine.
 
@@ -121,8 +119,8 @@ Chisel stores runtime artifacts under the Git common root at `.chisel/<idea-name
 ```
 Receive requirement → Understand as-is → User confirm → [Generate AI input]
 → Strategy design → User confirm strategy → Task decomposition → User confirm tasks
-→ Init tasks → Code → Architect CR → [Rework loop] → [Knowledge extraction]
-→ Final summary → Current Change Report → User merge decision → Done → [Worktree merge]
+→ Init tasks → Code → Architect CR → [Rework loop]
+→ Final summary → Current Change Report → User merge decision → Delivery
 ```
 
 Bracketed steps may be skipped depending on complexity classification.
@@ -134,24 +132,27 @@ Bracketed steps may be skipped depending on complexity classification.
 | 1 | **Receive requirement** | Parse user input, save as `requirement.md` |
 | 2 | **Understand as-is** | Explorer agent reads code, produces overview, core-walkthrough, evidence-index |
 | 3 | **Confirm as-is** | Human reviews 3-minute summary, risk map, misconceptions, signs off |
-| 4 | **Generate AI input** | Distill human docs into structured AI-consumable format (skipped for trivial) |
+| 4 | **Generate AI input** | Distill human docs into structured AI-consumable format (skipped on short paths) |
 | 5 | **Design strategy** | Planner produces implementation plan, tasks, traceability matrix |
 | 6 | **Confirm plan** | Human reviews strategy and task decomposition, signs off |
-| 7 | **Knowledge extraction** | Extract long-term knowledge candidates (skipped for trivial) |
-| 8 | **Init tasks** | Generate task files and state machine from `tasks.json` |
-| 9 | **Code** | Coder agent implements within scoped file boundaries |
-| 10 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
-| 11 | **Rework loop** | Max 3 rounds per task, then blocked |
-| 12 | **Final summary** | Aggregate changes, scope control, wiki updates |
-| 13 | **Merge review** | Generate the current change report; require Approve, Request changes, or Comment/hold |
-| 14 | **Done** | Prompt worktree merge only after approval of the unchanged Git/workspace snapshot |
+| 7 | **Init tasks** | Generate task files and state machine from `tasks.json` |
+| 8 | **Code** | Coder agent implements within scoped file boundaries |
+| 9 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
+| 10 | **Rework loop** | Up to 5 rounds per task; later rounds use a fresh agent and then become blocked |
+| 11 | **Final summary** | Aggregate changes, scope control, and delivery receipts |
+| 12 | **Merge review** | Generate the current change report; require Approve, Request changes, or Comment/hold |
+| 13 | **Delivery** | Convert, merge, or resolve through isolated integration worktrees after approval |
 
 ### Complexity Classification
 
 | Level | Criteria | Effect |
 |---|---|---|
-| `trivial` | ≤ 2 files, no new tables/APIs, < 3 cross-module dirs | Skip AI input generation and knowledge extraction |
-| `standard` | Default | Full workflow |
+| `hotfix` | Explicit urgent fix with a bounded scope | Quick path with spec-only review |
+| `minor` | Small compatible behavior change | Clarify, quick path, spec-only review |
+| `trivial` | ≤ 2 files, no new tables/APIs, < 3 cross-module dirs | Quick path with spec-only review |
+| `moderate` | 3–4 scope items without new tables/APIs | Plan/tasks plus spec and D3–D5 review |
+| `standard` | Cross-module or boundary change | Full as-is/to-be flow plus integration review |
+| `complex` | High-risk, multi-repo, migration, or broad change | Full flow with all review dimensions and integration review |
 
 ### Human Checkpoints
 
@@ -161,11 +162,11 @@ Chisel has **3 mandatory human gates** that pause the workflow:
 2. **To-be confirmation** — approve implementation direction, task decomposition, dependencies, and risk
 3. **Pre-merge review** — review the generated change report and explicitly approve the exact Git/workspace snapshot
 
-Knowledge signals detected during confirmation dialogues (forbidden zones, legacy baggage, terminology) are captured in real-time to `knowledge-candidates/`.
+Confirmation decisions are persisted in the idea directory and are read by the orchestrator on every resume; no hidden sidecar knowledge store is required.
 
 ### Worktree Isolation
 
-Chisel strongly recommends working in an isolated git worktree for legacy system changes. One requirement = one worktree. On completion, chisel assists with PR creation or direct merge.
+Chisel supports an outer non-Git workspace containing one or more Git repositories. The shared idea registry records the control plane, repository paths, branches, base/default refs, and lifecycle so a later session can locate/resume from the outer workspace, any repository, or any linked worktree. One requirement gets one logical branch per repository; parallel repositories use separate worktrees.
 
 ### Parallel Execution
 
@@ -184,7 +185,7 @@ IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root .
 node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-step <step> --dry-run
 ```
 
-Rollback only cleans whitelisted runtime artifacts — never deletes business source code, wiki, or knowledge candidates.
+Rollback only cleans whitelisted runtime artifacts — never deletes business source code.
 
 <br/>
 
@@ -237,33 +238,6 @@ Dashboard links supplement these file links; they do not replace the underlying 
 
 <br/>
 
-## Knowledge System
-
-Chisel accumulates long-term project knowledge into `.chisel/wiki/{project-name}/`:
-
-| Category | Purpose |
-|---|---|
-| **Forbidden zones** | Code that must not be modified directly |
-| **Baggage** | Odd designs with historical reasons |
-| **Code smells** | Things that look refactorable but shouldn't be touched now |
-| **Terminology** | Business concept ↔ code concept mappings |
-| **ADR / module map / hotspot** | Context for future task planning |
-
-### Standalone Wiki Management
-
-The wiki doesn't depend on the main chisel workflow. Use `/chisel-wiki` anytime:
-
-```text
-/chisel-wiki init                    # Initialize wiki
-/chisel-wiki feed forbidden_zone ... # Add a knowledge entry
-/chisel-wiki query payments          # Query related knowledge
-/chisel-wiki health                  # Check reference validity
-/chisel-wiki list                    # List all entries
-/chisel-wiki import file.json        # Bulk import
-```
-
-<br/>
-
 ## Quality Control
 
 ### Risk-based SDD Requirements
@@ -299,7 +273,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `/chisel-implement` | Orchestrate coding subagents |
 | `/chisel-review` | Architect CR review |
 | `/chisel-report` | View recovery point, task state, and HTML dashboard |
-| `/chisel-wiki` | Standalone knowledge management |
+| `/chisel-debug` | Reproduce-first root-cause workflow (standalone or return-diagnosis mode) |
 
 ### Agents
 
@@ -324,12 +298,14 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `task-provenance.mjs` | Per-task baseline/result fingerprint and changed-file ownership |
 | `verify-run.mjs` | Repository-aware build/test verification bound to workspace fingerprints |
 | `checkpoint.mjs` | Source-bound, full-artifact consistent snapshots and recovery |
-| `wiki-manage.mjs` | Wiki init, merge, query, health-check |
 | `scope-check.mjs` | File boundary and forbidden zone validation |
+| `multi-repo-worktree.mjs` | Registry-backed multi-repository worktrees, locator/resume/status, and receipts |
+| `branch-merge.mjs` | Isolated integration merge and machine-readable conflict analysis |
+| `review-selector.mjs` | Diff/path/content-based review risk and dimension selection |
 | `repo-map.mjs` | Code map generation (stats, structure, entry candidates) |
 | `debt-scan.mjs` | Static technical debt scanning |
 | `as-is-score.mjs` | As-is artifact quality scoring |
-| `cr-prepare.mjs` | Pre-compute diff/scope/wiki data for reviewer |
+| `cr-prepare.mjs` | Pre-compute diff and scope data for reviewer |
 | `dashboard.mjs` | Self-contained HTML dashboard generation |
 
 <br/>

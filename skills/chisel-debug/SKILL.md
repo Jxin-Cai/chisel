@@ -1,73 +1,79 @@
 ---
 name: chisel-debug
-description: 当 task 返修次数 ≥ 2 且 CR 仍未通过时触发。
-argument-hint: "<idea-name> <task-id>"
-user-invocable: false
+description: Reproduce-first root-cause workflow for a failing task; callable independently or from the rework loop.
+argument-hint: "<idea-name> <task-id> [--standalone|--return-diagnosis]"
+user-invocable: true
 ---
 
 # chisel-debug
 
-系统化调试。当反复返修仍无法通过 CR 时，在继续修改代码前先定位根因。
+`chisel-debug` is a first-class, file-backed debugging workflow. It can be
+invoked directly for a production/repro incident, or by `chisel-implement`
+when a task is repeatedly rejected. It never guesses from the latest CR only:
+the report records evidence and the exact phase reached.
 
-## 输入
+## Modes
 
-- `idea-name`：需求名称
-- `task-id`：反复返修的 task ID
-- `{IDEA_DIR}` = `control-plane.mjs --project-root . --idea <idea-name>` 的输出
+- **Standalone** (`--standalone`): after the root cause is confirmed, the
+  workflow may coordinate a minimal repair and verification. The debug agent
+  still does not silently edit business code; the repair is an explicit,
+  separately verified phase.
+- **Return diagnosis** (`--return-diagnosis`, the compatibility default): run
+  the investigation and fix strategy only, then hand the report back to
+  `chisel-implement`. This mode never executes a repair or claims verification.
 
-## 执行流程
+## Reproduce-first phases
 
-### 阶段一：根因调查
+Run the phases in this order; each completed phase must include evidence:
 
-1. Read 所有历史 CR 文件：`{IDEA_DIR}/cr/{task-id}-cr.md`、`{IDEA_DIR}/cr/{task-id}-cr-*.md`
-2. 提取每轮返修清单（CR-001、CR-002...），识别反复出现的问题
-3. 分类问题模式：
+1. `triage` — collect the task, CR rounds, symptoms, and affected scope.
+2. `reproduce` — capture a deterministic failing command/input/output, or
+   explicitly record why reproduction is unavailable.
+3. `environment_sanity` — check versions, configuration, fixtures, and the
+   relevant worktree/commit identity.
+4. `trace` — follow the failing data/control path from entry to symptom.
+5. `root_cause` — compare hypotheses against evidence and set
+   `root_cause.confirmed=true` only when one explains the failure.
+6. `fix_strategy` — describe the smallest invariant-preserving repair and its
+   verification plan.
 
-| 模式 | 特征 | 说明 |
-|------|------|------|
-| 同一位置反复修复 | 同一文件/函数多次出现在返修清单 | 可能是理解偏差或方案缺陷 |
-| 修 A 破 B | 每轮修复引入新问题 | 可能缺少行为不变量 |
-| scope 反复违规 | scope-check 多次失败 | 可能是 task 边界划分不合理 |
-| 验证不充分 | 每轮 CR 指出验证缺失 | 可能是预期输出不明确 |
+Standalone mode then adds `repair` and `verify`. `verify` cannot complete until
+`repair` is complete. Return-diagnosis mode ends with a machine-readable
+handoff and returns control to the implementation workflow.
 
-### 阶段二：假设验证
+## Invocation
 
-1. 基于阶段一的模式分析，列出 2-3 个可能根因
-2. 为每个假设设计验证方法（读代码、检查数据流）
-3. 逐一验证，排除或确认
+Resolve the shared control plane first, so the command works from the outer
+workspace, the original repository, or any linked worktree:
 
-### 阶段三：修复策略
-
-基于确认的根因，产出修复策略：
-
-- 如果是实现理解偏差 → 重新阅读 as-is 和 to-be 相关段落，修正理解
-- 如果是 task 边界问题 → 建议调整 task 的 allowed_files/expected_files
-- 如果是方案缺陷 → 建议回退到 plan 阶段，标记为 blocked
-- 如果是覆盖不足 → 补充行为不变量
-
-### 阶段四：输出
-
-将调试结论写入 `{IDEA_DIR}/debug/{task-id}-debug.md`：
-
-```markdown
-# Debug Report: {task-id}
-
-## 返修历史
-
-| 轮次 | 主要问题 | 修复结果 |
-|------|----------|----------|
-| 1 | ... | 引入新问题 / 未修复 |
-| 2 | ... | ... |
-
-## 根因分析
-
-## 修复策略
-
-## 建议
+```bash
+IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>)
+node ${CLAUDE_PLUGIN_ROOT}/scripts/debug-workflow.mjs \
+  --idea-dir "$IDEA_DIR" --task <task-id> --return-diagnosis
 ```
 
+Advance a phase explicitly (the command is idempotent and writes atomically):
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/debug-workflow.mjs \
+  --idea-dir "$IDEA_DIR" --task <task-id> \
+  --phase reproduce --status completed --evidence 'test command + output'
+```
+
+The canonical report is `{IDEA_DIR}/debug/{task-id}-debug.json`. A human
+summary may be rendered as `{IDEA_DIR}/debug/{task-id}-debug.md`; both must
+carry the same mode, phase order, root-cause confirmation, and handoff status.
+
+## Rework integration
+
+`chisel-implement` invokes return-diagnosis mode at rework count ≥ 2. Read all
+prior CRs, reproduce the current failure, and return the report before making
+another implementation attempt. If the report confirms a plan/task boundary
+defect, recommend returning to planning and mark the task blocked rather than
+repeating an unverified patch.
+
 <HARD-GATE principle="P2">
-调试阶段不直接修改业务代码。
-3 轮修复失败后应质疑 task 边界或 to-be 方案本身，而不是继续在同一方向上尝试。
-如果根因是方案级问题，建议 blocked 并回退到 plan 阶段。
+No repair or “verified” claim may be recorded before a confirmed root cause and
+an explicit reproduce/environment/trace evidence chain. A return-diagnosis
+report is a handoff, not a code change.
 </HARD-GATE>

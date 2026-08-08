@@ -41,7 +41,7 @@ digraph implement_flow {
 
 1. `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --next-tasks rework`
    - 如有 rework task → 检查 task 文件 frontmatter 中的 `rework_count`：
-     - `rework_count >= 2` → 先执行 `/chisel-debug <idea-name> <task-id>` 进行根因调查，再继续返修
+     - `rework_count >= 2` → 先执行 `/chisel-debug <idea-name> <task-id> --return-diagnosis` 进行 reproduce-first 根因调查，再继续返修
      - 否则 → 直接串行返修（返修不并行）
    - **返修策略**（统一使用 `agent-chisel-coder`，通过 model override 区分档位）：
      - `rework_count 1-2`：保持当前 model 配置（保持上下文连续性）
@@ -52,7 +52,7 @@ digraph implement_flow {
        ```
        ⚠️ 前任实现者已尝试 {rework_count} 轮修复未通过。
        你是全新接管者。请从 task brief 和 CR findings 出发独立实现，不要延续前任的修复方向。
-       已知失败路径记录在 debug/{task-id}-debug.md。
+       已知失败路径记录在 debug/{task-id}-debug.json（由 `scripts/debug-workflow.mjs` 契约校验）。
        ```
      - 升级记录写入 `task-metrics.mjs` 的 `escalated_model` 和 `fresh_agent` 字段
 2. 如果没有 rework task，运行 `--next-tasks code`
