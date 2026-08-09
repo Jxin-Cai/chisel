@@ -59,7 +59,21 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} <completed-ste
 
 将 stdout **原样输出到对话**。输出使用绝对路径 Markdown 链接，必须逐文件展示；不得只输出目录、只输出 Dashboard、只说“已生成”，也不得把链接留到最终总结才集中展示。
 
-当 `orchestration-runner.mjs` 返回非空 `completed_step_delivery` 时，优先原样输出其中的 `markdown` 字段。对于 confirm 等需要用户输入的步骤，在提问前先交付供用户审阅的上一阶段文件链接；用户确认并生成确认凭据后，再交付确认步骤自身产物。
+当 `orchestration-runner.mjs` 返回非空 `completed_step_delivery` 时，优先原样输出其中的 `markdown` 字段。对于 confirm 等需要用户输入的步骤，必须严格按“生成独立 HTML → 输出绝对路径 Markdown 链接 → 等用户确认 → 写入确认凭据并进入下一步”的顺序执行：
+
+- `understand:explore` 完成后，运行 `dashboard-blocks.mjs {IDEA_DIR} --blocks as-is`，再运行
+  `phase-artifacts.mjs {IDEA_DIR} understand:explore`，将 stdout 原样输出；提问
+  `understand:confirm` 前必须交付 `dashboard/as-is.html` 链接。
+- `plan:design` 完成后，运行 `dashboard-blocks.mjs {IDEA_DIR} --blocks to-be`，再运行
+  `phase-artifacts.mjs {IDEA_DIR} plan:design`，将 stdout 原样输出；提问
+  `plan:confirm` 前必须交付 `dashboard/to-be.html` 链接。
+- 自动 CR（`review:cr`、`review:cr-light`、`review:cr-moderate`、
+  `review:integration`）必须先生成 CR 报告和 `dashboard/cr-results.html`，再输出对应
+  phase-artifacts 绝对链接，之后才允许询问 findings 决策或变更状态。
+- `review:merge` 必须先生成结构化 Current Change Report、`dashboard/current-change.html`
+  和 phase artifacts 链接，再询问 Approve / Request changes / Comment。
+
+HTML 文件不存在时，`phase-artifacts.mjs` 只列出实际存在的其他文件，不得虚报。
 
 如果脚本显示“暂无可交付文件”，而该步骤 gate 声称通过，视为交付异常：检查产物映射和实际文件，修复后再继续。
 </HARD-GATE>
@@ -150,12 +164,13 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 </HARD-GATE>
 
 <HARD-GATE principle="P2,P4">
-**仪表盘观察协议**：关键阶段完成后生成对应的 dashboard 分块 HTML 并在消息中输出可点击链接，便于用户查看（本地/远端均可）。Dashboard 是阶段产物链接的补充，不能替代逐文件交付。规则：
-- `understand:explore` 完成 → `node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks as-is`，输出 `📊 {dir}/as-is.html`
-- `plan:design` 完成 → `--blocks to-be`，输出 `📊 {dir}/to-be.html`
-- `implement:code` / `repair:code` 每个 task 完成 → `--blocks progress`，输出 `📊 {dir}/progress.html`
-- `review:cr` 完成 → `--blocks cr-results`，输出 `📊 {dir}/cr-results.html`
-- 用户主动要求全量或 `/chisel-report --format html` → 运行不带 `--blocks` 生成全部 6 块
+**仪表盘观察协议**：关键阶段完成后生成对应的 dashboard 分块 HTML 并在消息中输出可点击链接，便于用户查看（本地/远端均可）。Dashboard 是阶段产物链接的补充，不能替代逐文件交付。需要用户决策的阶段必须在提问前生成并交付对应 HTML。规则：
+- `understand:explore` 完成 → `node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks as-is`，输出 `📊 {dir}/as-is.html`，并通过 `phase-artifacts.mjs ... understand:explore` 交付。
+- `plan:design` 完成 → `--blocks to-be`，输出 `📊 {dir}/to-be.html`，并通过 `phase-artifacts.mjs ... plan:design` 交付。
+- `implement:code` / `repair:code` 每个 task 完成 → `--blocks progress`，输出 `📊 {dir}/progress.html`。
+- `review:cr` / `review:cr-light` / `review:cr-moderate` / `review:integration` 完成 → `--blocks cr-results`，输出 `📊 {dir}/cr-results.html`，先交付再询问自动 CR findings 决策。
+- `review:merge` → 先运行 `merge-review.mjs` 生成 `cr/current-change-report.json`，再运行 `--blocks current-change`，输出 `📊 {dir}/current-change.html`，先交付再询问 Approve / Request changes / Comment。
+- 用户主动要求全量或 `/chisel-report --format html` → 运行不带 `--blocks` 生成全部 7 块。
 
 仪表盘是状态投影，不是状态转移条件。不阻塞长程执行。
 </HARD-GATE>

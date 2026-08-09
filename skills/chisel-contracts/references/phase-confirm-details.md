@@ -6,6 +6,18 @@
 
 ## understand:confirm 详细行为
 
+进入本步骤后，先准备可独立打开的现状审阅页，再向用户提问。不得先提问、写入
+`clarifications.json` 或创建确认凭据：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks as-is
+node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} understand:explore
+```
+
+将第二条命令 stdout 原样输出到对话，确保包含绝对路径
+`{IDEA_DIR}/dashboard/as-is.html` 的 Markdown 链接。用户打开并确认后，才写入
+下方的澄清记录和 `confirmations/as-is.json`，通过 gate 后进入下一步。
+
 读取并展示 `{IDEA_DIR}/as-is/overview.md` 中的 `3分钟摘要`、`风险地图`、`用户确认清单` 和 `待澄清问题`，等用户逐项确认或补充。
 
 将结果写入 `{IDEA_DIR}/clarifications.json`（权威机器可读记录）和 `{IDEA_DIR}/clarifications.md`（人类可读镜像）。`clarifications.json` 必须包含每个 `C-xxx` 的 `id/question/decision/rationale/status/source`，状态只能是 `confirmed/defaulted/deferred`。
@@ -17,6 +29,19 @@
 ---
 
 ## plan:confirm 详细行为
+
+进入本步骤后，先生成并交付可独立打开的方案审阅页，再向用户提问。不得先提问、写入
+确认凭据或推进状态：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks to-be
+node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
+```
+
+将第二条命令 stdout 原样输出到对话，确保包含绝对路径
+`{IDEA_DIR}/dashboard/to-be.html` 的 Markdown 链接。用户明确确认后，才写入
+`confirmations/to-be.json`，通过 gate 后进入下一步；若用户要求调整，回到
+`plan:design` 重新生成方案和 HTML。
 
 展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、目标行为、非目标行为、**改造点映射**（保留/改造/新增/删除决策表）、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
 

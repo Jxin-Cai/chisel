@@ -6,22 +6,30 @@ import { WORKFLOW_STEPS } from './workflow-definition.mjs';
 
 const STEP_OUTPUTS = Object.freeze({
   'receive-requirement': ['requirement.md', 'as-is/ui-snapshot.md'],
-  'understand:explore': ['as-is/'],
+  // Keep the source directory expansion for this phase, and add the generated
+  // dashboard page as an exact file.  Never expand dashboard/ itself: only
+  // advertise the page when it has actually been generated.
+  'understand:explore': ['as-is/', 'dashboard/as-is.html'],
   'understand:confirm': ['clarifications.json', 'clarifications.md', 'confirmations/as-is.json'],
   'clarify:requirement': ['requirement-clarification.json', 'requirement-clarification.md'],
-  'plan:design': ['to-be/'],
+  'plan:design': ['to-be/', 'dashboard/to-be.html'],
   'plan:confirm': ['confirmations/to-be.json'],
   'worktree:setup': ['worktree-decision.json'],
   'quick-dev:init': ['tasks/', 'task-workflow-state.yaml', 'worktree-decision.json', 'to-be/traceability-matrix.json'],
   'tasks:init': ['tasks/', 'task-workflow-state.yaml'],
   'implement:code': ['task-reports/', 'verification-contract.json', 'verify-result.json'],
   'repair:code': ['task-reports/', 'verification-contract.json', 'verify-result.json'],
-  'review:cr': ['cr/'],
-  'review:cr-light': ['cr/'],
-  'review:cr-moderate': ['cr/'],
-  'review:integration': ['cr/'],
+  'review:cr': ['cr/', 'dashboard/cr-results.html'],
+  'review:cr-light': ['cr/', 'dashboard/cr-results.html'],
+  'review:cr-moderate': ['cr/', 'dashboard/cr-results.html'],
+  'review:integration': ['cr/', 'dashboard/cr-results.html'],
   'final:summary': ['final-summary.md'],
-  'review:merge': ['cr/current-change-report.json', 'cr/current-change-report.md', 'confirmations/merge-review.json'],
+  'review:merge': [
+    'cr/current-change-report.json',
+    'cr/current-change-report.md',
+    'confirmations/merge-review.json',
+    'dashboard/current-change.html',
+  ],
   blocked: [],
   done: ['final-summary.md'],
 });

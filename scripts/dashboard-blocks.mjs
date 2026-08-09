@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, mkdirSync } from 'node:fs';
 import { join, basename, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +29,11 @@ function readJson(ideaDir, rel) {
   const p = join(ideaDir, rel);
   if (!existsSync(p)) return null;
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
+}
+
+function fileSha256(path) {
+  if (!existsSync(path)) return '';
+  try { return createHash('sha256').update(readFileSync(path)).digest('hex'); } catch { return ''; }
 }
 
 function readMd(ideaDir, rel) {
@@ -112,7 +118,7 @@ function collectStepOutputs(ideaDir, steps, currentStep, stepHistory) {
 
 // --- HTML utilities ---
 
-function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
 function wrapHtml(title, body) {
   return getTemplate().replace('{{TITLE}}', esc(title)).replace('{{BODY_HTML}}', body);
@@ -123,10 +129,10 @@ function blockHero(icon, title, subtitle) {
 }
 
 function pillClass(status) {
-  if (['approved', 'pass', 'complete', 'done'].includes(status)) return 'pill-success';
-  if (['coding', 'coded', 'reviewing', 'in_progress'].includes(status)) return 'pill-accent';
+  if (['approved', 'pass', 'passed', 'success', 'complete', 'done', 'ready_for_human_review', 'ready', 'clean', 'low', 'none'].includes(status)) return 'pill-success';
+  if (['coding', 'coded', 'reviewing', 'in_progress', 'comment', 'hold'].includes(status)) return 'pill-accent';
   if (['needs_rework', 'repairing', 'medium'].includes(status)) return 'pill-warn';
-  if (['blocked', 'failed', 'fail', 'high', 'critical'].includes(status)) return 'pill-danger';
+  if (['blocked', 'failed', 'fail', 'high', 'critical', 'action_required', 'request_changes'].includes(status)) return 'pill-danger';
   return 'pill-muted';
 }
 
@@ -269,7 +275,7 @@ function renderToBeBlock(data) {
   }
 
   if (implementationPlan) {
-    body += `<div class="card animate-in"><h2>实施方案</h2><div class="section-md">${mdToSimpleHtml(implementationPlan.slice(0, 3000))}</div></div>\n`;
+    body += `<div class="card animate-in"><h2>实施方案</h2><div class="section-md">${mdToSimpleHtml(implementationPlan)}</div></div>\n`;
   }
 
   return wrapHtml(`To-Be — ${data.ideaName}`, body);
@@ -350,10 +356,161 @@ function renderCrBlock(data) {
   }
 
   if (reviewReportMd) {
-    body += `<div class="card animate-in"><h2>总报告</h2><div class="section-md">${mdToSimpleHtml(reviewReportMd.slice(0, 3000))}</div></div>\n`;
+    body += `<div class="card animate-in"><h2>总报告</h2><div class="section-md">${mdToSimpleHtml(reviewReportMd)}</div></div>\n`;
   }
 
   return wrapHtml(`CR — ${data.ideaName}`, body);
+}
+
+/**
+ * Render the structured merge-review packet.  This deliberately reads the
+ * JSON report (and the optional confirmation) instead of parsing the markdown
+ * companion so that every value shown is bound to the exact snapshot that was
+ * reviewed.
+ */
+function renderCurrentChangeBlock(data) {
+  const report = data.currentChangeReport;
+  let body = blockHero('🧭', '当前变更', data.ideaName);
+
+  if (!report) {
+    body += `<div class="card animate-in"><p class="muted">暂无当前变更报告。</p><p class="muted">完成 review:merge 后生成 cr/current-change-report.json。</p></div>`;
+    return wrapHtml(`当前变更 — ${data.ideaName}`, body);
+  }
+
+  const readiness = report.readiness || {};
+  const repositories = Array.isArray(report.repositories) ? report.repositories : [];
+  const verification = report.verification || {};
+  const machine = report.machine_review || {};
+  const risk = report.risk || {};
+  const repoTotals = repositories.reduce((totals, repo) => {
+    const files = Array.isArray(repo.files) ? repo.files : [];
+    const reported = repo.totals || {};
+    totals.files += Number(reported.files ?? files.length) || 0;
+    totals.additions += Number(reported.additions) || files.reduce((sum, file) => sum + (Number(file.additions) || 0), 0);
+    totals.deletions += Number(reported.deletions) || files.reduce((sum, file) => sum + (Number(file.deletions) || 0), 0);
+    return totals;
+  }, { files: 0, additions: 0, deletions: 0 });
+  const confirmation = data.mergeConfirmation;
+  const confirmationMatches = Boolean(
+    confirmation && data.currentChangeReportSha256 &&
+    confirmation.report_sha256 === data.currentChangeReportSha256
+  );
+  // A decision embedded in the immutable report is safe to show.  A separate
+  // confirmation is only trusted when its hash binds it to this exact report.
+  const reviewDecision = report.review_decision || report.reviewDecision || (confirmationMatches ? confirmation : null);
+
+  body += `<div class="metric-grid stagger-group">`;
+  body += metric('Merge readiness', readiness.status || 'unknown', (readiness.blockers || []).length ? `${readiness.blockers.length} blocker(s)` : '无阻塞条件', readiness.status === 'ready_for_human_review' ? 'success' : 'warn');
+  body += metric('仓库范围', String(repositories.length), 'repositories', 'accent');
+  body += metric('变更文件', String(repoTotals.files), `+${repoTotals.additions} / -${repoTotals.deletions}`, repoTotals.files ? 'accent' : 'success');
+  body += metric('Verification', verification.status || 'missing', '', verification.status === 'passed' || verification.status === 'pass' ? 'success' : 'warn');
+  body += metric('Machine CR', machine.verdict || 'unknown', `${machine.blocking_findings || 0} blocking`, machine.verdict === 'approved' ? 'success' : 'danger');
+  body += metric('Risk', risk.level || 'not_assessed', '', ['low', 'none', 'not_assessed'].includes(risk.level) ? 'success' : 'warn');
+  body += `</div>\n`;
+
+  body += `<div class="card animate-in card-accent-${readiness.status === 'ready_for_human_review' ? 'green' : 'orange'}"><h2>Readiness</h2>`;
+  if (readiness.status) body += `<p><span class="pill ${pillClass(readiness.status)}">${esc(readiness.status)}</span></p>`;
+  const blockers = Array.isArray(readiness.blockers) ? readiness.blockers : [];
+  if (blockers.length > 0) {
+    body += `<ul class="change-list">${blockers.map(item => `<li>${esc(item)}</li>`).join('')}</ul>`;
+  } else {
+    body += `<p class="muted">未记录阻塞条件。</p>`;
+  }
+  body += `</div>\n`;
+
+  body += `<div class="card animate-in"><h2>Repository scope</h2>`;
+  if (repositories.length === 0) {
+    body += `<p class="muted">报告未包含仓库。</p>`;
+  } else {
+    body += `<div class="table-scroll"><table><tr><th>Repository</th><th>Branch</th><th>Base → Head</th><th>Workspace</th><th>Dirty</th></tr>`;
+    for (const repo of repositories) {
+      const base = String(repo.base_commit || '').slice(0, 12) || '—';
+      const head = String(repo.head_commit || '').slice(0, 12) || '—';
+      const fingerprint = String(repo.workspace_fingerprint || '').slice(0, 12) || '—';
+      body += `<tr><td><strong>${esc(repo.repository || repo.project_root || 'unknown')}</strong><div class="muted mono">${esc(repo.project_root || '')}</div></td><td>${esc(repo.branch || '—')}</td><td class="mono">${esc(base)} → ${esc(head)}</td><td class="mono">${esc(fingerprint)}</td><td><span class="pill ${repo.dirty ? 'pill-warn' : 'pill-success'}">${repo.dirty ? 'dirty' : 'clean'}</span></td></tr>`;
+    }
+    body += `</table></div>`;
+  }
+  body += `</div>\n`;
+
+  body += `<div class="card animate-in"><h2>Diff totals &amp; files</h2>`;
+  body += `<div class="metric-grid compact-grid">${metric('Files', String(repoTotals.files))}${metric('Additions', `+${repoTotals.additions}`, '', 'success')}${metric('Deletions', `-${repoTotals.deletions}`, '', 'danger')}</div>`;
+  for (const repo of repositories) {
+    const files = Array.isArray(repo.files) ? repo.files : [];
+    body += `<h3 class="subheading">${esc(repo.repository || repo.project_root || 'repository')}</h3>`;
+    if (files.length === 0) {
+      body += `<p class="muted">No changed files.</p>`;
+      continue;
+    }
+    body += `<div class="table-scroll"><table><tr><th>Status</th><th>File</th><th>+</th><th>−</th></tr>`;
+    for (const file of files) {
+      const binary = Boolean(file.binary);
+      body += `<tr><td><span class="pill ${pillClass(String(file.status || '').toLowerCase() === 'd' ? 'fail' : 'coding')}">${esc(file.status || '—')}</span></td><td class="desc mono" title="${esc(file.path || '')}">${esc(file.path || '—')}</td><td>${binary ? 'binary' : Number(file.additions || 0)}</td><td>${binary ? 'binary' : Number(file.deletions || 0)}</td></tr>`;
+    }
+    body += `</table></div>`;
+  }
+  body += `</div>\n`;
+
+  body += `<div class="card animate-in"><h2>Automated checks</h2>`;
+  const checkRows = repositories.flatMap(repo => (Array.isArray(repo.checks) ? repo.checks : []).map(check => ({ repo, check })));
+  const verificationRows = Array.isArray(verification.repositories) ? verification.repositories.flatMap(repo => (Array.isArray(repo.checks) ? repo.checks : []).map(check => ({ repo, check }))) : [];
+  const checks = checkRows.length > 0 ? checkRows : verificationRows;
+  if (checks.length === 0) {
+    body += `<p class="muted">暂无自动化检查结果。</p>`;
+  } else {
+    body += `<div class="table-scroll"><table><tr><th>Repository</th><th>Check</th><th>Command</th><th>Result</th><th>Duration</th></tr>`;
+    for (const row of checks) {
+      const repoName = row.repo?.repository || row.repo?.project_root || 'repository';
+      const check = row.check || {};
+      const status = check.status || 'unknown';
+      body += `<tr><td>${esc(repoName)}</td><td><strong>${esc(check.id || 'check')}</strong></td><td class="desc mono" title="${esc(check.command || '')}">${esc(check.command || '—')}</td><td><span class="pill ${pillClass(status)}">${esc(status)}</span></td><td class="mono">${check.duration_ms == null ? '—' : `${esc(check.duration_ms)} ms`}</td></tr>`;
+    }
+    body += `</table></div>`;
+  }
+  body += `</div>\n`;
+
+  body += `<div class="card animate-in"><h2>Machine CR</h2>`;
+  const dimensions = Array.isArray(machine.dimensions) ? machine.dimensions : [];
+  if (dimensions.length > 0) {
+    body += `<div class="table-scroll"><table><tr><th>Dimension</th><th>Result</th><th>Blocking</th><th>Observations</th></tr>`;
+    for (const dim of dimensions) body += `<tr><td>${esc(dim.name || dim.dimension || 'dimension')}</td><td><span class="pill ${pillClass(dim.result)}">${esc(dim.result || 'unknown')}</span></td><td>${esc(dim.rework_items ?? dim.reworkItems?.length ?? 0)}</td><td>${esc(dim.observations ?? dim.observation_count ?? 0)}</td></tr>`;
+    body += `</table></div>`;
+  } else {
+    body += `<p class="muted">未记录维度结果。</p>`;
+  }
+  const findings = Array.isArray(machine.findings) ? machine.findings : (Array.isArray(machine.blocking_findings) ? machine.blocking_findings : []);
+  const observations = Array.isArray(machine.observations) ? machine.observations : [];
+  if (findings.length > 0) {
+    body += `<h3 class="subheading">Blocking findings</h3><ul class="change-list">${findings.map(item => `<li><span class="pill ${pillClass(item.severity)}">${esc(item.severity || 'unknown')}</span> <strong>${esc(item.id || 'finding')}</strong> ${esc(oneSentence(item.description || item['问题描述'] || ''))}${item.recommendation ? ` <span class="muted">${esc(oneSentence(item.recommendation))}</span>` : ''}</li>`).join('')}</ul>`;
+  }
+  if (observations.length > 0) {
+    body += `<h3 class="subheading">Observations</h3><ul class="change-list">${observations.map(item => `<li><strong>${esc(item.id || 'observation')}</strong> ${esc(oneSentence(item.description || item['描述'] || ''))}</li>`).join('')}</ul>`;
+  }
+  body += `</div>\n`;
+
+  body += `<div class="card animate-in card-accent-${['low', 'none'].includes(risk.level) ? 'green' : 'orange'}"><h2>Risk &amp; compatibility</h2><p><span class="pill ${pillClass(risk.level)}">${esc(risk.level || 'not_assessed')}</span>${risk.highest_risk ? ` <span>${esc(risk.highest_risk)}</span>` : ''}</p>`;
+  const riskItems = Array.isArray(risk.items) ? risk.items : [];
+  if (riskItems.length > 0) {
+    body += `<div class="table-scroll"><table><tr><th>ID</th><th>Severity</th><th>Description</th><th>Mitigation</th></tr>`;
+    for (const item of riskItems) body += `<tr><td>${esc(item.id || 'RISK')}</td><td><span class="pill ${pillClass(item.severity)}">${esc(item.severity || 'unknown')}</span></td><td class="desc">${esc(oneSentence(item.description || ''))}</td><td class="desc">${esc(oneSentence(item.mitigation || '—'))}</td></tr>`;
+    body += `</table></div>`;
+  } else if (!risk.highest_risk) {
+    body += `<p class="muted">未记录风险条目。</p>`;
+  }
+  body += `</div>\n`;
+
+  body += `<div class="card animate-in card-accent-purple"><h2>Human review decision</h2>`;
+  if (reviewDecision) {
+    const decision = reviewDecision.decision || reviewDecision.status || 'unknown';
+    body += `<p><span class="pill ${pillClass(decision)}">${esc(decision)}</span>${reviewDecision.confirmed_by ? ` · ${esc(reviewDecision.confirmed_by)}` : ''}${reviewDecision.confirmed_at ? ` · ${esc(reviewDecision.confirmed_at)}` : ''}</p>`;
+    if (reviewDecision.comment) body += `<p class="section-md">${esc(reviewDecision.comment)}</p>`;
+  } else {
+    body += `<p class="muted">尚未记录人工审阅决定。</p>`;
+    body += `<ul class="change-list"><li><strong>Approve</strong> — exact snapshot may proceed to merge.</li><li><strong>Request changes</strong> — return to repair and generate a new report.</li><li><strong>Comment / hold</strong> — record feedback without authorizing merge.</li></ul>`;
+  }
+  body += `</div>\n`;
+
+  return wrapHtml(`当前变更 — ${data.ideaName}`, body);
 }
 
 function renderTimelineBlock(data) {
@@ -399,6 +556,12 @@ function loadData(ideaDir) {
   const taskState = readTaskState(taskStateFile(ideaDir));
   const crResults = collectCrResults(ideaDir);
   const reviewReportMd = readMd(ideaDir, 'cr/review-report.md');
+  const currentChangeReport = readJson(ideaDir, 'cr/current-change-report.json');
+  const currentChangeReportSha256 = fileSha256(join(ideaDir, 'cr/current-change-report.json'));
+  const rawMergeConfirmation = readJson(ideaDir, 'confirmations/merge-review.json');
+  const mergeConfirmation = rawMergeConfirmation?.report_sha256 === currentChangeReportSha256
+    ? rawMergeConfirmation
+    : null;
   const impactRisk = readJson(ideaDir, 'to-be/impact-risk-report.json');
   const overview = readMd(ideaDir, 'as-is/overview.md');
   const coreWalkthrough = readMd(ideaDir, 'as-is/core-walkthrough.md');
@@ -465,7 +628,7 @@ function loadData(ideaDir) {
     summary, timingSummary, stepOutputs,
     tasks: taskState.tasks, taskDetails,
     normalizedTasks, traceabilityTree, changePoints,
-    crResults, reviewReportMd, impactRisk,
+    crResults, reviewReportMd, currentChangeReport, currentChangeReportSha256, mergeConfirmation, impactRisk,
     overview, coreWalkthrough, evidenceLedger, qualityScore, coverageMatrix,
     implementationPlan, dataChanges, apiChanges,
     stepHistory: workflowState?.step_history || [],
@@ -478,6 +641,7 @@ const BLOCKS = {
   'to-be': renderToBeBlock,
   progress: renderProgressBlock,
   'cr-results': renderCrBlock,
+  'current-change': renderCurrentChangeBlock,
   timeline: renderTimelineBlock,
 };
 

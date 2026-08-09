@@ -128,6 +128,68 @@
       padding: 0 24px 64px;
     }
 
+    /* ========== Automatic section navigation ========== */
+    .side-nav {
+      position: fixed;
+      top: 50%;
+      right: 20px;
+      z-index: 900;
+      width: 190px;
+      max-height: 62vh;
+      overflow: auto;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+      box-shadow: var(--card-shadow);
+      transform: translateY(-50%);
+      backdrop-filter: blur(10px);
+    }
+    .side-nav-title {
+      margin: 0 0 6px;
+      color: var(--text3);
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .side-nav a {
+      display: block;
+      overflow: hidden;
+      padding: 4px 6px;
+      border-left: 2px solid transparent;
+      color: var(--text2);
+      font-size: 0.7rem;
+      line-height: 1.4;
+      text-overflow: ellipsis;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .side-nav a:hover,
+    .side-nav a.is-active {
+      border-left-color: var(--accent);
+      color: var(--accent);
+      background: rgba(59,130,246,0.08);
+    }
+    .side-nav a.level-1 { font-weight: 700; }
+    .side-nav a.level-2 { padding-left: 12px; }
+    .runtime-status {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 1000;
+      max-width: min(360px, calc(100vw - 32px));
+      padding: 8px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      color: var(--text2);
+      box-shadow: var(--card-shadow);
+      font-size: 0.72rem;
+    }
+    .runtime-status[hidden] { display: none; }
+
     /* ========== Block Hero ========== */
     .block-hero {
       text-align: center;
@@ -387,6 +449,17 @@
     .section-md pre code { background: none; padding: 0; }
     .section-md p { margin: 6px 0; }
 
+    .change-list {
+      margin: 8px 0 0 20px;
+      color: var(--text2);
+      font-size: 0.84rem;
+    }
+    .change-list li { margin: 5px 0; }
+    .table-scroll { overflow-x: auto; }
+    .mono { font-family: var(--mono); font-size: 0.75em; }
+    .subheading { margin: 18px 0 8px; color: var(--text2); font-size: 0.78rem; }
+    .compact-grid { margin: 12px 0 18px; }
+
     /* ========== Utility Classes ========== */
     .muted { color: var(--text3); }
     .desc {
@@ -406,15 +479,28 @@
       transform: none !important;
     }
 
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      .animate-in { opacity: 1 !important; transform: none !important; }
+      .progress-fill, .timing-fill { transition: none !important; }
+    }
+
     /* ========== Responsive: Tablet ========== */
     @media (max-width: 1024px) {
       .metric-grid { grid-template-columns: repeat(2, 1fr); }
+      .side-nav { display: none; }
     }
 
     /* ========== Responsive: Mobile ========== */
     @media (max-width: 600px) {
       body { padding: 0; }
       .container { padding: 0 16px 48px; }
+      .side-nav { display: block; top: auto; right: 12px; bottom: 12px; width: min(220px, calc(100vw - 24px)); max-height: 35vh; transform: none; }
       .block-hero { padding: 40px 0 24px; }
       .metric-grid { grid-template-columns: 1fr 1fr; }
       .timing-row { grid-template-columns: 1fr; gap: 4px; }
@@ -425,7 +511,7 @@
 
     /* ========== Print ========== */
     @media print {
-      .progress-bar, .theme-toggle { display: none !important; }
+      .progress-bar, .theme-toggle, .side-nav, .runtime-status { display: none !important; }
       .animate-in { opacity: 1 !important; transform: none !important; }
       .card:hover { box-shadow: none; transform: none; }
       .metric:hover { box-shadow: none; transform: none; }
@@ -443,6 +529,13 @@
     <span class="icon-moon">&#9790;</span>
   </button>
 
+  <!-- Generated from headings below; remains harmless when scripts are blocked. -->
+  <aside class="side-nav" id="sideNav" aria-label="章节导航">
+    <div class="side-nav-title">章节导航</div>
+    <nav id="sideNavLinks"></nav>
+  </aside>
+  <div class="runtime-status" id="runtimeStatus" role="status" aria-live="polite" hidden></div>
+
   <!-- Content -->
   <div class="container">
     {{BODY_HTML}}
@@ -452,74 +545,134 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
   <script>
-    document.documentElement.classList.remove('no-js');
-
-    // Fallback: if GSAP failed to load, show all content immediately
-    if (typeof gsap === 'undefined') {
-      document.querySelectorAll('.animate-in').forEach(function(el) {
-        el.style.opacity = '1';
-        el.style.transform = 'none';
-      });
-    }
-
-    // GSAP Animations
-    if (typeof gsap !== 'undefined') {
-    gsap.registerPlugin(ScrollTrigger);
-    document.querySelectorAll('.animate-in').forEach(function(el) {
-      if (el.closest('.stagger-group')) return;
-      gsap.to(el, {
-        opacity: 1,
-        y: 0,
-        duration: 0.8,
-        ease: 'power2.out',
-        scrollTrigger: {
-          trigger: el,
-          start: 'top 88%',
-          toggleActions: 'play none none none'
-        }
-      });
-    });
-    document.querySelectorAll('.stagger-group').forEach(function(group) {
-      var children = group.querySelectorAll('.animate-in');
-      gsap.to(children, {
-        opacity: 1,
-        y: 0,
-        duration: 0.8,
-        ease: 'power2.out',
-        stagger: 0.12,
-        scrollTrigger: {
-          trigger: group,
-          start: 'top 88%',
-          toggleActions: 'play none none none'
-        }
-      });
-    });
-    } // end GSAP guard
-
-    // Progress Bar
-    window.addEventListener('scroll', function() {
-      var scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
-      var scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-      var progress = scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0;
-      document.getElementById('progressFill').style.width = progress + '%';
-    });
-
-    // Theme Toggle
-    (function() {
-      var toggle = document.getElementById('themeToggle');
+    (function () {
       var html = document.documentElement;
-      var stored = localStorage.getItem('chisel-dashboard-theme');
-      if (stored) {
-        html.setAttribute('data-theme', stored);
-      } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-        html.setAttribute('data-theme', 'light');
+      var reduceMotion = false;
+      try { reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { /* optional API */ }
+      html.classList.remove('no-js');
+
+      function showRuntimeMessage(message) {
+        var status = document.getElementById('runtimeStatus');
+        if (status) { status.textContent = message; status.hidden = false; }
       }
-      toggle.addEventListener('click', function() {
-        var current = html.getAttribute('data-theme');
-        var next = current === 'dark' ? 'light' : 'dark';
-        html.setAttribute('data-theme', next);
-        localStorage.setItem('chisel-dashboard-theme', next);
-      });
+
+      // Keep every section reachable without a framework or remote asset.
+      (function buildSectionNav() {
+        var nav = document.getElementById('sideNavLinks');
+        var headings = document.querySelectorAll('.container h1, .container h2, .container h3');
+        if (!nav || !headings.length) {
+          var sideNav = document.getElementById('sideNav');
+          if (sideNav) sideNav.hidden = true;
+          return;
+        }
+        var used = Object.create(null);
+        var links = [];
+        Array.prototype.forEach.call(headings, function (heading, index) {
+          var base = (heading.textContent || 'section').toLowerCase().trim()
+            .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-').replace(/^-+|-+$/g, '') || ('section-' + index);
+          var id = base;
+          used[id] = (used[id] || 0) + 1;
+          if (used[id] > 1) id += '-' + used[id];
+          heading.id = heading.id || id;
+          var link = document.createElement('a');
+          link.href = '#' + heading.id;
+          link.textContent = heading.textContent || ('Section ' + (index + 1));
+          link.className = 'level-' + (heading.tagName === 'H1' ? '1' : '2');
+          link.addEventListener('click', function (event) {
+            var target = document.getElementById(heading.id);
+            if (target) {
+              event.preventDefault();
+              target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+              history.replaceState(null, '', '#' + heading.id);
+            }
+          });
+          nav.appendChild(link);
+          links.push({ heading: heading, link: link });
+        });
+        function activate(item) {
+          links.forEach(function (entry) { entry.link.classList.toggle('is-active', entry === item); });
+        }
+        if ('IntersectionObserver' in window) {
+          var observer = new IntersectionObserver(function (entries) {
+            entries.filter(function (entry) { return entry.isIntersecting; }).forEach(function (entry) {
+              var match = links.find(function (item) { return item.heading === entry.target; });
+              if (match) activate(match);
+            });
+          }, { rootMargin: '-15% 0px -70% 0px', threshold: 0 });
+          links.forEach(function (item) { observer.observe(item.heading); });
+        } else {
+          window.addEventListener('scroll', function () {
+            var current = links[0];
+            links.forEach(function (item) { if (item.heading.getBoundingClientRect().top <= 140) current = item; });
+            if (current) activate(current);
+          }, { passive: true });
+        }
+      })();
+
+      function revealImmediately() {
+        document.querySelectorAll('.animate-in').forEach(function (el) {
+          el.style.opacity = '1';
+          el.style.transform = 'none';
+        });
+      }
+
+      // GSAP is an enhancement only.  ScrollTrigger is checked separately so
+      // a partial CDN load can never hide the report or throw during startup.
+      var hasGsap = typeof gsap !== 'undefined';
+      var hasScrollTrigger = typeof ScrollTrigger !== 'undefined';
+      if (!hasGsap || reduceMotion) {
+        revealImmediately();
+        if (!hasGsap && !reduceMotion) showRuntimeMessage('动画库未加载，已使用基础样式；报告内容仍完整可见。');
+        if (reduceMotion) showRuntimeMessage('已根据系统设置关闭动效。');
+      } else {
+        try {
+          if (hasScrollTrigger) gsap.registerPlugin(ScrollTrigger);
+          document.querySelectorAll('.animate-in').forEach(function (el) {
+            if (el.closest('.stagger-group')) return;
+            var options = { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out' };
+            if (hasScrollTrigger) options.scrollTrigger = { trigger: el, start: 'top 88%', toggleActions: 'play none none none' };
+            gsap.to(el, options);
+          });
+          document.querySelectorAll('.stagger-group').forEach(function (group) {
+            var children = group.querySelectorAll('.animate-in');
+            var options = { opacity: 1, y: 0, duration: 0.8, ease: 'power2.out', stagger: 0.12 };
+            if (hasScrollTrigger) options.scrollTrigger = { trigger: group, start: 'top 88%', toggleActions: 'play none none none' };
+            gsap.to(children, options);
+          });
+        } catch (error) {
+          revealImmediately();
+          showRuntimeMessage('动画增强不可用，已使用基础样式；报告内容仍完整可见。');
+        }
+      }
+
+      function updateProgress() {
+        var progressFill = document.getElementById('progressFill');
+        if (!progressFill) return;
+        var scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+        var scrollHeight = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        progressFill.style.width = (scrollHeight > 0 ? (scrollTop / scrollHeight) * 100 : 0) + '%';
+      }
+      window.addEventListener('scroll', updateProgress, { passive: true });
+      window.addEventListener('resize', updateProgress, { passive: true });
+      updateProgress();
+
+      // Theme preference is best effort; privacy modes may deny localStorage.
+      (function () {
+        var toggle = document.getElementById('themeToggle');
+        if (!toggle) return;
+        var stored = null;
+        try { stored = localStorage.getItem('chisel-dashboard-theme'); } catch (e) { /* unavailable */ }
+        try {
+          if (stored === 'dark' || stored === 'light') html.setAttribute('data-theme', stored);
+          else if (window.matchMedia('(prefers-color-scheme: light)').matches) html.setAttribute('data-theme', 'light');
+        } catch (e) { /* optional browser APIs */ }
+        toggle.addEventListener('click', function () {
+          var current = html.getAttribute('data-theme');
+          var next = current === 'dark' ? 'light' : 'dark';
+          html.setAttribute('data-theme', next);
+          try { localStorage.setItem('chisel-dashboard-theme', next); } catch (e) { /* unavailable */ }
+        });
+      })();
     })();
   </script>
 </body>

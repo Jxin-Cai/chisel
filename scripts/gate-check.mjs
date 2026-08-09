@@ -636,7 +636,7 @@ function validateDimensionCrComplete(ideaDir, gateId) {
   if (failed.length === 0) {
     return allTasksApproved(ideaDir)
       ? result(gateId, true, '', { review_result: 'approved', dimensions: REVIEW_DIMENSIONS })
-      : result(gateId, false, 'all dimension CRs passed but not all tasks are approved');
+      : result(gateId, false, 'all dimension CRs passed but not all tasks are approved (用 --mark-cr-requirement approved 批准)');
   }
 
   const failedTasks = [...new Set(failed.flatMap(parsed => affectedTasks(parsed.fm)))];
@@ -685,7 +685,7 @@ function validateReviewSelection(ideaDir, gateId) {
   if (failed.length === 0) {
     return allTasksApproved(ideaDir)
       ? result(gateId, true, '', { review_result: 'approved', dimensions: selection.dimensions, skipped_dimensions: skipped, selection })
-      : result(gateId, false, 'selected dimension CRs passed but not all tasks are approved');
+      : result(gateId, false, 'selected dimension CRs passed but not all tasks are approved (用 --mark-cr-requirement approved 批准)');
   }
   const failedTasks = [...new Set(failed.flatMap(parsed => affectedTasks(parsed.fm)))];
   if (!failedTasks.length) return result(gateId, false, 'failed dimension CRs must include affected_tasks');
@@ -1201,7 +1201,7 @@ export function checkGate(ideaDir, gateId) {
         if (failed.length === 0) {
           return allTasksApproved(ideaDir)
             ? result(gateId, true, '', { review_result: 'approved', dimensions: ['spec', ...moderateDims] })
-            : result(gateId, false, 'all moderate CRs passed but not all tasks are approved');
+            : result(gateId, false, 'all moderate CRs passed but not all tasks are approved (用 --mark-cr-requirement approved 批准)');
         }
         const failedTasks = [...new Set(failed.flatMap(p => affectedTasks(p.fm)))];
         if (failedTasks.length === 0) return result(gateId, false, 'failed dimension CRs must include affected_tasks');
@@ -1221,7 +1221,7 @@ export function checkGate(ideaDir, gateId) {
         }
         return allTasksApproved(ideaDir)
           ? result(gateId, true, '', { review_result: 'approved', dimensions: ['spec'] })
-          : result(gateId, false, 'spec passed but not all tasks are approved');
+          : result(gateId, false, 'spec passed but not all tasks are approved (用 --mark-cr-requirement approved 批准)');
       }
       return validateDimensionCrComplete(ideaDir, gateId);
     }
@@ -1237,7 +1237,7 @@ export function checkGate(ideaDir, gateId) {
       return over.length === 0 ? result(gateId, true) : result(gateId, false, `rework over limit: ${over.join(', ')}`);
     }
     case 'all-approved':
-      return result(gateId, has(ideaDir, 'task-workflow-state.yaml') && allTasksApproved(ideaDir), 'not all tasks approved');
+      return result(gateId, has(ideaDir, 'task-workflow-state.yaml') && allTasksApproved(ideaDir), 'not all tasks approved (用 --mark-cr-requirement approved 批准)');
     case 'clarification-complete': {
       if (has(ideaDir, 'confirmations/strategy.json') || has(ideaDir, 'confirmations/to-be.json')) return result(gateId, true, '', { legacy: true });
       const file = join(ideaDir, 'requirement-clarification.json');
@@ -1318,7 +1318,7 @@ export function checkGate(ideaDir, gateId) {
     }
     case 'final-summary-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
-      if (!allTasksApproved(ideaDir)) return result(gateId, false, 'not all tasks are approved');
+      if (!allTasksApproved(ideaDir)) return result(gateId, false, 'not all tasks are approved (用 --mark-cr-requirement approved 批准)');
       const reason = validateFinalSummary(ideaDir);
       if (reason) return result(gateId, false, reason);
       const traceGate = checkGate(ideaDir, 'traceability-complete');
