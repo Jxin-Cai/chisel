@@ -9,6 +9,13 @@ user-invocable: false
 
 计划阶段。产出结构化方案（JSON 产物）和人类可读文档。不改业务代码。
 
+方案写完后不能直接请求用户确认。主编排器必须先运行 `plan:adversarial-review`：启动一个不共享
+planner 上下文的 fresh reviewer，直接读取 requirement、clarification AC/VC、as-is 证据和所有
+to-be 结构化产物，逐项产出可执行 findings。审查失败时将 findings 修复回写到 tasks、traceability、
+impact-risk、implementation plan 等产物，重新运行 schema/traceability 校验，再创建下一轮
+`adversarial-review.json`/`.md`；只有 `status: pass` 的记录才能让用户 review `plan:confirm`。
+审查必须受机器 gate 和最大轮次约束，不能只依赖提示词承诺。
+
 ## 当前工作流状态
 
 !`node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
@@ -19,7 +26,7 @@ user-invocable: false
 
 ## 执行
 
-主编排器利用原生 Plan subagent 做方案框架设计，自身精化写入 JSON 产物并执行完整性自检，最后由 Writer subagent 产出 implementation-plan.md。
+主编排器读取 `requirement-classification.json` 并遵守 `subagent_budget`。moderate/lightweight 最多启动 1 个 Plan agent，不再启动 Explore/Analyst；full 才允许完整规划链。自身精化写入 JSON 并执行完整性自检，最后由后台 Writer 产出 implementation-plan.md。
 
 ---
 
@@ -28,6 +35,17 @@ user-invocable: false
 <HARD-GATE principle="P4">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/plan-prompt-guide.md`，基于需求特征构建 Plan prompt。
 </HARD-GATE>
+
+先按 `execution_profile` 选择互斥分支，严禁把 full 的输入要求套到 lightweight：
+
+#### lightweight（routing_complexity=moderate）
+
+- 不依赖、不等待、也不补做 as-is；全新 moderate 目录没有 `as-is/` 是合法输入。
+- Plan agent 的必读输入仅为 `requirement.md`、`requirement-clarification.json`、`requirement-classification.json`。
+- 主编排器可做一次有界只读 discovery，生成 `to-be/source-manifest.json`：最多 12 个文件、2 个模块，只记录 path/hash/选择理由，不启动 Explore/Analyst；超界则写 `scope-escalation.json` 并重新分类。
+- 仍必须产出 tasks、traceability、design-notes 和轻量 `impact-risk-report.json`，保证审查与确认指纹契约一致。
+
+#### full（routing_complexity=standard/complex）
 
 启动 Plan subagent（原生 `subagent_type: "Plan"`），prompt 必须包含：
 
@@ -44,6 +62,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/plan-prompt-guide.md`�
 4. 根据需求特征追加引导（字段变更→全链路透传；高并发→锁策略）
 
 Plan agent 返回结构化方案分析结果。
+
+两个分支均不得读取未列入各自 source manifest 的仓库文件；lightweight 不得因为缺少 `clarifications.json`、coverage-matrix 或 call-graph 而失败。
 
 ---
 
@@ -86,7 +106,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 ### Phase 3: 变更完整性自检
 
 <HARD-GATE principle="P1,P4">
-全部产物写完后，主编排器执行以下 6 步自检。发现遗漏则就地修补（追加 task / 补充 CP / 更新文件），不可跳过。
+全部产物写完后，主编排器执行以下 8 步自检。发现遗漏则就地修补（追加 task / 补充 CP / 更新文件），不可跳过。
 
 #### 1. 伴生变更推断
 
@@ -144,17 +164,26 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 - "与前一个 task 类似"（重复代码优于交叉引用）
 
 自检结果写入 `design-notes.json` 的 `self_check` 字段。
+
+#### 8. 对抗审查交接
+
+将 `requirement.md`、`requirement-clarification.json` 中每个 AC 及 verification_conditions、
+所有 as-is 结构化文件、to-be 全部 JSON/Markdown 的路径和 hash 交给 fresh reviewer。审查输出必须
+包含 requirement/clarification coverage、implementation/change points/tasks/files/verification
+证据、findings、attempt 和 status。任何未映射、未知 ref、空/占位 evidence 都是 fail；planner
+必须逐条将 finding 变成 task、file plan、traceability 或验证检查的修复，并再次通过本阶段所有
+schema 校验后才能重审。
 </HARD-GATE>
 
 ---
 
-### Phase 4: 人类文档生成
+### Phase 4: 异步人类文档生成
 
 <HARD-GATE principle="P5">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/writer-to-be-task.md`，按其 TASK 结构启动 writer。
 </HARD-GATE>
 
-启动 `agent-chisel-writer`，传入 TASK：
+先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs prepare {idea_dir} to-be`，再启动 `agent-chisel-writer`，设置 `run_in_background: true`，传入 TASK：
 
 ```json
 {
@@ -177,6 +206,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/writer-to-be-task.md`�
 ```
 
 Writer 产出 `to-be/implementation-plan.md`。
+
+Writer 最后必须运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs complete {idea_dir} to-be`。主编排器在后台写作期间继续执行 tasks/traceability/schema 和对抗审查输入的独立校验；进入 `plan:adversarial-review` 或向用户展示前必须 `document-job.mjs check` 为 complete。pending/stale 绝不能进入用户 review。
 
 ---
 

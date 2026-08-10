@@ -17,16 +17,32 @@ function readJson(rel) {
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
 }
 
+function normalizeRefs(value) {
+  return Array.isArray(value) ? [...new Set(value.map(item => String(item || '').trim()).filter(Boolean))] : [];
+}
+
+function taskTraceRefs(taskId, state) {
+  const task = state.tasks?.[taskId];
+  if (!task) return [];
+  const text = existsSync(join(IDEA_DIR, task.file || `tasks/${taskId}.md`))
+    ? readFileSync(join(IDEA_DIR, task.file || `tasks/${taskId}.md`), 'utf8') : '';
+  const frontmatter = text.match(/^---\n([\s\S]*?)\n---/);
+  const line = frontmatter?.[1]?.split('\n').find(item => /^trace_refs:\s*/.test(item));
+  if (!line) return [];
+  const raw = line.replace(/^trace_refs:\s*/, '').trim().replace(/^\[|\]$/g, '');
+  return normalizeRefs(raw ? raw.split(',').map(value => value.trim().replace(/^['"]|['"]$/g, '')) : []);
+}
+
 function main() {
   const matrix = readJson('to-be/traceability-matrix.json');
   if (!matrix) {
-    console.log(JSON.stringify({ schema_version: 1, pass: true, reason: 'traceability-matrix.json not found, skipped' }));
+    console.log(JSON.stringify({ schema_version: 2, pass: false, reason: 'traceability-matrix.json missing' }));
     return;
   }
 
   const items = Array.isArray(matrix.items) ? matrix.items : Array.isArray(matrix) ? matrix : [];
   if (items.length === 0) {
-    console.log(JSON.stringify({ schema_version: 1, pass: true, reason: 'traceability matrix is empty, skipped' }));
+    console.log(JSON.stringify({ schema_version: 2, pass: false, reason: 'traceability matrix is empty' }));
     return;
   }
 
@@ -34,13 +50,53 @@ function main() {
   const clarification = readJson('requirement-clarification.json');
   const acceptanceCriteria = clarification?.dimensions?.acceptance_criteria || [];
 
+  const itemById = new Map(items.map(item => [item?.id, item]));
+  const structuralErrors = [];
+  for (const item of items) {
+    const id = item?.id || 'unknown';
+    const coveredByTasks = normalizeRefs(item?.covered_by_tasks || item?.covering_tasks);
+    if (coveredByTasks.length === 0) structuralErrors.push(`${id} has no covering task`);
+    for (const taskId of coveredByTasks) {
+      if (!state.tasks?.[taskId]) structuralErrors.push(`${id} references unknown task ${taskId}`);
+      else if (!taskTraceRefs(taskId, state).includes(id)) structuralErrors.push(`${taskId} trace_refs missing ${id}`);
+    }
+  }
+  for (const [taskId] of Object.entries(state.tasks || {})) {
+    const refs = taskTraceRefs(taskId, state);
+    for (const ref of refs) {
+      const item = itemById.get(ref);
+      if (!item) structuralErrors.push(`${taskId} references unknown trace ref ${ref}`);
+      else if (!normalizeRefs(item.covered_by_tasks || item.covering_tasks).includes(taskId)) structuralErrors.push(`${ref} missing reverse task reference ${taskId}`);
+    }
+  }
+
+  const exactAcCoverage = [];
+  let exactMappingMissing = 0;
+  for (const ac of acceptanceCriteria) {
+    const acId = String(typeof ac === 'string' ? (ac.match(/\bAC-\d{3}\b/)?.[0] || '') : (ac?.id || '')).trim();
+    const item = itemById.get(acId);
+    const sourceRefs = normalizeRefs(item?.source_refs);
+    const mapped = Boolean(item && (!item.type || item.type === 'acceptance_criteria') && (sourceRefs.length === 0 || sourceRefs.includes(acId)));
+    if (!mapped) exactMappingMissing++;
+    exactAcCoverage.push({ ac_id: acId, description: typeof ac === 'string' ? ac : ac?.description || '', mapped_trace_ids: mapped ? [acId] : [], status: mapped ? 'mapped' : 'unmapped' });
+    for (const vc of typeof ac === 'object' && Array.isArray(ac?.verification_conditions) ? ac.verification_conditions : []) {
+      const vcId = String(vc?.id || '').trim();
+      const ref = `${acId}/${vcId}`;
+      const vcItem = itemById.get(ref);
+      const vcRefs = normalizeRefs(vcItem?.source_refs);
+      const vcMapped = Boolean(vcItem && (!vcItem.type || vcItem.type === 'verification_condition') && (vcRefs.length === 0 || vcRefs.includes(ref) || (vcRefs.includes(acId) && vcRefs.includes(vcId))));
+      if (!vcMapped) exactMappingMissing++;
+      exactAcCoverage.push({ vc_ref: ref, condition: vc?.condition || '', mapped_trace_ids: vcMapped ? [ref] : [], status: vcMapped ? 'mapped' : 'unmapped' });
+    }
+  }
+
   const results = [];
   let covered = 0, inProgress = 0, pending = 0, missing = 0;
 
   for (const item of items) {
     const id = item.id || item.req_id || 'unknown';
     const description = item.description || item.source || '';
-    const coveredByTasks = item.covered_by_tasks || [];
+    const coveredByTasks = item.covered_by_tasks || item.covering_tasks || [];
 
     if (coveredByTasks.length === 0) {
       missing++;
@@ -113,11 +169,11 @@ function main() {
   let pass;
   let reason;
   if (FINAL_MODE) {
-    pass = missing === 0 && pending === 0 && inProgress === 0 && vcMissing === 0;
-    reason = pass ? 'all requirements fully covered' : `${missing} missing, ${pending} pending, ${inProgress} in_progress, ${vcMissing} vc_missing`;
+    pass = missing === 0 && pending === 0 && inProgress === 0 && vcMissing === 0 && exactMappingMissing === 0 && structuralErrors.length === 0;
+    reason = pass ? 'all requirements fully covered' : `${missing} missing, ${pending} pending, ${inProgress} in_progress, ${vcMissing} vc_missing, ${exactMappingMissing} exact mappings missing, ${structuralErrors.length} structural errors`;
   } else {
-    pass = missing === 0 && vcMissing === 0;
-    reason = pass ? 'no missing coverage' : `${missing} requirements have no covering task, ${vcMissing} verification conditions uncovered`;
+    pass = missing === 0 && vcMissing === 0 && exactMappingMissing === 0 && structuralErrors.length === 0;
+    reason = pass ? 'no missing coverage' : `${missing} requirements have no covering task, ${vcMissing} verification conditions uncovered, ${exactMappingMissing} exact mappings missing, ${structuralErrors.length} structural errors`;
   }
 
   const output = {
@@ -128,11 +184,12 @@ function main() {
     pending,
     missing,
     items: results,
-    acceptance_criteria_coverage: acCoverage,
+    acceptance_criteria_coverage: exactAcCoverage.length > 0 ? exactAcCoverage : acCoverage,
     verification_conditions_coverage: vcCoverage.length > 0 ? vcCoverage : undefined,
     vc_missing: vcMissing,
     pass,
-    reason
+    reason,
+    ...(structuralErrors.length > 0 ? { structural_errors: structuralErrors } : {})
   };
 
   console.log(JSON.stringify(output, null, 2));

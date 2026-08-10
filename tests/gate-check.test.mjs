@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { checkGate } from '../scripts/gate-check.mjs';
@@ -338,6 +339,117 @@ describe('gate-check task-report-exists file-level contract', () => {
     const r = checkGate(ideaDir, 'task-report-exists');
     assert.equal(r.pass, false);
     assert.match(r.reason, /violations_count does not match/);
+  });
+
+  it('rejects a task report when an acceptance criterion is missing or failed', () => {
+    writeTaskWorkflow(ideaDir, { taskFileExtra: 'file_plan_schema_version: 1', report: validTaskReport({ fileReport: true }) });
+    const taskPath = join(ideaDir, 'tasks/task-001.md');
+    writeFileSync(taskPath, `${readFileSync(taskPath, 'utf8')}\n## Acceptance Criteria\n- [ ] AC-001: observable behavior\n`);
+    let result = checkGate(ideaDir, 'task-report-exists');
+    assert.equal(result.pass, false);
+    assert.match(result.reason, /Acceptance Criteria Result/);
+
+    const reportPath = join(ideaDir, 'task-reports/task-001-report.md');
+    const report = readFileSync(reportPath, 'utf8').replace('## Completion Status', [
+      '## Acceptance Criteria Result',
+      '| AC | Evidence | Result |',
+      '|---|---|---|',
+      '| AC-001 | node --test tests/feature.test.mjs | fail |',
+      '',
+      '## Completion Status',
+    ].join('\n'));
+    writeFileSync(reportPath, report);
+    result = checkGate(ideaDir, 'task-report-exists');
+    assert.equal(result.pass, false);
+    assert.match(result.reason, /must be pass/);
+  });
+});
+
+describe('requirement completeness gates', () => {
+  let ideaDir;
+  beforeEach(() => {
+    ideaDir = makeTmpDir();
+    mkdirSync(join(ideaDir, 'to-be'), { recursive: true });
+    mkdirSync(join(ideaDir, 'tasks'), { recursive: true });
+  });
+  afterEach(() => rmSync(ideaDir, { recursive: true, force: true }));
+
+  function writeApprovedTask(traceRefs) {
+    writeFileSync(join(ideaDir, 'task-workflow-state.yaml'), [
+      'idea: completeness', 'tasks:', '  task-001:', '    status: approved',
+      '    file: tasks/task-001.md', '    depends_on: []', '',
+    ].join('\n'));
+    writeFileSync(join(ideaDir, 'tasks/task-001.md'), `---\ntask_id: task-001\ntrace_refs: [${traceRefs.join(', ')}]\n---\n# Task\n`);
+  }
+
+  it('fails final traceability when the matrix is missing or omits an AC', () => {
+    writeApprovedTask(['AC-001', 'AC-002']);
+    assert.equal(checkGate(ideaDir, 'traceability-complete').pass, false);
+    writeFileSync(join(ideaDir, 'requirement-clarification.json'), JSON.stringify({
+      schema_version: 1,
+      dimensions: { acceptance_criteria: [
+        { id: 'AC-001', description: 'one' },
+        { id: 'AC-002', description: 'two' },
+        { id: 'AC-003', description: 'three' },
+      ] },
+    }));
+    writeFileSync(join(ideaDir, 'to-be/traceability-matrix.json'), JSON.stringify({ schema_version: 2, items: [
+      { id: 'AC-001', type: 'acceptance_criteria', description: 'one', source_refs: ['AC-001'], covered_by_tasks: ['task-001'] },
+      { id: 'AC-002', type: 'acceptance_criteria', description: 'two', source_refs: ['AC-002'], covered_by_tasks: ['task-001'] },
+    ] }));
+    const result = checkGate(ideaDir, 'traceability-complete');
+    assert.equal(result.pass, false);
+    assert.match(result.reason, /AC-003/);
+  });
+
+  it('binds an adversarial pass to every AC/VC and the exact source hashes', () => {
+    writeFileSync(join(ideaDir, 'requirement.md'), '# Requirement\n\ncomplete behavior\n');
+    writeFileSync(join(ideaDir, 'requirement-clarification.json'), JSON.stringify({ dimensions: { acceptance_criteria: [
+      { id: 'AC-001', description: 'behavior', verification_conditions: [{ id: 'VC-001', condition: 'observable result' }] },
+    ] } }));
+    writeFileSync(join(ideaDir, 'to-be/implementation-plan.md'), '# Plan\n\ncomplete\n');
+    writeFileSync(join(ideaDir, 'to-be/tasks.json'), JSON.stringify({ tasks: [{
+      task_id: 'task-001', expected_files: ['src/feature.js'], allowed_files: ['src/feature.js'],
+      trace_refs: ['AC-001', 'VC-001'], change_point_refs: ['CP-001'], file_plan: [{ path: 'src/feature.js' }],
+    }] }));
+    writeFileSync(join(ideaDir, 'to-be/traceability-matrix.json'), JSON.stringify({ items: [
+      { id: 'AC-001', source_refs: ['AC-001'], covered_by_tasks: ['task-001'], cp_refs: ['CP-001', 'CP-002'], coverage_refs: ['AC-001'] },
+      { id: 'VC-001', source_refs: ['VC-001'], covered_by_tasks: ['task-001'], cp_refs: ['CP-001', 'CP-002'], coverage_refs: ['VC-001'] },
+    ] }));
+    writeFileSync(join(ideaDir, 'to-be/impact-risk-report.json'), JSON.stringify({ change_points: [
+      { id: 'CP-001', file: 'src/feature.js' }, { id: 'CP-002', file: 'src/unrelated.js' },
+    ] }));
+    writeFileSync(join(ideaDir, 'to-be/adversarial-review.md'), '# Review\n\n## 审查范围\n全部需求\n\n## 结论\npass\n');
+    const files = ['requirement.md', 'requirement-clarification.json', 'to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json'];
+    const reviewedFiles = files.map(path => ({ path, sha256: createHash('sha256').update(readFileSync(join(ideaDir, path))).digest('hex') }));
+    const coverage = ['AC-001', 'AC-001/VC-001'].map(source_ref => ({
+      source_ref, status: 'pass', task_refs: ['task-001'], change_point_refs: ['CP-001'],
+      file_refs: ['src/feature.js'], verification_refs: [source_ref.split('/').at(-1)], evidence: 'task/file/test chain independently reviewed',
+    }));
+    writeFileSync(join(ideaDir, 'to-be/adversarial-review.json'), JSON.stringify({
+      schema_version: 1, source_step: 'plan:adversarial-review', status: 'pass', attempt: 1,
+      findings: [], unresolved_findings: [], reviewed_files: reviewedFiles,
+      requirement_coverage: coverage, evidence: ['AC/VC to implementation and verification chain checked'],
+    }));
+    assert.equal(checkGate(ideaDir, 'to-be-adversarial-approved').pass, true);
+    const reviewPath = join(ideaDir, 'to-be/adversarial-review.json');
+    const review = JSON.parse(readFileSync(reviewPath));
+    review.requirement_coverage[0].change_point_refs = ['CP-FAKE'];
+    writeFileSync(reviewPath, JSON.stringify(review));
+    assert.match(checkGate(ideaDir, 'to-be-adversarial-approved').reason, /unknown change points/);
+    review.requirement_coverage[0].change_point_refs = ['CP-001'];
+    writeFileSync(reviewPath, JSON.stringify(review));
+    review.requirement_coverage[0].change_point_refs = ['CP-002'];
+    review.requirement_coverage[0].file_refs = ['src/unrelated.js'];
+    writeFileSync(reviewPath, JSON.stringify(review));
+    assert.match(checkGate(ideaDir, 'to-be-adversarial-approved').reason, /selected tasks/);
+    review.requirement_coverage[0].change_point_refs = ['CP-001'];
+    review.requirement_coverage[0].file_refs = ['src/feature.js'];
+    writeFileSync(reviewPath, JSON.stringify(review));
+    writeFileSync(join(ideaDir, 'to-be/implementation-plan.md'), '# Plan\n\nchanged after review\n');
+    const result = checkGate(ideaDir, 'to-be-adversarial-approved');
+    assert.equal(result.pass, false);
+    assert.match(result.reason, /stale/);
   });
 });
 

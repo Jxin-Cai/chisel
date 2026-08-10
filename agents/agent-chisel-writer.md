@@ -9,7 +9,9 @@ tools: Read, Write, Glob, Bash
 
 # 人类文档生成 Agent
 
-你负责将结构化产物（JSON/表格 md）转化为面向人类读者的图文中文文档。你不探索代码、不做设计决策、不修改结构化产物。
+你负责将结构化产物（JSON/表格 md）转化为面向人类读者的图文中文文档。你通常作为后台 agent 运行，不探索代码、不做设计决策、不启动其他 agent、不修改业务结构化产物。
+
+完成写作后必须运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs complete <idea_dir> <as-is|to-be>`。唯一允许更新的 JSON 是该命令维护的 `document-jobs/<mode>.json` 收据。若源文件已变化，报告 stale，绝不伪造完成。
 
 <HARD-GATE>
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`。
@@ -43,6 +45,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`。
 | `as-is/coverage-matrix.json` | 四维覆盖矩阵 |
 | `as-is/context-budget.json` | 上下文预算数据 |
 | `as-is/repo-map.json` | 代码地图 |
+| `as-is/debt-signals/**/*`（如有） | 技术债、禁区与证据补充；必须全部读取并由 receipt 绑定 |
 
 产出（在 `{idea_dir}/as-is/` 下）：
 

@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
 import { ALL_COMPLEXITIES, STEP_GATE_MAP, STEP_TO_PHASE as DEFINITION_STEP_TO_PHASE } from './workflow-definition.mjs';
 
@@ -600,9 +601,29 @@ const ROLLBACK_STEPS = {
     remove: [
       'requirement-clarification.json',
       'requirement-clarification.md',
+      'requirement-classification.json',
+      'scope-escalation.json',
+      'document-jobs',
       'to-be',
       'confirmations/to-be.json',
       'confirmations/strategy.json',
+      '.to-be-confirmed',
+      'worktree-decision.json',
+      'task-workflow-state.yaml',
+      'tasks',
+      'task-reports',
+      'cr',
+      'final-summary.md',
+      '.done'
+    ]
+  },
+  'classify:requirement': {
+    remove: [
+      'requirement-classification.json',
+      'as-is',
+      'document-jobs',
+      'to-be',
+      'confirmations/to-be.json',
       '.to-be-confirmed',
       'worktree-decision.json',
       'task-workflow-state.yaml',
@@ -917,6 +938,8 @@ export function resolveProjectName(projectRoot) {
 }
 
 export function detectComplexity(ideaDir) {
+  const persisted = readRequirementClassification(ideaDir);
+  if (persisted.valid) return persisted.value.routing_complexity;
   const reqPath = join(ideaDir, 'requirement.md');
   if (!existsSync(reqPath)) return 'standard';
   const text = readFileSync(reqPath, 'utf8');
@@ -970,14 +993,81 @@ export function detectComplexity(ideaDir) {
   return 'standard';
 }
 
+export const REQUIREMENT_CLASSIFICATION_SOURCES = Object.freeze([
+  'requirement.md',
+  'requirement-clarification.json',
+]);
+
+export function requirementClassificationFingerprint(ideaDir) {
+  const hash = createHash('sha256');
+  for (const rel of REQUIREMENT_CLASSIFICATION_SOURCES) {
+    const file = join(ideaDir, rel);
+    if (!existsSync(file)) return null;
+    hash.update(rel).update('\0').update(readFileSync(file)).update('\0');
+  }
+  const escalation = join(ideaDir, 'scope-escalation.json');
+  if (existsSync(escalation)) hash.update('scope-escalation.json').update('\0').update(readFileSync(escalation)).update('\0');
+  return hash.digest('hex');
+}
+
+export function readRequirementClassification(ideaDir) {
+  const file = join(ideaDir, 'requirement-classification.json');
+  if (!existsSync(file)) return { valid: false, reason: 'requirement-classification.json missing' };
+  try {
+    const value = JSON.parse(readFileSync(file, 'utf8'));
+    if (value?.schema_version !== 1 || value?.source_step !== 'classify:requirement') {
+      return { valid: false, reason: 'invalid requirement classification contract' };
+    }
+    const actual = requirementClassificationFingerprint(ideaDir);
+    if (!actual || value.input_fingerprint !== actual) {
+      return { valid: false, reason: 'requirement classification is stale' };
+    }
+    if (!ALL_COMPLEXITIES.includes(value.routing_complexity)) {
+      return { valid: false, reason: 'invalid routing_complexity' };
+    }
+    const expectedDifficulty = ['hotfix', 'minor', 'trivial'].includes(value.routing_complexity) ? 'simple'
+      : value.routing_complexity === 'moderate' ? 'moderate' : 'complex';
+    const expectedProfile = expectedDifficulty === 'simple' ? 'direct' : expectedDifficulty === 'moderate' ? 'lightweight' : 'full';
+    const expectedBudget = expectedDifficulty === 'simple'
+      ? { max_concurrent: 1, discovery: 0, planning: 0, document_writers: 0, reviewers: 1 }
+      : expectedDifficulty === 'moderate'
+        ? { max_concurrent: 2, discovery: 0, planning: 1, document_writers: 1, reviewers: 1 }
+        : { max_concurrent: 4, discovery: 2, planning: 1, document_writers: 1, reviewers: 2 };
+    if (value.difficulty !== expectedDifficulty || value.execution_profile !== expectedProfile || JSON.stringify(value.subagent_budget) !== JSON.stringify(expectedBudget)) {
+      return { valid: false, reason: 'requirement classification difficulty/profile/budget mismatch' };
+    }
+    if (!value.signals || typeof value.signals !== 'object' || !Array.isArray(value.reasons)) {
+      return { valid: false, reason: 'requirement classification signals/reasons missing' };
+    }
+    return { valid: true, value };
+  } catch (error) {
+    return { valid: false, reason: `requirement classification is malformed: ${error.message}` };
+  }
+}
+
 export function classifyChange(ideaDir) {
+  const persisted = readRequirementClassification(ideaDir);
+  if (persisted.valid) {
+    const value = persisted.value;
+    return {
+      delivery_complexity: value.delivery_complexity,
+      risk_level: value.risk_level,
+      uncertainty_level: value.uncertainty_level,
+      routing_complexity: value.routing_complexity,
+      difficulty: value.difficulty,
+      execution_profile: value.execution_profile,
+      subagent_budget: value.subagent_budget,
+      reasons: value.reasons || [],
+    };
+  }
   const delivery_complexity = detectComplexity(ideaDir);
   let risk_level = 'low';
   let uncertainty_level = 'low';
   const reasons = [];
   const requirementPath = join(ideaDir, 'requirement.md');
   const requirement = existsSync(requirementPath) ? readFileSync(requirementPath, 'utf8') : '';
-  const explicitRisk = requirement.match(/^##\s*(?:风险|Risk)(?:[：:]\s*|\s*\n\s*)(low|medium|high)\s*$/im)?.[1]?.toLowerCase();
+  const explicitRiskRaw = requirement.match(/^##\s*(?:风险|Risk)(?:[：:]\s*|\s*\n\s*)(low|medium|high|低|中|高)(?:风险)?\s*$/im)?.[1]?.toLowerCase();
+  const explicitRisk = explicitRiskRaw === '低' ? 'low' : explicitRiskRaw === '中' ? 'medium' : explicitRiskRaw === '高' ? 'high' : explicitRiskRaw;
   if (explicitRisk) risk_level = explicitRisk;
   const reportPath = join(ideaDir, 'impact-risk-report.json');
   if (existsSync(reportPath)) {

@@ -41,6 +41,13 @@ describe('pre-merge current change report', () => {
       description: 'change exported value',
       changed_files: ['app.js'],
     }]);
+    mkdirSync(join(ideaDir, 'tasks'), { recursive: true });
+    mkdirSync(join(ideaDir, 'to-be'), { recursive: true });
+    writeFileSync(join(ideaDir, 'tasks/task-001.md'), '---\ntask_id: task-001\ntrace_refs: [AC-001]\n---\n# Task\n');
+    writeFileSync(join(ideaDir, 'to-be/traceability-matrix.json'), JSON.stringify({
+      schema_version: 2,
+      items: [{ id: 'AC-001', type: 'acceptance_criteria', description: 'change exported value', covered_by_tasks: ['task-001'] }],
+    }));
     writeFileSync(join(ideaDir, 'final-summary.md'), [
       '# Final',
       '## 变更摘要',

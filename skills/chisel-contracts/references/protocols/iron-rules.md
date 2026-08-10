@@ -31,11 +31,13 @@ status 严格只读；runner 持久化租约/恢复点并通过 `orchestration-t
 
 | 阶段 | 前置条件 |
 |------|---------|
-| 需求澄清 | as-is 已确认（`confirmations/as-is.json` 通过 gate）且 AI 输入版已生成（`as-is/ai-input/` 6 个文件存在）|
-| to-be 方案和 task 拆分 | 需求澄清完成（`requirement-clarification.json` 通过 gate） |
+| 需求澄清 | `requirement.md` 完整；as-is 仅为可选增强证据，不得作为前置 |
+| 难度分级 | 需求澄清完成；`requirement-classification.json` 必须可由 requirement + clarification（及 scope escalation）纯函数重算 |
+| to-be 方案和 task 拆分 | 需求澄清和难度分级完成；lightweight 不依赖 as-is，full 必须先完成 as-is |
+| to-be 对抗完整性审查 | `plan:design` 已完成；`to-be/adversarial-review.json` 必须 `status=pass` 且 `to-be-adversarial-approved` gate 通过 |
 | worktree 决策 | to-be 方案已确认（`confirmations/to-be.json` 通过 gate） |
 | task 初始化 | worktree 决策已完成（`worktree-decision.json` 通过 gate） |
-| coding | task 初始化且 `--next-tasks` 返回该 task |
+| coding | task 初始化且 `--next-tasks` 返回该 task；quick route 还必须通过 `quick-dev-ready` |
 | 需求级 CR | 所有 task 编码完成（无待编码、无待返修 task） |
 | 返修 | CR 结论为 `needs_rework` 且返修次数 < 5 |
 | 最终总结 | 所有 task 已批准且需求追溯完整 |
@@ -44,8 +46,9 @@ status 严格只读；runner 持久化租约/恢复点并通过 `orchestration-t
 
 ### 3. 用户确认不可跳过 `[P2, P4]`
 
-`understand:confirm`、`plan:confirm` 和 `review:merge` 必须等用户明确确认后才能创建结构化确认文件。
+`understand:confirm`、`plan:confirm` 和 `review:merge` 必须等用户明确确认后才能创建结构化确认文件；`plan:confirm` 之前必须先通过机器强制的 `plan:adversarial-review`，审查失败不得让用户 review。
 旧 `.as-is-confirmed` / `.to-be-confirmed` marker 仅用于历史运行目录兼容，新流程不得只创建 marker。  
+classified 新流程的 `confirmations/to-be.json` 必须绑定统一 `plan_fingerprint`；tasks、traceability、risk、design-notes、对抗审查、implementation-plan 或 Writer receipt 任一变化都必须重新确认。快速 scope 超限时写 `scope-escalation.json` 并重新分类，禁止继续 coding。
 不要因"需求描述很清楚"而绕过确认。
 
 ### 4. 每轮循环必须调用恢复点脚本 `[P2]`

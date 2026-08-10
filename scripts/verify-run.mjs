@@ -95,8 +95,14 @@ function verificationRoots(ideaDir, fallbackRoot) {
   if (!existsSync(decisionPath)) return [resolve(fallbackRoot)];
   try {
     const decision = JSON.parse(readFileSync(decisionPath, 'utf8'));
-    if (decision.schema_version !== 2 || !Array.isArray(decision.repos) || decision.repos.length === 0) return [resolve(fallbackRoot)];
-    return [...new Set(decision.repos.map(repo => repo.worktree_path || repo.path).filter(Boolean).map(path => isAbsolute(path) ? path : resolve(fallbackRoot, path)))];
+    if (![2, 3].includes(decision.schema_version) || !Array.isArray(decision.repos) || decision.repos.length === 0) return [resolve(fallbackRoot)];
+    const roots = decision.repos.map(repo => {
+      // v3 worktree records use repo_path + worktree_path; v2 records usually
+      // only have path.  Prefer the actual worktree checkout for verification,
+      // then tolerate the aliases emitted by older multi-repo commands.
+      return repo?.worktree_path || repo?.path || repo?.repo_path || repo?.project_root || repo?.root;
+    }).filter(Boolean).map(path => isAbsolute(path) ? path : resolve(fallbackRoot, path));
+    return [...new Set(roots)];
   } catch {
     return [resolve(fallbackRoot)];
   }

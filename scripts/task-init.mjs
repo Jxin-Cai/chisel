@@ -99,6 +99,23 @@ function validateTask(task, index, options = {}) {
   if (!task.rollback) throw new Error(`${taskId} missing rollback`);
   if (task.task_complexity && !VALID_TASK_COMPLEXITIES.has(task.task_complexity)) throw new Error(`${taskId} task_complexity must be trivial, standard, or complex`);
   validateFilePlan(task, options);
+  const acceptanceRefs = [];
+  for (const [acIndex, criterion] of task.acceptance_criteria.entries()) {
+    if (typeof criterion === 'string') continue;
+    if (!criterion || typeof criterion !== 'object' || Array.isArray(criterion)) throw new Error(`${taskId} acceptance_criteria[${acIndex}] must be string or object`);
+    if (!criterion.id || typeof criterion.id !== 'string') throw new Error(`${taskId} acceptance_criteria[${acIndex}] missing id`);
+    if (!criterion.description || typeof criterion.description !== 'string') throw new Error(`${criterion.id} missing description`);
+    acceptanceRefs.push(criterion.id);
+    for (const [vcIndex, vc] of (Array.isArray(criterion.verification_conditions) ? criterion.verification_conditions : []).entries()) {
+      if (!vc?.id || typeof vc.id !== 'string') throw new Error(`${criterion.id} verification_conditions[${vcIndex}] missing id`);
+      if (!vc.condition || typeof vc.condition !== 'string') throw new Error(`${criterion.id}/${vc.id} missing condition`);
+      acceptanceRefs.push(`${criterion.id}/${vc.id}`);
+    }
+  }
+  if (acceptanceRefs.length > 0) {
+    const missingAcceptanceRefs = acceptanceRefs.filter(ref => !task.trace_refs.includes(ref));
+    if (missingAcceptanceRefs.length > 0) throw new Error(`${taskId} trace_refs missing acceptance/verification refs: ${missingAcceptanceRefs.join(', ')}`);
+  }
   return task;
 }
 
@@ -124,7 +141,14 @@ function bulletList(values = []) {
 }
 
 function checkboxList(values = []) {
-  return values.map(value => `- [ ] ${value}`).join('\n');
+  return values.map(value => {
+    if (value && typeof value === 'object') {
+      const verification = Array.isArray(value.verification_conditions) && value.verification_conditions.length > 0
+        ? ` (${value.verification_conditions.map(vc => `${vc.id}: ${vc.condition}`).join('; ')})` : '';
+      return `- [ ] ${value.id}: ${value.description}${verification}`;
+    }
+    return `- [ ] ${value}`;
+  }).join('\n');
 }
 
 function inlineList(values = []) {
@@ -167,6 +191,8 @@ description: ${JSON.stringify(task.title)}
 expected_files: ${yamlList(task.expected_files || [])}
 trace_refs: ${yamlList(task.trace_refs || [])}
 change_point_refs: ${yamlList(task.change_point_refs || [])}
+allowed_files: ${yamlList(task.allowed_files || [])}
+forbidden_files: ${yamlList(task.forbidden_files || [])}
 ${task.file_plan ? 'file_plan_schema_version: 1\n' : ''}allowed_symbols: ${yamlList(task.allowed_symbols || [])}
 forbidden_symbols: ${yamlList(task.forbidden_symbols || [])}
 exports: ${yamlList(task.exports || [])}

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "required": ["schema_version", "source_step", "status", "attempt", "findings", "unresolved_findings", "reviewed_files", "requirement_coverage", "evidence"],
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "source_step": { "type": "string" },
+    "status": { "type": "string", "enum": ["pass", "fail", "blocked"] },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "findings": { "type": "array" },
+    "unresolved_findings": { "type": "array" },
+    "reviewed_files": { "type": "array" },
+    "requirement_coverage": { "type": "array" },
+    "evidence": { "type": "array" }
+  }
+}

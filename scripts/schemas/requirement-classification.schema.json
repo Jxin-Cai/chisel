@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_step", "classified_at", "input_fingerprint", "difficulty", "delivery_complexity", "routing_complexity", "risk_level", "uncertainty_level", "execution_profile", "subagent_budget", "signals", "reasons"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "source_step": { "const": "classify:requirement" },
+    "classified_at": { "type": "string", "format": "date-time" },
+    "input_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "difficulty": { "enum": ["simple", "moderate", "complex"] },
+    "delivery_complexity": { "enum": ["hotfix", "minor", "trivial", "moderate", "standard", "complex"] },
+    "routing_complexity": { "enum": ["hotfix", "minor", "trivial", "moderate", "standard", "complex"] },
+    "risk_level": { "enum": ["low", "medium", "high"] },
+    "uncertainty_level": { "enum": ["low", "medium", "high"] },
+    "execution_profile": { "enum": ["direct", "lightweight", "full"] },
+    "subagent_budget": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_concurrent", "discovery", "planning", "document_writers", "reviewers"],
+      "properties": {
+        "max_concurrent": { "type": "integer", "minimum": 1 },
+        "discovery": { "type": "integer", "minimum": 0 },
+        "planning": { "type": "integer", "minimum": 0 },
+        "document_writers": { "type": "integer", "minimum": 0 },
+        "reviewers": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "signals": {
+      "type": "object", "additionalProperties": false,
+      "required": ["acceptance_criteria", "verification_conditions", "scope_items", "broad_scope", "cross_boundary", "data_api_migration", "high_risk_domain", "explicit_risk", "low_risk_tolerance", "architectural", "uncertain"],
+      "properties": {
+        "acceptance_criteria": { "type": "integer", "minimum": 0 },
+        "verification_conditions": { "type": "integer", "minimum": 0 },
+        "scope_items": { "type": "integer", "minimum": 0 },
+        "broad_scope": { "type": "boolean" },
+        "cross_boundary": { "type": "boolean" },
+        "data_api_migration": { "type": "boolean" },
+        "high_risk_domain": { "type": "boolean" },
+        "explicit_risk": { "type": ["string", "null"], "enum": ["low", "medium", "high", null] },
+        "low_risk_tolerance": { "type": "boolean" },
+        "architectural": { "type": "boolean" },
+        "uncertain": { "type": "boolean" }
+      }
+    },
+    "reasons": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+  }
+}

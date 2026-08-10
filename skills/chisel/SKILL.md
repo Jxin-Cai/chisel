@@ -109,8 +109,10 @@ digraph chisel_flow {
   explore [label="understand:explore"];
   u_confirm [label="understand:confirm"];
   clarify [label="clarify:requirement"];
+  classify [label="classify:requirement\n(difficulty/profile/budget)"];
   quickdev [label="quick-dev:init\n(trivial only)"];
   design [label="plan:design"];
+  adversarial [label="plan:adversarial-review\n(machine completeness gate)"];
   p_confirm [label="plan:confirm"];
   worktree [label="worktree:setup\nregistry + locator"];
   tasks [label="tasks:init"];
@@ -123,13 +125,18 @@ digraph chisel_flow {
   merge_review [label="review:merge\ncurrent change report + HIL"];
   done [label="done"];
 
-  receive -> explore [label="standard/complex"];
-  receive -> clarify [label="trivial/moderate"];
-  explore -> u_confirm -> clarify;
-  clarify -> quickdev [label="trivial"];
-  clarify -> design [label="moderate/standard/complex"];
+  receive -> clarify [label="all non-hotfix"];
+  receive -> quickdev [label="bounded low-risk hotfix"];
+  clarify -> classify;
+  classify -> quickdev [label="minor/trivial direct"];
+  classify -> design [label="moderate lightweight"];
+  classify -> explore [label="standard/complex full"];
+  explore -> u_confirm -> design;
   quickdev -> implement;
-  design -> p_confirm -> worktree;
+  design -> adversarial;
+  adversarial -> p_confirm [label="pass"];
+  adversarial -> design [label="findings / repair"];
+  p_confirm -> worktree;
   worktree -> tasks;
   tasks -> implement -> review;
   implement -> review_light [label="trivial"];
@@ -199,12 +206,14 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 | `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
 | `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-confirmed` |
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
-| `quick-dev:init` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}`（trivial only：自动生成 task + worktree-decision + traceability-matrix） | `task-workflow-exists` |
+| `classify:requirement` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR}`；展示 difficulty、execution_profile、reasons 和 subagent_budget | `requirement-classified` |
+| `quick-dev:init` | 先执行轻量只读 discovery，写入非空 `quick-dev-scope.json`（`scope_mode=explicit`，含 `allowed_files`、`expected_files`、禁区和 AC）；超过 2 文件/2 模块、含宽泛 glob 或非低风险时写 `scope-escalation.json` 并回到 `classify:requirement`，不得继续实现。随后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}` | `quick-dev-ready` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
+| `plan:adversarial-review` | 运行 fresh reviewer 对照 requirement/clarification/as-is 与全部 to-be 结构化产物；写入 `to-be/adversarial-review.json`/`.md`。`fail` 必须修复 tasks/traceability/impact/implementation plan 后重跑，达到上限进入 `blocked` | `to-be-adversarial-approved` |
 | `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-confirmed` |
 | `worktree:setup` | 多仓 worktree 设置：先运行 `multi-repo-worktree.mjs --detect <workspace-root>`，由用户确认仓库列表和隔离策略；yes → `--create <idea-name> --workspace <workspace-root> --repos ...`，创建每仓同逻辑分支并写入持久 v3 registry；no → 仍需显式记录 current-branch 决策。恢复时必须先运行 `--locate/--resume`，读取 decision/registry 并用 `git worktree list --porcelain` 验证路径；旧 v1/v2 decision 继续接受 | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
-| `implement:code` | `/chisel-implement <idea-name>` | `implementation-verified` |
+| `implement:code` | quick route 必须先通过 `quick-dev-ready`；否则禁止启动 coder。其余路径运行 `/chisel-implement <idea-name>` | `implementation-verified` |
 | `review:cr` | `/chisel-review <idea-name>`；先运行 `review-selector.mjs`，spec 必跑，再按实际 diff/path/content 选择维度和 Dynamic Workflow batches；旧 D2-D9 通过 skipped/auto-pass projection 兼容。 | `cr-complete` |
 | `review:cr-moderate` | `/chisel-review <idea-name>`（默认 moderate 维度由 selector 决定；高风险信号会升级） | `cr-complete` |
 | `review:cr-light` | `/chisel-review <idea-name>`（仅小型低风险 diff 使用；spec 必跑并记录 lite 理由） | `cr-complete` |
@@ -217,7 +226,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references`
 > 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
-> 可用 gate（仅限以下值）：`requirement-exists` | `as-is-complete` | `as-is-confirmed` | `clarification-complete` | `quick-dev-ready` | `to-be-exists` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `implementation-verified` | `cr-complete` | `integration-cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `final-summary-complete` | `merge-review-report-exists` | `merge-review-confirmed` | `done`。不要发明其他 gate 名称。
+> 可用 gate（仅限以下值）：`requirement-exists` | `clarification-complete` | `requirement-classified` | `as-is-complete` | `as-is-human-docs-ready` | `as-is-confirmed` | `quick-dev-ready` | `to-be-exists` | `to-be-human-docs-ready` | `to-be-adversarial-approved` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `implementation-verified` | `cr-complete` | `integration-cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `final-summary-complete` | `merge-review-report-exists` | `merge-review-confirmed` | `done`。不要发明其他 gate 名称。
 
 ### Complexity 分级
 
@@ -226,9 +235,9 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 | complexity | 路径 | 判定条件 |
 |---|---|---|
 | `hotfix` | `receive-requirement` → `quick-dev:init` → `implement:code` → `review:cr-light` → `final:summary` → `review:merge` → `done` | 显式标记 `## 复杂度: hotfix` |
-| `minor` | `receive-requirement` → `clarify:requirement` → `quick-dev:init` → `implement:code` → `review:cr-light` → `final:summary` → `review:merge` → `done` | 显式标记 `## 复杂度: minor` |
-| `trivial` | `receive-requirement` → `clarify:requirement` → `quick-dev:init` → `implement:code` → `review:cr-light` → `final:summary` → `review:merge` → `done` | 自动检测：≤2 scope items，无新表/接口 |
-| `moderate` | `receive-requirement` → `clarify:requirement` → `plan:design` → `plan:confirm` → `worktree:setup` → `tasks:init` → `implement:code` → `review:cr-moderate` → `final:summary` → `review:merge` → `done` | 自动检测：3–4 scope items，无新表/接口 |
+| `minor` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `quick-dev:init` → `implement:code` → `review:cr-light` → `final:summary` → `review:merge` → `done` | 澄清后 direct；≤2 文件/2 模块且低风险 |
+| `trivial` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `quick-dev:init` → `implement:code` → `review:cr-light` → `final:summary` → `review:merge` → `done` | 澄清后 direct；超 scope gate 自动升级 |
+| `moderate` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `plan:design` → `plan:adversarial-review` → `plan:confirm` → `worktree:setup` → `tasks:init` → `implement:code` → `review:cr-moderate` → `final:summary` → `review:merge` → `done` | lightweight，不依赖 as-is |
 | `standard` | 完整流程 | 默认 |
 | `complex` | 完整流程 + spike | >5 scope items |
 

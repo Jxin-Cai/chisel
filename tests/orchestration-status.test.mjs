@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initTaskState, initWorkflowState } from '../scripts/workflow-lib.mjs';
+import { writeRequirementClassification } from '../scripts/requirement-classify.mjs';
 
 function makeTmpDir() {
   return mkdtempSync(join(tmpdir(), 'chisel-orchestration-'));
@@ -31,6 +32,7 @@ function writeTrivialClarification(ideaDir) {
       acceptance_criteria: ['AC-001: works']
     }
   }));
+  writeRequirementClassification(ideaDir);
 }
 
 function runOrchestration(ideaDir) {
@@ -61,8 +63,8 @@ describe('orchestration review recovery', () => {
     const result = runOrchestration(ideaDir);
 
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /resume_step: review:cr-light/);
-    assert.match(result.stdout, /next_tasks: task-002/);
+    assert.match(result.stdout, /resume_step: quick-dev:init/);
+    assert.match(result.stdout, /quick-dev-scope.json missing/);
     assert.doesNotMatch(result.stdout, /no executable next step found/);
   });
 
@@ -75,8 +77,8 @@ describe('orchestration review recovery', () => {
     const result = runOrchestration(ideaDir);
 
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /resume_step: review:cr-light/);
-    assert.match(result.stdout, /next_tasks: task-002/);
+    assert.match(result.stdout, /resume_step: quick-dev:init/);
+    assert.match(result.stdout, /quick-dev-scope.json missing/);
   });
 
   it('resumes trivial workflow from coding task before it is stale', () => {
@@ -87,8 +89,8 @@ describe('orchestration review recovery', () => {
     const result = runOrchestration(ideaDir);
 
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /resume_step: implement:code/);
-    assert.match(result.stdout, /in_progress_tasks: task-001/);
+    assert.match(result.stdout, /resume_step: quick-dev:init/);
+    assert.match(result.stdout, /quick-dev-scope.json missing/);
     assert.doesNotMatch(result.stdout, /no executable next step found/);
   });
 
@@ -100,8 +102,8 @@ describe('orchestration review recovery', () => {
     const result = runOrchestration(ideaDir);
 
     assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /resume_step: repair:code/);
-    assert.match(result.stdout, /in_progress_tasks: task-001/);
+    assert.match(result.stdout, /resume_step: quick-dev:init/);
+    assert.match(result.stdout, /quick-dev-scope.json missing/);
     assert.doesNotMatch(result.stdout, /no executable next step found/);
   });
 

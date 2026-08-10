@@ -28,6 +28,27 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} understand:exp
 
 ---
 
+## plan:adversarial-review 详细行为
+
+此步骤位于 `plan:design` 与 `plan:confirm` 之间，且不是用户确认。由 fresh reviewer 读取
+`requirement.md`、`requirement-clarification.json`/clarifications、完整 as-is 证据，以及
+`to-be/implementation-plan.md`、`tasks.json`、`traceability-matrix.json`、
+`impact-risk-report.json` 和条件性 data/api change plans。审查必须逐项记录 requirement、AC、VC
+的覆盖和 implementation/change point/task/file/verification 证据，并写入
+`to-be/adversarial-review.json` 与 `to-be/adversarial-review.md`。JSON 的 `status` 只能为
+`pass`、`fail` 或 `blocked`，并且包含 `findings`、`evidence`、`reviewed_files`、`attempt`。
+`reviewed_files` 必须逐文件记录 `path` 与当前内容的 `sha256`；`requirement_coverage` 必须为每个
+AC/VC 记录非空 `task_refs`、`change_point_refs`、`file_refs`、`verification_refs`、自然语言证据和
+`status=pass`。每轮完成后运行
+`node ${CLAUDE_PLUGIN_ROOT}/scripts/adversarial-review.mjs {IDEA_DIR} --check`，不能手工判断通过。
+
+`to-be-adversarial-approved` gate 机器校验该记录：缺失、空矩阵、未映射 AC/VC、未知 task ref、
+占位 evidence 或结构化产物不一致均失败。`fail` 必须将 findings 转为可执行的 task/traceability/
+impact/implementation-plan 修复，再运行结构校验和新的 fresh review；失败只能回到
+`plan:design`，不能进入 `plan:confirm`。审查轮次达到上限时状态为 `blocked`，保留 findings 供
+恢复，不得通过 marker 或 prompt 绕过。只有 `status=pass` 且 gate 通过后，才允许生成方案审阅页
+并向用户提问。
+
 ## plan:confirm 详细行为
 
 进入本步骤后，先生成并交付可独立打开的方案审阅页，再向用户提问。不得先提问、写入
@@ -66,6 +87,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
   "status": "confirmed",
   "confirmed_at": "<ISO 8601>",
   "confirmed_by": "user",
+  "plan_fingerprint": "<node ${CLAUDE_PLUGIN_ROOT}/scripts/to-be-fingerprint.mjs {IDEA_DIR} 的完整 stdout>",
   "source_files": ["to-be/implementation-plan.md", "to-be/tasks.json", "to-be/traceability-matrix.json", "to-be/impact-risk-report.json"],
   "task_acknowledgement": {
     "task_ids": ["task-001", "task-002"],
@@ -84,6 +106,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 - `risk_acknowledgement.reviewed` 必须为 `true`
 - `risk_acknowledgement.risk_level` 应填 impact-risk-report.json 的 `summary.risk_level`
 - `risk_acknowledgement.risk_count` 应填 `risk_matrix` 数组长度
+- classified 新流程必须在用户点击确认的同一时刻运行 `to-be-fingerprint.mjs` 并原样写入 `plan_fingerprint`。implementation plan、tasks、traceability、risk、design-notes、对抗审查或 writer receipt 任一变化都会使确认失效，必须重新展示并让用户确认
 - 任何字段缺失或值错误都会导致 `to-be-confirmed` gate 失败
 
 新流程不得只创建 `.to-be-confirmed` marker；该 marker 仅用于历史运行目录兼容。

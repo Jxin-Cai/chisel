@@ -56,6 +56,20 @@ function has(ideaDir, rel) {
   return existsSync(join(ideaDir, rel));
 }
 
+function adversarialReviewExhausted(ideaDir) {
+  const file = join(ideaDir, 'to-be/adversarial-review.json');
+  if (!existsSync(file)) return null;
+  try {
+    const review = JSON.parse(readFileSync(file, 'utf8'));
+    const status = String(review.status || review.result || '').toLowerCase();
+    return status !== 'pass' && Number(review.attempt || 0) >= 5
+      ? { attempt: Number(review.attempt), findings: Array.isArray(review.findings) ? review.findings : [] }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function ensureVerificationBeforeReview(ideaDir, reviewTasks, reviewStep, reason, phaseDetail = {}) {
   const state = readTaskState(taskStateFile(ideaDir));
   const unstartedReviewTasks = reviewTasks.filter(taskId => state.tasks[taskId]?.status === 'coded');
@@ -124,6 +138,23 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     return buildResult('receive-requirement', 'requirement.md does not exist', ideaDir);
   }
 
+  // Hotfix is the only route allowed to skip clarification. All other routes
+  // are selected from the clarified, fingerprinted requirement.
+  const preflightComplexity = detectComplexity(ideaDir);
+  let escalationRequired = false;
+  try { escalationRequired = JSON.parse(readFileSync(join(ideaDir, 'scope-escalation.json'), 'utf8'))?.required === true; } catch { /* absent/malformed is handled by later gates */ }
+  const eligibleUnclarifiedHotfix = !escalationRequired && preflightComplexity === 'hotfix' && classifyChange(ideaDir).routing_complexity === 'hotfix';
+  if (!eligibleUnclarifiedHotfix) {
+    const clarificationGate = checkGate(ideaDir, 'clarification-complete');
+    if (!clarificationGate.pass) {
+      return buildResult('clarify:requirement', 'requirement clarification is required before difficulty classification', ideaDir, { gate_reason: clarificationGate.reason });
+    }
+    const classificationGate = checkGate(ideaDir, 'requirement-classified');
+    if (!classificationGate.pass) {
+      return buildResult('classify:requirement', 'post-clarification difficulty classification is missing or stale', ideaDir, { gate_reason: classificationGate.reason });
+    }
+  }
+
   const complexity = classifyChange(ideaDir).routing_complexity;
 
   // === HOTFIX QUICK PATH ===
@@ -131,6 +162,8 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     if (!has(ideaDir, 'task-workflow-state.yaml')) {
       return buildResult('quick-dev:init', 'auto-generating hotfix task (single-file, ≤5 lines)', ideaDir, { complexity });
     }
+    const quickGate = checkGate(ideaDir, 'quick-dev-ready');
+    if (!quickGate.pass) return buildResult('quick-dev:init', 'quick-dev contract is missing, invalid, or requires scope escalation', ideaDir, { complexity, gate_reason: quickGate.reason });
     const staleTasks = getStaleCodingTasks(ideaDir);
     if (staleTasks.length > 0) {
       return buildResult('implement:code', 'stale coding tasks detected', ideaDir, { stale_tasks: staleTasks.map(t => t.taskId), complexity });
@@ -174,6 +207,8 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     if (!has(ideaDir, 'task-workflow-state.yaml')) {
       return buildResult('quick-dev:init', 'auto-generating task from requirement-clarification (minor quick-dev)', ideaDir, { complexity });
     }
+    const quickGate = checkGate(ideaDir, 'quick-dev-ready');
+    if (!quickGate.pass) return buildResult('quick-dev:init', 'quick-dev contract is missing, invalid, or requires scope escalation', ideaDir, { complexity, gate_reason: quickGate.reason });
     const staleTasks = getStaleCodingTasks(ideaDir);
     if (staleTasks.length > 0) {
       return buildResult('implement:code', 'stale coding tasks detected', ideaDir, { stale_tasks: staleTasks.map(t => t.taskId), complexity });
@@ -217,6 +252,8 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     if (!has(ideaDir, 'task-workflow-state.yaml')) {
       return buildResult('quick-dev:init', 'auto-generating task from requirement-clarification (trivial quick-dev)', ideaDir, { complexity });
     }
+    const quickGate = checkGate(ideaDir, 'quick-dev-ready');
+    if (!quickGate.pass) return buildResult('quick-dev:init', 'quick-dev contract is missing, invalid, or requires scope escalation', ideaDir, { complexity, gate_reason: quickGate.reason });
     const staleTasks = getStaleCodingTasks(ideaDir);
     if (staleTasks.length > 0) {
       return buildResult('implement:code', 'stale coding tasks detected', ideaDir, { stale_tasks: staleTasks.map(t => t.taskId), complexity });
@@ -262,7 +299,12 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       return buildResult('clarify:requirement', 'moderate clarification needed (4 dimensions: functional_scope, acceptance_criteria, compatibility_constraints, priority)', ideaDir, { complexity });
     }
     if (!checkGate(ideaDir, 'to-be-exists').pass) {
-      return buildResult('plan:design', 'lightweight plan needed (moderate: no impact-risk-report)', ideaDir, { complexity });
+      return buildResult('plan:design', 'lightweight plan needed (moderate: bounded source manifest and lightweight impact-risk-report)', ideaDir, { complexity });
+    }
+    if (!checkGate(ideaDir, 'to-be-adversarial-approved').pass) {
+      const exhausted = adversarialReviewExhausted(ideaDir);
+      if (exhausted) return buildResult('blocked', 'to-be adversarial review reached its repair limit', ideaDir, { complexity, ...exhausted });
+      return buildResult('plan:adversarial-review', 'an adversarial completeness review is required before plan confirmation', ideaDir, { complexity });
     }
     if (!checkGate(ideaDir, 'to-be-confirmed').pass) {
       return buildResult('plan:confirm', 'plan confirmation is missing', ideaDir, { complexity });
@@ -325,6 +367,11 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
   }
   if (!checkGate(ideaDir, 'to-be-exists').pass) {
     return buildResult('plan:design', 'implementation plan does not exist', ideaDir, { complexity });
+  }
+  if (!checkGate(ideaDir, 'to-be-adversarial-approved').pass) {
+    const exhausted = adversarialReviewExhausted(ideaDir);
+    if (exhausted) return buildResult('blocked', 'to-be adversarial review reached its repair limit', ideaDir, { complexity, ...exhausted });
+    return buildResult('plan:adversarial-review', 'an adversarial completeness review is required before plan confirmation', ideaDir, { complexity });
   }
   if (!checkGate(ideaDir, 'to-be-confirmed').pass) {
     return buildResult('plan:confirm', 'plan confirmation is missing', ideaDir, { complexity });

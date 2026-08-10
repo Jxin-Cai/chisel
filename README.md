@@ -14,7 +14,7 @@
 
 <br/>
 
-Chisel is a [Claude Code](https://github.com/anthropics/claude-code) plugin that enforces a structured workflow for adding features to legacy systems: understand as-is → confirm to-be plan → decompose tasks → implement → architect CR → rework loop → review the current change report → approve delivery.
+Chisel is a [Claude Code](https://github.com/anthropics/claude-code) plugin that enforces a structured workflow for adding features to legacy systems: understand as-is → design to-be → run an adversarial completeness review → confirm the plan → decompose tasks → implement → architect CR → rework loop → review the current change report → approve delivery. The adversarial review is machine-gated: an incomplete plan cannot be shown to the user for confirmation.
 
 Every step produces file-based artifacts, making it easy to resume after interruption and audit every AI decision.
 
@@ -117,8 +117,9 @@ Chisel stores runtime artifacts under the Git common root at `.chisel/<idea-name
 ### Overview
 
 ```
-Receive requirement → Understand as-is → User confirm → [Generate AI input]
-→ Strategy design → User confirm strategy → Task decomposition → User confirm tasks
+Receive requirement → Clarify requirement → Classify difficulty/profile
+→ [Full only: Understand as-is → async Writer → User confirm]
+→ Strategy design → async Writer → Adversarial completeness review (repair loop) → User confirm strategy
 → Init tasks → Code → Architect CR → [Rework loop]
 → Final summary → Current Change Report → User merge decision → Delivery
 ```
@@ -130,37 +131,40 @@ Bracketed steps may be skipped depending on complexity classification.
 | # | Step | Description |
 |---|---|---|
 | 1 | **Receive requirement** | Parse user input, save as `requirement.md` |
-| 2 | **Understand as-is** | Explorer agent reads code, produces overview, core-walkthrough, evidence-index |
-| 3 | **Confirm as-is** | Human reviews 3-minute summary, risk map, misconceptions, signs off |
-| 4 | **Generate AI input** | Distill human docs into structured AI-consumable format (skipped on short paths) |
+| 2 | **Clarify and classify** | Clarify first, then persist a fingerprinted difficulty, risk, execution profile, and subagent budget |
+| 3 | **Understand as-is (full only)** | Explorer/analyst produce structured evidence; a background Writer produces fresh human documents from the complete source manifest |
+| 4 | **Confirm as-is (full only)** | Human reviews 3-minute summary, risk map, misconceptions, signs off |
 | 5 | **Design strategy** | Planner produces implementation plan, tasks, traceability matrix |
-| 6 | **Confirm plan** | Human reviews strategy and task decomposition, signs off |
-| 7 | **Init tasks** | Generate task files and state machine from `tasks.json` |
-| 8 | **Code** | Coder agent implements within scoped file boundaries |
-| 9 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
-| 10 | **Rework loop** | Up to 5 rounds per task; later rounds use a fresh agent and then become blocked |
-| 11 | **Final summary** | Aggregate changes, scope control, and delivery receipts |
-| 12 | **Merge review** | Generate the current change report; require Approve, Request changes, or Comment/hold |
-| 13 | **Delivery** | Convert, merge, or resolve through isolated integration worktrees after approval |
+| 6 | **Adversarial completeness review** | A fresh reviewer checks every requirement/AC/VC against the complete to-be artifacts; findings force a planner repair and another review |
+| 7 | **Confirm plan** | Human reviews only after the adversarial gate passes |
+| 8 | **Init tasks** | Generate task files and state machine from `tasks.json` |
+| 9 | **Code** | Coder agent implements within scoped file boundaries |
+| 10 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
+| 11 | **Rework loop** | Up to 5 rounds per task; later rounds use a fresh agent and then become blocked |
+| 12 | **Final summary** | Aggregate changes, scope control, and delivery receipts |
+| 13 | **Merge review** | Generate the current change report; require Approve, Request changes, or Comment/hold |
+| 14 | **Delivery** | Convert, merge, or resolve through isolated integration worktrees after approval |
 
 ### Complexity Classification
 
 | Level | Criteria | Effect |
 |---|---|---|
-| `hotfix` | Explicit urgent fix with a bounded scope | Quick path with spec-only review |
+| `hotfix` | Explicit urgent fix, low risk, one bounded file | Quick path with spec-only review; otherwise auto-escalate |
 | `minor` | Small compatible behavior change | Clarify, quick path, spec-only review |
 | `trivial` | ≤ 2 files, no new tables/APIs, < 3 cross-module dirs | Quick path with spec-only review |
-| `moderate` | 3–4 scope items without new tables/APIs | Plan/tasks plus spec and D3–D5 review |
+| `moderate` | Conservative post-clarification floor or bounded multi-file change | Lightweight plan from requirement/clarification plus a bounded source manifest; no as-is agents |
 | `standard` | Cross-module or boundary change | Full as-is/to-be flow plus integration review |
 | `complex` | High-risk, multi-repo, migration, or broad change | Full flow with all review dimensions and integration review |
 
 ### Human Checkpoints
 
-Chisel has **3 mandatory human gates** that pause the workflow:
+Chisel has **up to 3 human gates**, selected by the classified workflow:
 
 1. **As-is confirmation** — verify understanding of current system behavior
 2. **To-be confirmation** — approve implementation direction, task decomposition, dependencies, and risk
 3. **Pre-merge review** — review the generated change report and explicitly approve the exact Git/workspace snapshot
+
+The full route uses all three gates. The moderate route skips as-is confirmation and uses To-be plus pre-merge review. Direct hotfix/minor/trivial routes skip both design confirmations and normally require only the exact pre-merge review.
 
 Confirmation decisions are persisted in the idea directory and are read by the orchestrator on every resume; no hidden sidecar knowledge store is required.
 
@@ -212,6 +216,8 @@ Rollback only cleans whitelisted runtime artifacts — never deletes business so
   implementation-plan.md       # Strategy and design decisions
   tasks.json                   # Machine-readable task definitions
   traceability-matrix.json     # Requirement → task traceability
+  adversarial-review.md        # Human-readable completeness findings and evidence
+  adversarial-review.json      # Machine-gated pass/findings record
 .chisel/<idea-name>/tasks/
   task-001.md                  # Task file with Exports/Imports
 .chisel/<idea-name>/task-workflow-state.yaml
@@ -255,6 +261,12 @@ After coding, `scope-check.mjs` verifies:
 - No forbidden file modifications
 - No undeclared new public exports
 
+### To-be completeness gate
+
+Before `plan:confirm`, `plan:adversarial-review` runs a fresh, adversarial comparison of `requirement.md`, clarification AC/VC, as-is evidence, and every structured to-be artifact. It writes `to-be/adversarial-review.json` and `.md`. A `fail` result includes actionable findings and routes back to `plan:design`; only a machine-validated `pass` can reach user confirmation. The loop has a bounded retry count and becomes `blocked` rather than silently allowing an incomplete plan.
+
+Traceability is strict in schema v2+: missing or empty matrices fail, every AC and verification condition needs an exact mapping, and task-to-matrix references are checked in both directions. Implementation cannot pass on a vague report: each task must have non-placeholder Acceptance Criteria Result and Traceability Evidence, and `Completion Status: DONE` (or an explicitly reviewed `DONE_WITH_CONCERNS`) before verification/review.
+
 ### Stale Detection
 
 A task becomes stale when its `run_id` lease expires. Long operations renew the lease with a heartbeat instead of relying on a fixed 30-minute guess.
@@ -293,6 +305,8 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `control-plane.mjs` | Resolves the shared control plane across linked worktrees |
 | `orchestration-transition.mjs` | Explicit revision-checked state transition and event recording |
 | `gate-check.mjs` | Phase postcondition gate validation |
+| `traceability-check.mjs` | Bidirectional AC/VC → task coverage and final approval check |
+| `adversarial-review.mjs` | Deterministic to-be completeness review and bounded repair-loop record |
 | `task-init.mjs` | Initialize task files and state machine |
 | `workflow-status.mjs` | Task state query, rollback, overlap detection |
 | `task-provenance.mjs` | Per-task baseline/result fingerprint and changed-file ownership |

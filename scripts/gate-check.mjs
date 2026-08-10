@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
+import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, readRequirementClassification, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { validateTasksDocument } from './task-init.mjs';
 import { validateVerificationResult } from './verification-lib.mjs';
 import { readTaskRun } from './task-provenance.mjs';
 import { validateMergeReviewConfirmation, validateMergeReviewReport } from './merge-review.mjs';
+import { checkDocumentJob } from './document-job.mjs';
+import { computeRequirementClassification } from './requirement-classify.mjs';
 
 import { getTaskScope } from './scope-check.mjs';
 import { validateJsonFile } from './schemas/validate.mjs';
@@ -76,6 +79,21 @@ function meaningfulLines(text) {
   return String(text || '').split('\n')
     .map(line => line.trim())
     .filter(line => line && !line.startsWith('|---') && !/^\|\s*-+/.test(line) && !PLACEHOLDER_RE.test(line));
+}
+
+function canonicalOpenQuestions(doc) {
+  const open = [];
+  for (const key of ['unresolved', 'open_questions', 'unresolved_questions']) {
+    for (const value of [doc?.[key], doc?.dimensions?.[key]]) {
+      const items = Array.isArray(value) ? value : value === undefined || value === null || value === false ? [] : [value];
+      for (const item of items) {
+        if (item && typeof item === 'object' && String(item.status || '').toLowerCase() === 'resolved') continue;
+        const text = typeof item === 'string' ? item.trim() : item === true ? 'true' : item && typeof item === 'object' && Object.keys(item).length ? JSON.stringify(item) : '';
+        if (text && !/^(?:none|no|no(?:\s+(?:open|unresolved))?\s+questions?|resolved|n\/a|无(?:未决|待解决)?(?:问题|事项)?|没有(?:未决|待解决)?(?:问题|事项)?|已解决)$/i.test(text)) open.push(`${key}: ${text}`);
+      }
+    }
+  }
+  return open;
 }
 
 function hasMeaningfulSection(text, heading) {
@@ -410,16 +428,75 @@ function extractScopeCheckJson(text) {
   }
 }
 
-function validateCompletionStatus(text) {
+function validateCompletionStatus(text, { requireDone = false } = {}) {
   const section = sectionTextAnyDepth(text, 'Completion Status');
   if (!section) return 'missing ## Completion Status';
   const match = section.match(/^status[：:]\s*(\S+)\s*$/mi);
   if (!match) return 'Completion Status missing status';
   const status = match[1].trim();
   if (!VALID_COMPLETION_STATUSES.has(status)) return 'Completion Status status must be DONE/DONE_WITH_CONCERNS/NEEDS_CONTEXT/BLOCKED';
+  if (requireDone && status !== 'DONE') return `Completion Status must be DONE before review but is ${status}`;
   if (status === 'DONE_WITH_CONCERNS' && isBlankProof((section.match(/^concerns[：:]\s*(.+)$/mi) || [])[1])) return 'DONE_WITH_CONCERNS must include concerns';
   if (status === 'NEEDS_CONTEXT' && isBlankProof((section.match(/^missing_context[：:]\s*(.+)$/mi) || [])[1])) return 'NEEDS_CONTEXT must include missing_context';
   if (status === 'BLOCKED' && isBlankProof((section.match(/^blocker[：:]\s*(.+)$/mi) || [])[1])) return 'BLOCKED must include blocker';
+  return '';
+}
+
+function extractAcceptanceCriteria(taskText) {
+  const section = sectionTextAnyDepth(taskText, 'Acceptance Criteria');
+  if (!section) return [];
+  const criteria = [];
+  for (const line of section.split('\n')) {
+    const match = line.match(/\b(AC-\d{3})\b/);
+    if (!match) continue;
+    const description = line.replace(/^\s*[-*]\s*(?:\[[ xX]\]\s*)?/, '').trim();
+    criteria.push({ id: match[1], description });
+  }
+  return [...new Map(criteria.map(item => [item.id, item])).values()];
+}
+
+function validateAcceptanceCriteriaEvidence(reportText, criteria) {
+  const section = sectionTextAnyDepth(reportText, 'Acceptance Criteria Result')
+    || sectionTextAnyDepth(reportText, 'Acceptance Criteria Evidence')
+    || sectionTextAnyDepth(reportText, '验收标准结果');
+  if (!section) return criteria.length > 0 ? 'missing ## Acceptance Criteria Result' : '';
+  const lines = section.split('\n').map(line => line.trim()).filter(Boolean);
+  const table = parseMarkdownTableRowsByHeader(section, ['AC', 'Evidence', 'Result']);
+  const rows = table.rows.length > 0
+    ? table.rows.map(row => ({ id: String(row.AC || row['AC ID'] || row['验收标准'] || '').match(/AC-\d{3}/)?.[0] || '', evidence: row.Evidence || row['证据'] || '', result: row.Result || row['结果'] || '' }))
+    : lines.map(line => {
+      const id = line.match(/\bAC-\d{3}\b/)?.[0] || '';
+      const evidence = (line.match(/(?:Evidence|证据)[：:]\s*(.+)$/i) || [])[1] || '';
+      const result = (line.match(/(?:Result|结果)[：:]\s*(pass|fail)\b/i) || [])[1] || (/\[x\]|✅/i.test(line) ? 'pass' : /\[ \]|❌|\bfail\b/i.test(line) ? 'fail' : '');
+      return { id, evidence, result };
+    }).filter(row => row.id);
+  if (rows.length === 0) return 'Acceptance Criteria Result must contain at least one AC evidence row';
+  const byId = new Map(rows.map(row => [row.id, row]));
+  for (const criterion of criteria) {
+    const row = byId.get(criterion.id);
+    if (!row) return `Acceptance Criteria Result missing ${criterion.id}`;
+    if (isBlankProof(row.evidence)) return `Acceptance Criteria Evidence must be non-empty for: ${criterion.id}`;
+    if (!/^(pass|fail)$/i.test(String(row.result || '').trim())) return `Acceptance Criteria Result must be pass/fail for: ${criterion.id}`;
+    if (String(row.result).trim().toLowerCase() !== 'pass') return `Acceptance Criteria Result must be pass for: ${criterion.id}`;
+  }
+  return '';
+}
+
+function validateTraceabilityEvidence(reportText, traceRefs) {
+  if (traceRefs.length === 0) return '';
+  const section = sectionTextAnyDepth(reportText, 'Traceability Evidence');
+  if (!section) return 'missing ## Traceability Evidence';
+  const table = parseMarkdownTableRowsByHeader(section, ['Trace Ref', 'Evidence', 'Result']);
+  if (table.missingColumns.length > 0 || table.rows.length === 0) {
+    return 'Traceability Evidence must contain Trace Ref/Evidence/Result rows';
+  }
+  const rows = new Map(table.rows.map(row => [normalizeCell(row['Trace Ref']), row]));
+  for (const ref of traceRefs) {
+    const row = rows.get(ref);
+    if (!row) return `Traceability Evidence missing ${ref}`;
+    if (isBlankProof(row.Evidence)) return `Traceability Evidence must be non-empty for: ${ref}`;
+    if (normalizeCell(row.Result).toLowerCase() !== 'pass') return `Traceability Evidence must be pass for: ${ref}`;
+  }
   return '';
 }
 
@@ -476,20 +553,18 @@ function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = [],
   const text = readText(reportPath);
   if (!hasRequiredLines(reportPath, ['## 做了什么', '## 改了什么'])) return 'missing required report sections';
   if (traceRefs.length > 0) {
-    if (!hasSection(text, '## Traceability Evidence')) return 'missing ## Traceability Evidence';
-    const traceSection = sectionText(text, 'Traceability Evidence');
-    for (const ref of traceRefs) {
-      if (!traceSection.includes(ref)) return `Traceability Evidence missing ${ref}`;
-    }
-    const traceRows = meaningfulLines(traceSection).filter(line => /^\|.*\|$/.test(line));
-    const hasEvidenceRow = traceRows.some(row => {
-      const cells = row.split('|').map(cell => cell.trim()).filter(Boolean);
-      return cells.length >= 3 && !cells.includes('Trace Ref') && !cells.every(cell => /^-+$/.test(cell));
-    });
-    if (!hasEvidenceRow) return 'Traceability Evidence must contain at least one evidence row';
+    const traceReason = validateTraceabilityEvidence(text, traceRefs);
+    if (traceReason) return traceReason;
   }
   const scopeReason = validateScopeProof(text, 'report', { behaviorInvariants });
   if (scopeReason) return scopeReason;
+  const acceptanceCriteria = extractAcceptanceCriteria(taskText);
+  const acceptanceReason = validateAcceptanceCriteriaEvidence(text, acceptanceCriteria);
+  if (acceptanceReason) return acceptanceReason;
+  if (acceptanceCriteria.length > 0) {
+    const completionReason = validateCompletionStatus(text, { requireDone: true });
+    if (completionReason) return completionReason;
+  }
   if (isNewFileReportContract(ideaDir, taskText, taskFm, readFrontmatter(text))) {
     let run = null;
     try { run = taskId ? readTaskRun(ideaDir, taskId) : null; }
@@ -862,6 +937,70 @@ function validateQualityScore(ideaDir) {
   return '';
 }
 
+function normalizeTraceRefs(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(ref => String(ref || '').trim()).filter(Boolean))];
+}
+
+function taskTraceRefsFor(ideaDir, taskId, traceRefsOverride = null) {
+  if (traceRefsOverride?.has(taskId)) return normalizeTraceRefs(traceRefsOverride.get(taskId));
+  const state = has(ideaDir, 'task-workflow-state.yaml') ? readTaskState(taskStateFile(ideaDir)) : { tasks: {} };
+  const task = state.tasks?.[taskId];
+  if (!task) return [];
+  const taskPath = join(ideaDir, task.file || `tasks/${taskId}.md`);
+  if (!existsSync(taskPath)) return [];
+  return normalizeTraceRefs(readFrontmatter(readText(taskPath)).trace_refs);
+}
+
+function validateClarificationTraceability(ideaDir, items) {
+  const clarificationPath = join(ideaDir, 'requirement-clarification.json');
+  if (!existsSync(clarificationPath)) return '';
+  const parsed = readJsonFile(clarificationPath);
+  if (parsed.error) return `requirement-clarification.json invalid JSON: ${parsed.error}`;
+  const criteria = parsed.value?.dimensions?.acceptance_criteria;
+  if (!Array.isArray(criteria) || criteria.length === 0) return '';
+  const byId = new Map(items.map(item => [item?.id, item]));
+  const itemIds = new Set(items.map(item => item?.id).filter(Boolean));
+  for (const [index, criterion] of criteria.entries()) {
+    const acId = String(typeof criterion === 'string'
+      ? (criterion.match(/\bAC-\d{3}\b/)?.[0] || '')
+      : (criterion?.id || '')).trim();
+    if (!acId) return `acceptance_criteria[${index}] missing id`;
+    const item = byId.get(acId);
+    if (!item) return `${acId} missing exact traceability matrix mapping`;
+    if (item.type && item.type !== 'acceptance_criteria') return `${acId} traceability item type must be acceptance_criteria`;
+    const sourceRefs = normalizeTraceRefs(item.source_refs);
+    if (sourceRefs.length > 0 && !sourceRefs.includes(acId)) return `${acId} source_refs must include ${acId}`;
+    const vcs = typeof criterion === 'object' && Array.isArray(criterion.verification_conditions) ? criterion.verification_conditions : [];
+    for (const [vcIndex, vc] of vcs.entries()) {
+      const vcId = String(vc?.id || '').trim();
+      if (!vcId) return `${acId} verification_conditions[${vcIndex}] missing id`;
+      const ref = `${acId}/${vcId}`;
+      const vcItem = byId.get(ref);
+      if (!vcItem) return `${ref} missing exact traceability matrix mapping`;
+      if (vcItem.type && vcItem.type !== 'verification_condition') return `${ref} traceability item type must be verification_condition`;
+      const refs = normalizeTraceRefs(vcItem.source_refs);
+      if (refs.length > 0 && !(refs.includes(ref) || (refs.includes(acId) && refs.includes(vcId)))) {
+        return `${ref} source_refs must include ${acId} and ${vcId}`;
+      }
+    }
+  }
+
+  // Reject orphan AC/VC-shaped entries when clarification is present.  A
+  // planner may add non-requirement trace items (for example risk mitigations),
+  // but a row claiming to represent an AC/VC must point to a real source.
+  for (const item of items) {
+    if (item?.type === 'acceptance_criteria' && !criteria.some(ac => (typeof ac === 'string' ? ac.match(/\bAC-\d{3}\b/)?.[0] : ac?.id) === item.id)) {
+      return `${item.id || 'unknown'} references an unknown acceptance criterion`;
+    }
+    if (item?.type === 'verification_condition') {
+      const parent = String(item.id || '').split('/')[0];
+      if (!item.id?.includes('/') || !itemIds.has(parent)) return `${item.id || 'unknown'} verification condition has no parent acceptance criterion`;
+    }
+  }
+  return '';
+}
+
 function validateTraceabilityMatrix(ideaDir, { requireTaskRefs = false, taskIdsOverride = null, traceRefsOverride = null } = {}) {
   const matrixPath = join(ideaDir, 'to-be/traceability-matrix.json');
   if (!existsSync(matrixPath)) return 'to-be/traceability-matrix.json missing';
@@ -883,6 +1022,38 @@ function validateTraceabilityMatrix(ideaDir, { requireTaskRefs = false, taskIdsO
     if (requireTaskRefs) {
       const missingTasks = item.covered_by_tasks.filter(taskId => !taskIds.has(taskId));
       if (missingTasks.length > 0) return `${label} references unknown tasks: ${missingTasks.join(', ')}`;
+    }
+  }
+  const clarificationReason = validateClarificationTraceability(ideaDir, items);
+  if (clarificationReason) return clarificationReason;
+
+  // Traceability is intentionally bidirectional.  Matrix → task references
+  // alone are not enough: every task brief must carry each matrix id it claims
+  // to implement, and every task trace ref must resolve back to that matrix
+  // row.  This prevents a stale matrix from falsely reporting coverage.
+  if (requireTaskRefs) {
+    const matrixByTask = new Map();
+    for (const item of items) {
+      for (const taskId of normalizeTraceRefs(item.covered_by_tasks)) {
+        if (!matrixByTask.has(taskId)) matrixByTask.set(taskId, new Set());
+        matrixByTask.get(taskId).add(item.id);
+        const refs = taskTraceRefsFor(ideaDir, taskId, traceRefsOverride);
+        if (!refs.includes(item.id)) return `${taskId} trace_refs missing matrix item ${item.id}`;
+      }
+    }
+    const taskEntriesToCheck = traceRefsOverride
+      ? [...traceRefsOverride.keys()]
+      : Object.keys(state.tasks || {});
+    for (const taskId of taskEntriesToCheck) {
+      const refs = taskTraceRefsFor(ideaDir, taskId, traceRefsOverride);
+      if (refs.length === 0) return `${taskId} missing trace_refs`;
+      for (const ref of refs) {
+        const matrixItem = items.find(item => item.id === ref);
+        if (!matrixItem) return `${taskId} references unknown trace_refs: ${ref}`;
+        if (!normalizeTraceRefs(matrixItem.covered_by_tasks).includes(taskId)) {
+          return `${ref} matrix item missing reverse task reference: ${taskId}`;
+        }
+      }
     }
   }
   if (traceRefsOverride) {
@@ -1039,6 +1210,190 @@ function validateToBeConfirmation(ideaDir) {
   if (missingAcknowledgements.length > 0) return `confirmations/to-be.json task_acknowledgement missing ${missingAcknowledgements.join(', ')}`;
   if (doc.task_acknowledgement?.dependencies_reviewed !== true) return 'confirmations/to-be.json dependencies_reviewed must be true';
   if (doc.risk_acknowledgement?.reviewed !== true) return 'confirmations/to-be.json risk_acknowledgement.reviewed must be true';
+  if (has(ideaDir, 'requirement-classification.json')) {
+    const fingerprint = toBePlanFingerprint(ideaDir);
+    if (!fingerprint) return 'cannot compute classified to-be plan fingerprint';
+    if (doc.plan_fingerprint !== fingerprint) return 'to-be confirmation is stale: plan fingerprint changed';
+  }
+  return '';
+}
+
+const TO_BE_CONFIRMATION_SOURCES = Object.freeze([
+  'requirement-classification.json',
+  'to-be/implementation-plan.md',
+  'to-be/design-notes.json',
+  'to-be/tasks.json',
+  'to-be/traceability-matrix.json',
+  'to-be/impact-risk-report.json',
+  'to-be/data-change-plan.json',
+  'to-be/api-change-plan.json',
+  'to-be/adversarial-review.json',
+  'to-be/adversarial-review.md',
+  'document-jobs/to-be.json',
+]);
+
+export function toBePlanFingerprint(ideaDir) {
+  const mandatory = ['requirement-classification.json', 'to-be/implementation-plan.md', 'to-be/design-notes.json', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json', 'to-be/adversarial-review.json', 'to-be/adversarial-review.md', 'document-jobs/to-be.json'];
+  if (mandatory.some(rel => !has(ideaDir, rel))) return null;
+  const hash = createHash('sha256');
+  for (const rel of TO_BE_CONFIRMATION_SOURCES.filter(path => has(ideaDir, path))) {
+    hash.update(rel).update('\0').update(readFileSync(join(ideaDir, rel))).update('\0');
+  }
+  return hash.digest('hex');
+}
+
+/**
+ * Validate the independent, adversarial planning review.  This is deliberately
+ * a separate artifact from the user confirmation: the review proves that the
+ * planner looked for omissions, while the confirmation records the user's
+ * decision.  A few field aliases are accepted so that older generated plans
+ * can be upgraded without rewriting the review by hand.
+ */
+function validateAdversarialReview(ideaDir) {
+  const jsonPath = join(ideaDir, 'to-be/adversarial-review.json');
+  const markdownPath = join(ideaDir, 'to-be/adversarial-review.md');
+  if (!existsSync(jsonPath)) return 'to-be/adversarial-review.json missing';
+  if (!existsSync(markdownPath)) return 'to-be/adversarial-review.md missing';
+
+  const parsed = readJsonFile(jsonPath);
+  if (parsed.error) return `to-be/adversarial-review.json invalid JSON: ${parsed.error}`;
+  const schema = validateJsonFile(jsonPath, 'adversarial-review');
+  if (!schema.valid) return `adversarial-review.json schema: ${schema.errors[0]}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1 && doc?.schema_version !== 2) {
+    return 'adversarial-review.json schema_version must be 1 or 2';
+  }
+  if (doc.source_step !== undefined && doc.source_step !== 'plan:adversarial-review') {
+    return 'adversarial-review.json source_step must be plan:adversarial-review';
+  }
+
+  const attempt = Number(doc.attempt);
+  if (!Number.isInteger(attempt) || attempt < 1 || attempt > 5) {
+    return 'adversarial-review.json attempt must be an integer between 1 and 5';
+  }
+
+  const status = String(doc.status || doc.result || doc.decision || '').trim().toLowerCase();
+  if (!['approved', 'approve', 'pass', 'passed', 'complete'].includes(status)) {
+    return 'adversarial-review.json status/result must be approved/pass';
+  }
+  const findings = doc.findings ?? doc.issues ?? doc.gaps;
+  if (!Array.isArray(findings)) return 'adversarial-review.json findings must be an array';
+  const unresolved = doc.unresolved_findings ?? doc.open_findings ?? doc.unresolved ?? [];
+  if (!Array.isArray(unresolved)) return 'adversarial-review.json unresolved findings must be an array';
+  if (unresolved.length > 0) return 'adversarial review has unresolved findings';
+  const blocking = findings.filter(item => {
+    if (!item || typeof item !== 'object') return false;
+    const itemStatus = String(item.status || item.result || item.resolution || '').toLowerCase();
+    return ['open', 'unresolved', 'fail', 'failed', 'block', 'blocked'].includes(itemStatus);
+  });
+  if (blocking.length > 0) return 'adversarial review contains unresolved findings';
+
+  const requiredSources = [
+    'requirement.md',
+    'requirement-clarification.json',
+    'requirement-classification.json',
+    'clarifications.json',
+    'as-is/evidence-ledger.json',
+    'as-is/coverage-matrix.json',
+    'to-be/implementation-plan.md',
+    'to-be/design-notes.json',
+    'to-be/tasks.json',
+    'to-be/traceability-matrix.json',
+    'to-be/impact-risk-report.json',
+    'to-be/data-change-plan.json',
+    'to-be/api-change-plan.json',
+    'document-jobs/to-be.json',
+  ].filter(rel => existsSync(join(ideaDir, rel)));
+  const mandatoryReviewSources = ['requirement.md', 'to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json'];
+  if (has(ideaDir, 'requirement-classification.json')) mandatoryReviewSources.push(
+    'requirement-clarification.json', 'requirement-classification.json', 'to-be/design-notes.json',
+    'to-be/impact-risk-report.json', 'document-jobs/to-be.json',
+  );
+  for (const mandatory of mandatoryReviewSources) {
+    if (!requiredSources.includes(mandatory)) return `${mandatory} missing from adversarial review source set`;
+  }
+  if (!Array.isArray(doc.reviewed_files)) return 'adversarial-review.json reviewed_files must be an array';
+  const reviewed = new Map(doc.reviewed_files.map(entry => [typeof entry === 'string' ? entry : entry?.path, entry]));
+  for (const rel of requiredSources) {
+    const entry = reviewed.get(rel);
+    if (!entry || typeof entry === 'string') return `adversarial review missing source hash for ${rel}`;
+    const actual = createHash('sha256').update(readFileSync(join(ideaDir, rel))).digest('hex');
+    if (entry.sha256 !== actual) return `adversarial review is stale: ${rel} changed`;
+  }
+
+  const clarification = existsSync(join(ideaDir, 'requirement-clarification.json'))
+    ? readJsonFile(join(ideaDir, 'requirement-clarification.json')).value : null;
+  const expectedRefs = [];
+  for (const criterion of clarification?.dimensions?.acceptance_criteria || []) {
+    const criterionId = typeof criterion === 'string' ? criterion.match(/\bAC-\d{3}\b/)?.[0] : criterion?.id;
+    if (criterionId) expectedRefs.push(criterionId);
+    for (const vc of typeof criterion === 'object' && Array.isArray(criterion?.verification_conditions) ? criterion.verification_conditions : []) {
+      if (criterionId && vc?.id) expectedRefs.push(`${criterionId}/${vc.id}`);
+    }
+  }
+  if (!Array.isArray(doc.requirement_coverage)) return 'adversarial-review.json requirement_coverage must be an array';
+  const tasksDoc = readJsonFile(join(ideaDir, 'to-be/tasks.json')).value || {};
+  const tasks = Array.isArray(tasksDoc.tasks) ? tasksDoc.tasks : [];
+  const tasksById = new Map(tasks.map(task => [task.task_id, task]));
+  const traceDoc = readJsonFile(join(ideaDir, 'to-be/traceability-matrix.json')).value || {};
+  const traceItems = Array.isArray(traceDoc.items) ? traceDoc.items : [];
+  const traceByRef = new Map();
+  for (const item of traceItems) {
+    for (const ref of [item.id, ...(item.source_refs || [])].filter(Boolean)) traceByRef.set(ref, item);
+  }
+  const riskDoc = existsSync(join(ideaDir, 'to-be/impact-risk-report.json')) ? readJsonFile(join(ideaDir, 'to-be/impact-risk-report.json')).value : {};
+  const cpById = new Map((riskDoc?.change_points || []).map(cp => [cp.id, cp]));
+  const coverage = new Map(doc.requirement_coverage.map(entry => [entry?.source_ref || entry?.id, entry]));
+  for (const ref of expectedRefs) {
+    const entry = coverage.get(ref);
+    if (!entry) return `adversarial review missing requirement coverage for ${ref}`;
+    if (String(entry.status || '').toLowerCase() !== 'pass') return `adversarial review coverage must pass for ${ref}`;
+    for (const field of ['task_refs', 'change_point_refs', 'file_refs', 'verification_refs']) {
+      if (!Array.isArray(entry[field]) || entry[field].length === 0) return `${ref} missing ${field} evidence`;
+    }
+    const unknownTasks = entry.task_refs.filter(taskId => !tasksById.has(taskId));
+    if (unknownTasks.length) return `${ref} references unknown tasks: ${unknownTasks.join(', ')}`;
+    const unknownCps = entry.change_point_refs.filter(cpId => !cpById.has(cpId));
+    if (unknownCps.length) return `${ref} references unknown change points: ${unknownCps.join(', ')}`;
+    const traceItem = traceByRef.get(ref) || traceByRef.get(ref.split('/')[0]);
+    if (!traceItem) return `${ref} has no real traceability item`;
+    const traceTasks = new Set(traceItem.covered_by_tasks || traceItem.covering_tasks || []);
+    if (entry.task_refs.some(taskId => !traceTasks.has(taskId))) return `${ref} task_refs are not backed by traceability-matrix.json`;
+    const traceCps = new Set(traceItem.cp_refs || traceItem.change_point_refs || []);
+    if (traceCps.size === 0) return `${ref} traceability item has no cp_refs`;
+    if (entry.change_point_refs.some(cpId => !traceCps.has(cpId))) return `${ref} change_point_refs are not backed by traceability-matrix.json`;
+    const selectedTasks = entry.task_refs.map(taskId => tasksById.get(taskId));
+    const taskCps = new Set(selectedTasks.flatMap(task => task.change_point_refs || []));
+    if (entry.change_point_refs.some(cpId => !taskCps.has(cpId))) return `${ref} change_point_refs are not backed by the selected tasks`;
+    const taskTraceRefs = new Set(selectedTasks.flatMap(task => task.trace_refs || []));
+    const chainRefs = new Set([ref, ref.split('/')[0], ref.split('/').at(-1)]);
+    if (![...chainRefs].some(chainRef => taskTraceRefs.has(chainRef))) return `${ref} is not traced by the selected tasks`;
+    const allowedFiles = new Set(entry.task_refs.flatMap(taskId => {
+      const task = tasksById.get(taskId) || {};
+      return [...(task.expected_files || []), ...(task.allowed_files || []), ...(task.file_plan || []).map(item => item?.path).filter(Boolean)];
+    }));
+    for (const cpId of entry.change_point_refs) if (cpById.get(cpId)?.file) allowedFiles.add(cpById.get(cpId).file);
+    if (entry.file_refs.some(path => !allowedFiles.has(path))) return `${ref} file_refs are not backed by tasks/change points`;
+    const verificationIds = new Set([ref, ref.split('/').at(-1), ...(traceItem.coverage_refs || []), ...(traceItem.verification_refs || [])]);
+    if (entry.verification_refs.some(vref => !verificationIds.has(vref))) return `${ref} verification_refs are not backed by AC/VC/traceability`;
+    if (isBlankProof(entry.evidence)) return `${ref} missing adversarial evidence`;
+  }
+
+  if (!Array.isArray(doc.evidence) || doc.evidence.length === 0) return 'adversarial-review.json evidence must be a non-empty array';
+  if (doc.evidence.some(item => isBlankProof(typeof item === 'string' ? item : item?.evidence || item?.proof))) {
+    return 'adversarial-review.json evidence contains blank or placeholder proof';
+  }
+
+  const text = readText(markdownPath);
+  if (meaningfulLines(text).length < 3) return 'to-be/adversarial-review.md has insufficient content';
+  const hasScope = /^(?:#{2,4}\s+)?(?:审查范围|反向检查|review scope|scope|检查范围)\s*$/im.test(text);
+  const hasFindings = /^(?:#{2,4}\s+)?(?:发现|遗漏项|findings?|gaps?|检查结果|反向探测)\s*$/im.test(text);
+  const hasConclusion = /^(?:#{2,4}\s+)?(?:结论|审查结论|conclusion|verdict|result)\s*$/im.test(text);
+  if (!hasScope && !hasFindings) return 'adversarial-review.md missing review scope/findings section';
+  if (!hasConclusion) return 'adversarial-review.md missing conclusion section';
+  if (/\b(?:status|result|verdict)[：:]\s*(?:fail|failed|reject|blocked)\b/i.test(text) || /(?:未通过|不通过|阻塞)/.test(text)) {
+    return 'adversarial-review.md conclusion is not approved';
+  }
   return '';
 }
 
@@ -1056,6 +1411,51 @@ function validateFinalSummary(ideaDir) {
   return '';
 }
 
+function validateQuickDevScopeContract(ideaDir) {
+  if (existsSync(join(ideaDir, 'scope-escalation.json'))) return 'quick-dev scope was escalated; rerun classify:requirement and use plan route';
+  const contractPath = join(ideaDir, 'quick-dev-scope.json');
+  if (!existsSync(contractPath)) return 'quick-dev-scope.json missing';
+  const parsed = readJsonFile(contractPath);
+  if (parsed.error) return `quick-dev-scope.json invalid JSON: ${parsed.error}`;
+  const doc = parsed.value;
+  if (doc?.schema_version !== 1) return 'quick-dev-scope.json schema_version must be 1';
+  if (doc.source_step && doc.source_step !== 'quick-dev:init') return 'quick-dev-scope.json source_step must be quick-dev:init';
+  if (!doc.task_id || typeof doc.task_id !== 'string') return 'quick-dev-scope.json missing task_id';
+  for (const field of ['allowed_files', 'forbidden_files', 'expected_files', 'acceptance_criteria']) {
+    if (!Array.isArray(doc[field])) return `quick-dev-scope.json ${field} must be an array`;
+  }
+  if (doc.scope_mode !== 'explicit') return 'quick-dev-scope.json scope_mode must be explicit';
+  if (doc.allowed_files.length === 0 || doc.expected_files.length === 0) return 'quick-dev-scope.json requires non-empty allowed_files and expected_files';
+  const classification = readRequirementClassification(ideaDir);
+  const complexity = classification.valid ? classification.value.routing_complexity : detectComplexity(ideaDir);
+  const risk = classification.valid ? classification.value.risk_level : 'low';
+  const scopedFiles = [...new Set([...normalizeTraceRefs(doc.allowed_files), ...normalizeTraceRefs(doc.expected_files)])];
+  const roots = new Set(scopedFiles.map(path => path.replace(/^\.\//, '').split('/')[0]).filter(Boolean));
+  const maxFiles = complexity === 'hotfix' ? 1 : 2;
+  if (risk !== 'low') return `quick-dev requires low risk (got ${risk})`;
+  if (scopedFiles.length > maxFiles) return `quick-dev scope exceeds ${maxFiles} files`;
+  if (roots.size > 2) return 'quick-dev scope crosses more than 2 modules';
+  if (scopedFiles.some(path => /\*\*|(?:^|\/)\*(?:\/|$)|^src\/?$|^app\/?$/i.test(path))) return 'quick-dev scope must not use broad directory/glob scope';
+  const statePath = taskStateFile(ideaDir);
+  if (!existsSync(statePath)) return 'task-workflow-state.yaml missing';
+  const state = readTaskState(statePath);
+  const task = state.tasks?.[doc.task_id];
+  if (!task) return `quick-dev-scope.json references unknown task: ${doc.task_id}`;
+  const taskPath = join(ideaDir, task.file || `tasks/${doc.task_id}.md`);
+  if (!existsSync(taskPath)) return `missing task file: ${doc.task_id}`;
+  const taskText = readText(taskPath);
+  const taskFm = readFrontmatter(taskText);
+  const taskExpected = normalizeTraceRefs(taskFm.expected_files);
+  if (JSON.stringify(taskExpected) !== JSON.stringify(normalizeTraceRefs(doc.expected_files))) return 'quick-dev-scope.json expected_files do not match task frontmatter';
+  const taskAllowed = normalizeTraceRefs(taskFm.allowed_files);
+  const taskForbidden = normalizeTraceRefs(taskFm.forbidden_files);
+  if (taskAllowed.length > 0 && JSON.stringify(taskAllowed) !== JSON.stringify(normalizeTraceRefs(doc.allowed_files))) return 'quick-dev-scope.json allowed_files do not match task frontmatter';
+  if (taskForbidden.length > 0 && JSON.stringify(taskForbidden) !== JSON.stringify(normalizeTraceRefs(doc.forbidden_files))) return 'quick-dev-scope.json forbidden_files do not match task frontmatter';
+  const traceReason = validateTraceabilityMatrix(ideaDir, { requireTaskRefs: true });
+  if (traceReason) return `quick-dev scope traceability incomplete: ${traceReason}`;
+  return '';
+}
+
 export function checkGate(ideaDir, gateId) {
   if (!ideaDir || ideaDir === 'none') return { pass: false, gate: gateId, reason: 'idea-dir does not exist' };
   switch (gateId) {
@@ -1067,6 +1467,11 @@ export function checkGate(ideaDir, gateId) {
       return result(gateId, true);
     }
     case 'as-is-complete': {
+      const classifiedFlow = has(ideaDir, 'requirement-classification.json');
+      if (classifiedFlow || has(ideaDir, 'document-jobs/as-is.json')) {
+        const docs = checkDocumentJob(ideaDir, 'as-is');
+        if (!docs.valid) return result(gateId, false, docs.reason, { document_job_status: docs.status });
+      }
       const missing = AS_IS_MAIN_FILES.filter(file => !has(ideaDir, file));
       if (missing.length > 0) return result(gateId, false, `missing main files: ${missing.join(', ')}`);
       if (!hasRequiredLines(join(ideaDir, 'as-is/overview.md'), ['### 需求摘要', '### 当前能力边界', '### 待澄清问题']))
@@ -1107,6 +1512,11 @@ export function checkGate(ideaDir, gateId) {
     case 'strategy-confirmed':
       return checkGate(ideaDir, 'to-be-confirmed');
     case 'to-be-exists': {
+      const classifiedFlow = has(ideaDir, 'requirement-classification.json');
+      if (classifiedFlow || has(ideaDir, 'document-jobs/to-be.json')) {
+        const docs = checkDocumentJob(ideaDir, 'to-be');
+        if (!docs.valid) return result(gateId, false, docs.reason, { document_job_status: docs.status });
+      }
       const planFile = join(ideaDir, 'to-be/implementation-plan.md');
       if (!has(ideaDir, 'to-be/implementation-plan.md'))
         return result(gateId, false, 'to-be/implementation-plan.md missing');
@@ -1135,12 +1545,36 @@ export function checkGate(ideaDir, gateId) {
       if (!traceSchemaResult.valid && !traceSchemaResult.note) return result(gateId, false, `traceability-matrix.json schema: ${traceSchemaResult.errors[0]}`);
       return result(gateId, true);
     }
+    case 'as-is-human-docs-ready': {
+      const docs = checkDocumentJob(ideaDir, 'as-is');
+      return docs.valid ? result(gateId, true) : result(gateId, false, docs.reason, { document_job_status: docs.status });
+    }
+    case 'to-be-human-docs-ready': {
+      const docs = checkDocumentJob(ideaDir, 'to-be');
+      return docs.valid ? result(gateId, true) : result(gateId, false, docs.reason, { document_job_status: docs.status });
+    }
+    case 'to-be-adversarial-approved': {
+      const reason = validateAdversarialReview(ideaDir);
+      return reason ? result(gateId, false, reason) : result(gateId, true);
+    }
     case 'to-be-confirmed': {
       if (has(ideaDir, 'confirmations/to-be.json')) {
+        const planGate = checkGate(ideaDir, 'to-be-exists');
+        if (!planGate.pass) return result(gateId, false, `to-be plan invalid before user confirmation: ${planGate.reason}`);
+        const adversarialGate = checkGate(ideaDir, 'to-be-adversarial-approved');
+        if (!adversarialGate.pass) return result(gateId, false, `adversarial review required before user confirmation: ${adversarialGate.reason}`);
         const reason = validateToBeConfirmation(ideaDir);
         return reason ? result(gateId, false, reason) : result(gateId, true);
       }
       if (!has(ideaDir, '.to-be-confirmed')) return result(gateId, false, 'confirmations/to-be.json missing');
+      const adversarial = readJsonFile(join(ideaDir, 'to-be/adversarial-review.json')).value;
+      const newFlowTraces = [
+        has(ideaDir, 'requirement-classification.json'),
+        has(ideaDir, 'document-jobs/as-is.json'),
+        has(ideaDir, 'document-jobs/to-be.json'),
+        Number(adversarial?.schema_version || 0) >= 2,
+      ];
+      if (newFlowTraces.some(Boolean)) return result(gateId, false, 'legacy .to-be-confirmed marker is forbidden when new-workflow artifacts exist');
       if (!has(ideaDir, 'to-be/implementation-plan.md')) return result(gateId, false, '.to-be-confirmed exists but implementation-plan.md is missing');
       return result(gateId, true, '', { legacy: true });
     }
@@ -1249,8 +1683,14 @@ export function checkGate(ideaDir, gateId) {
       if (doc.source_step !== 'clarify:requirement') return result(gateId, false, 'source_step must be clarify:requirement');
       if (!doc.clarified_at) return result(gateId, false, 'missing clarified_at');
       if (!doc.dimensions || typeof doc.dimensions !== 'object') return result(gateId, false, 'missing dimensions');
-      const complexity = detectComplexity(ideaDir);
-      const requiredDimensions = ['hotfix', 'minor', 'trivial'].includes(complexity)
+      const unresolved = canonicalOpenQuestions(doc);
+      if (unresolved.length > 0) return result(gateId, false, `clarification has unresolved questions: ${unresolved.join('; ')}`);
+      // Progressive gate: classification needs only the core requirement facts.
+      // Once a fingerprinted classifier promotes the route, return here for the
+      // additional dimensions instead of guessing "standard" from an unmarked requirement.
+      const persisted = readRequirementClassification(ideaDir);
+      const complexity = persisted.valid ? persisted.value.routing_complexity : null;
+      const requiredDimensions = !complexity || ['hotfix', 'minor', 'trivial'].includes(complexity)
         ? ['functional_scope', 'acceptance_criteria']
         : complexity === 'moderate'
           ? ['functional_scope', 'acceptance_criteria', 'compatibility_constraints', 'priority']
@@ -1260,6 +1700,24 @@ export function checkGate(ideaDir, gateId) {
       if (!Array.isArray(doc.dimensions.acceptance_criteria) || doc.dimensions.acceptance_criteria.length === 0)
         return result(gateId, false, 'acceptance_criteria must be non-empty array');
       return result(gateId, true);
+    }
+    case 'requirement-classified': {
+      const classification = readRequirementClassification(ideaDir);
+      if (!classification.valid) return result(gateId, false, classification.reason);
+      const schema = validateJsonFile(join(ideaDir, 'requirement-classification.json'), 'requirement-classification');
+      if (!schema.valid) return result(gateId, false, `requirement-classification.json schema: ${schema.errors[0]}`);
+      const expected = computeRequirementClassification(ideaDir);
+      const exactFields = ['input_fingerprint', 'difficulty', 'delivery_complexity', 'routing_complexity', 'risk_level', 'uncertainty_level', 'execution_profile', 'subagent_budget', 'signals', 'reasons'];
+      for (const field of exactFields) {
+        if (JSON.stringify(classification.value[field]) !== JSON.stringify(expected[field])) {
+          return result(gateId, false, `requirement classification was tampered or is non-deterministic: ${field} mismatch`);
+        }
+      }
+      return result(gateId, true, '', {
+        difficulty: classification.value.difficulty,
+        execution_profile: classification.value.execution_profile,
+        routing_complexity: classification.value.routing_complexity,
+      });
     }
     case 'worktree-decided': {
       if (has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, true, '', { legacy: true });
@@ -1288,11 +1746,13 @@ export function checkGate(ideaDir, gateId) {
     }
     case 'traceability-complete': {
       const matrixPath = join(ideaDir, 'to-be/traceability-matrix.json');
-      if (!existsSync(matrixPath)) return result(gateId, true, '', { skipped: true });
+      if (!existsSync(matrixPath)) return result(gateId, false, 'to-be/traceability-matrix.json missing');
       const parsed = readJsonFile(matrixPath);
       if (parsed.error) return result(gateId, false, `traceability-matrix.json invalid JSON: ${parsed.error}`);
       const items = parsed.value?.items;
-      if (!Array.isArray(items) || items.length === 0) return result(gateId, true, '', { skipped: true });
+      if (!Array.isArray(items) || items.length === 0) return result(gateId, false, 'traceability-matrix.json must contain non-empty items array');
+      const structuralReason = validateTraceabilityMatrix(ideaDir, { requireTaskRefs: true });
+      if (structuralReason) return result(gateId, false, structuralReason);
       const state = readTaskState(taskStateFile(ideaDir));
       for (const item of items) {
         const coveredByTasks = item.covered_by_tasks || [];
@@ -1314,7 +1774,8 @@ export function checkGate(ideaDir, gateId) {
       if (!doc?.dimensions?.functional_scope) return result(gateId, false, 'missing functional_scope dimension');
       if (!Array.isArray(doc?.dimensions?.acceptance_criteria) || doc.dimensions.acceptance_criteria.length === 0)
         return result(gateId, false, 'missing or empty acceptance_criteria');
-      return result(gateId, true);
+      const scopeReason = validateQuickDevScopeContract(ideaDir);
+      return scopeReason ? result(gateId, false, scopeReason) : result(gateId, true);
     }
     case 'final-summary-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');

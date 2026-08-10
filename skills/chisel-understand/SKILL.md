@@ -15,7 +15,7 @@ user-invocable: false
 
 ## 执行
 
-利用原生 Explore subagent 做前期侦察，Analyst subagent 做深度走查产出结构化数据，Writer subagent 产出人类文档。主编排器负责调度和质量验证。
+仅当 `requirement-classification.json.execution_profile=full` 时进入本阶段。Explore/Analyst 额度不得超过其中的 `subagent_budget`；只有可干净拆分的侦察区域才并行。Writer 专门产出人类文档，并以后台任务运行。主编排器负责调度和质量验证。
 
 ### 重试模式
 
@@ -75,7 +75,7 @@ Explore agent 返回分层文件清单后，检查覆盖度报告：
 {
   "idea_dir": "{idea_dir}",
   "explore_result": "<Phase 1 Explore 返回的分层文件清单>",
-  "requirement_path": "{requirement_path}",
+  "requirement_path": "{requirement_path}"
 }
 ```
 
@@ -105,13 +105,13 @@ Analyst 返回后，验证结构化产物合规：
 
 ---
 
-### Phase 3: 人类文档生成
+### Phase 3: 异步人类文档生成
 
 <HARD-GATE principle="P5">
 Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/writer-as-is-task.md`，按其 TASK 结构启动 writer。
 </HARD-GATE>
 
-启动 `agent-chisel-writer`，传入 TASK：
+先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs prepare {idea_dir} as-is` 创建带源文件 hash 的任务收据。随后启动 `agent-chisel-writer`，设置 `run_in_background: true`，传入 TASK：
 
 ```json
 {
@@ -133,7 +133,11 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/writer-as-is-tas
 }
 ```
 
-Writer 产出人类可读文档：overview.md / core-walkthrough.md / evidence-index.md / context-budget.md / details/*.md
+`source_files` 之外，prepare 会自动把当时存在的 `as-is/ai-input/field-flow.md` 与 `as-is/debt-signals/**/*`（递归稳定排序）纳入唯一 source manifest，Writer 必须全部读取。
+
+Writer 产出人类可读文档：overview.md / core-walkthrough.md / evidence-index.md / context-budget.md / knowledge-candidates.md（有候选时）/ details/*.md。complete receipt 必须绑定所有实际存在的条件输出。
+
+派发后不要原地阻塞：主编排器并行执行结构化 schema/coverage 检查和质量评分前置检查。Writer 最后必须运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs complete {idea_dir} as-is`。进入 `understand:confirm` 前必须运行 `document-job.mjs check` 并等待 `status=complete`；pending/stale 时不得让用户 review，stale 必须重新 prepare + 派发。
 
 ---
 

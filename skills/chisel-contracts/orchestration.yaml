@@ -17,9 +17,15 @@ steps:
   - id: clarify:requirement
     postcondition:
       check: clarification-complete
+  - id: classify:requirement
+    postcondition:
+      check: requirement-classified
   - id: plan:design
     postcondition:
       check: to-be-exists
+  - id: plan:adversarial-review
+    postcondition:
+      check: to-be-adversarial-approved
   - id: plan:confirm
     postcondition:
       check: to-be-confirmed
@@ -28,7 +34,7 @@ steps:
       check: worktree-decided
   - id: quick-dev:init
     postcondition:
-      check: task-workflow-exists
+      check: quick-dev-ready
   - id: tasks:init
     postcondition:
       check: task-workflow-exists

@@ -5,7 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { validateVerificationResult, workspaceIdentity } from '../scripts/verification-lib.mjs';
-import { contractFingerprint, createVerificationContract } from '../scripts/verify-run.mjs';
+import { contractFingerprint, createVerificationContract, verificationRoots } from '../scripts/verify-run.mjs';
 
 describe('verification evidence', () => {
   let root;
@@ -103,5 +103,18 @@ describe('verification evidence', () => {
     contract.repositories[0].checks.push({ id: 'lint', command: 'npm', args: ['run', 'lint'], required: true });
     writeFileSync(join(ideaDir, 'verification-contract.json'), JSON.stringify(contract));
     assert.match(validateVerificationResult(ideaDir, root), /contract changed/);
+  });
+
+  it('selects every schema v3 worktree repository for verification', () => {
+    const secondRoot = join(root, 'second-worktree');
+    mkdirSync(secondRoot);
+    writeFileSync(join(ideaDir, 'worktree-decision.json'), JSON.stringify({
+      schema_version: 3,
+      repos: [
+        { repo_path: root, worktree_path: root },
+        { repo_path: secondRoot, worktree_path: secondRoot },
+      ],
+    }));
+    assert.deepEqual(verificationRoots(ideaDir, root), [root, secondRoot]);
   });
 });

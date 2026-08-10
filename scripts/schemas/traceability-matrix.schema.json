@@ -2,18 +2,22 @@
   "type": "object",
   "required": ["items"],
   "properties": {
-    "schema_version": { "type": "integer" },
+    "schema_version": { "type": "integer", "minimum": 1 },
     "items": {
       "type": "array",
       "items": {
         "type": "object",
+        "required": ["id", "type", "description", "covered_by_tasks"],
         "properties": {
           "id": { "type": "string" },
           "ac_id": { "type": "string" },
           "description": { "type": "string" },
           "ac_description": { "type": "string" },
           "covering_tasks": { "type": "array" },
-          "covered_by_tasks": { "type": "array" }
+          "covered_by_tasks": { "type": "array" },
+          "source_refs": { "type": "array" },
+          "cp_refs": { "type": "array" },
+          "coverage_refs": { "type": "array" }
         }
       }
     }

@@ -7,7 +7,7 @@ user-invocable: false
 
 # chisel-clarify
 
-需求澄清阶段。基于已确认的 as-is 和原始需求，多维度让用户明确真实诉求。不做方案设计，不改业务代码。
+需求澄清阶段。先基于原始需求明确真实诉求；as-is 已存在时作为增强证据，但不得把深度代码分析作为澄清前置条件。不做方案设计，不改业务代码。
 
 ## 当前工作流状态
 
@@ -18,7 +18,7 @@ user-invocable: false
 | 来源 | 读取 |
 |------|------|
 | `{IDEA_DIR}/requirement.md` | 原始需求目标和初步验收标准 |
-| `{IDEA_DIR}/as-is/overview.md` | 当前系统能力边界、风险地图 |
+| `{IDEA_DIR}/as-is/overview.md`（如存在） | 当前系统能力边界、风险地图 |
 | `{IDEA_DIR}/clarifications.json` | understand:confirm 阶段的 as-is 澄清结论 |
 | `{IDEA_DIR}/as-is/ai-input/`（如存在） | 必读 facts.md + constraints.md；按维度按需读 call-graph/data-schema/api-surface/change-surface |
 
@@ -47,7 +47,7 @@ user-invocable: false
 ## 执行流程
 
 1. Read `{IDEA_DIR}/requirement.md`
-2. Read `{IDEA_DIR}/as-is/overview.md`
+2. 如存在则 Read `{IDEA_DIR}/as-is/overview.md`；不存在时从 requirement 的 scope/AC 提问，不启动 Explore/Analyst 补齐
 3. Read `{IDEA_DIR}/clarifications.json`（如存在）
 4. 如存在 `{IDEA_DIR}/as-is/ai-input/`：
    - 必读：`facts.md`（事实锚点）+ `constraints.md`
@@ -55,18 +55,19 @@ user-invocable: false
      - 影响分析 → `call-graph.md` + `change-surface.md`
      - 兼容性约束 → `api-surface.md` + `data-schema.md`
      - 非功能需求 → `change-surface.md`
-5. 基于以上内容，为每个维度生成 1-3 个针对性问题（必须引用具体 F-xxx 事实编号或文件位置）
+5. 基于以上内容，为每个维度生成 1-3 个针对性问题。仅当 as-is 证据存在时才必须引用具体 F-xxx/约束编号或文件位置；全新 lightweight/moderate 流程没有 as-is 时，引用 requirement.md 的标题、scope 或 AC 编号即可
 6. 使用 `AskUserQuestion` 向用户提问（可分批，每批不超过 4 个问题）
 7. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-clarify/references/requirement-clarification-template.md`
 8. 将用户回答写入 `{IDEA_DIR}/requirement-clarification.json`（权威机器可读记录）
 9. 将人类可读镜像写入 `{IDEA_DIR}/requirement-clarification.md`
 10. 运行 gate 验证：`node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} clarification-complete`
+11. gate 通过后立即运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR}`。分级产物绑定 requirement + clarification 指纹；不得由模型手写或沿用 stale 结果。
 
 <HARD-GATE principle="P1,P2">
 此步骤澄清的是需求本身的诉求和边界，不是 as-is 理解的正确性（那是 understand:confirm 的职责）。
 必须按复杂度覆盖对应维度（minor/trivial=2，moderate=4，standard/complex=7），即使某些维度用户回答"无特殊要求"也要记录。
 不能代替用户回答——每个维度必须由用户明确确认。
-问题要基于 as-is 中实际发现的事实来提，不要泛泛而问。每个问题必须能追溯到 facts.md 中的 F-xxx 编号、constraints.md 中的 FZ/WBI/DNR 编号、或具体文件位置。
+有 as-is 时，问题要基于实际发现的事实并追溯到 facts.md 的 F-xxx、constraints.md 的 FZ/WBI/DNR 或具体文件位置。没有 as-is 时，问题必须追溯到 requirement.md 的章节/AC，禁止伪造 F-xxx 或为了引用证据而启动 Explore/Analyst。
 
 合理化预防表：
 

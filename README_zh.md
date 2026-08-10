@@ -14,7 +14,7 @@
 
 <br/>
 
-Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件，用文件驱动的工作流帮助你在遗留系统上安全地增加功能：先理解 as-is，再确认完整 to-be 方案，然后拆 task、实现、架构师 CR、返修闭环，最后审阅当前变更报告并批准交付。
+Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件，用文件驱动的工作流帮助你在遗留系统上安全地增加功能：先理解 as-is，再设计 to-be，经过机器强制的对抗完整性审查后才允许用户确认方案，然后拆 task、实现、架构师 CR、返修闭环，最后审阅当前变更报告并批准交付。审查未通过会回到方案修复并循环，不能把不完整方案交给用户 review。
 
 每一步都产出文件化产物，方便中断后恢复，也方便人审查 AI 的每一步判断。
 
@@ -117,8 +117,9 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 ### 概览
 
 ```
-接收需求 → 理解 as-is → 用户确认 → [生成 AI 输入] → 策略设计 → 用户确认策略
-→ task 拆分 → 用户确认拆分 → 初始化 task → 编码 → 架构师 CR → [返修闭环]
+接收需求 → 需求澄清 → 难度/执行档位分级
+→ [仅 full：理解 as-is → 后台 Writer → 用户确认] → 方案设计 → 后台 Writer
+→ 对抗完整性审查（失败则修复循环）→ 用户确认方案 → 初始化 task → 编码 → 架构师 CR → [返修闭环]
 → 最终总结 → 当前变更报告 → 用户合并决策 → 交付
 ```
 
@@ -129,37 +130,40 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 | # | 步骤 | 说明 |
 |---|---|---|
 | 1 | **接收需求** | 解析用户输入，按模板保存 `requirement.md` |
-| 2 | **理解 as-is** | explorer agent 只读扫描代码，产出 overview、core-walkthrough、evidence-index |
-| 3 | **确认 as-is** | 人类审查 3 分钟摘要、风险地图、误解点，逐项确认 |
-| 4 | **生成 AI 输入** | 人类版文档提炼为结构化 AI 输入格式（短路径可跳过） |
+| 2 | **澄清并分级** | 先澄清，再持久化带输入指纹的难度、风险、执行档位与 subagent 预算 |
+| 3 | **理解 as-is（仅 full）** | explorer/analyst 产出结构化证据；后台 Writer 按完整 source manifest 生成人类文档和 fresh receipt |
+| 4 | **确认 as-is（仅 full）** | 人类审查 3 分钟摘要、风险地图、误解点，逐项确认 |
 | 5 | **方案设计** | planner 产出实现计划、task 定义、追溯矩阵 |
-| 6 | **确认方案** | 人类审查策略方向和 task 拆分，确认通过 |
-| 7 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
-| 8 | **编码** | coder agent 在受限文件范围内编码 |
-| 9 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
-| 10 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
-| 11 | **最终总结** | 汇总变更、scope control 和交付回执 |
-| 12 | **合并前 CR** | 生成当前变更报告，要求用户选择批准、要求修改或评论/暂缓 |
-| 13 | **交付** | 用户确认后通过隔离 integration worktree 转分支、合并或进入冲突链路 |
+| 6 | **对抗完整性审查** | fresh reviewer 逐项对照 requirement/clarification/as-is/to-be；发现遗漏即生成 findings，修复后重跑，直到 pass |
+| 7 | **确认方案** | 仅在对抗 gate 通过后，人类审查策略方向和 task 拆分 |
+| 8 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
+| 9 | **编码** | coder agent 在受限文件范围内编码 |
+| 10 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
+| 11 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
+| 12 | **最终总结** | 汇总变更、scope control 和交付回执 |
+| 13 | **合并前 CR** | 生成当前变更报告，要求用户选择批准、要求修改或评论/暂缓 |
+| 14 | **交付** | 用户确认后通过隔离 integration worktree 转分支、合并或进入冲突链路 |
 
 ### 复杂度分级
 
 | 复杂度 | 判定条件 | 影响 |
 |---|---|---|
-| `hotfix` | 显式紧急修复且范围受限 | 快速路径，仅 spec 审查 |
+| `hotfix` | 显式紧急修复、低风险且限单文件 | 快速路径，仅 spec 审查；超限自动升级 |
 | `minor` | 小型兼容行为变更 | 澄清、快速路径、仅 spec 审查 |
 | `trivial` | 涉及范围 ≤ 2 文件，无新增表/接口，跨模块目录 < 3 | 快速路径，仅 spec 审查 |
-| `moderate` | 3–4 个范围项且无新增表/接口 | 方案/task + spec、D3–D5 审查 |
+| `moderate` | 澄清后的保守 floor 或有界多文件变更 | 只用 requirement/clarification 和有界 source manifest 轻量规划，不启动 as-is agents |
 | `standard` | 跨模块或边界变更 | 完整 as-is/to-be 流程和集成审查 |
 | `complex` | 高风险、多仓、迁移或大范围变更 | 全流程、全维度和集成审查 |
 
 ### 人工确认关卡
 
-chisel 有 **3 个强制人工关卡**，暂停流程等待用户逐项确认：
+chisel 根据澄清后的执行路径启用 **最多 3 个人工关卡**：
 
 1. **As-is 确认** — 验证对当前系统行为的理解
 2. **To-be 确认** — 批准实现方向、完整 task 拆分、依赖和风险
 3. **合并前 CR** — 审阅当前变更报告，明确批准精确的 Git/工作区快照
+
+full 路径使用全部三个关卡；moderate 跳过 As-is 确认，保留 To-be 和合并前 CR；direct 的 hotfix/minor/trivial 跳过两次设计确认，通常只保留精确快照的合并前 CR。
 
 确认决策持久化在 idea 目录中，编排器每次恢复都会重新读取；不依赖隐藏的旁路知识库。
 
@@ -207,6 +211,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-st
   implementation-plan.md       # 策略方向和设计决策
   tasks.json                   # 机器可读 task 定义
   traceability-matrix.json     # 需求→task 追溯
+  adversarial-review.md        # 对抗完整性审查记录
+  adversarial-review.json      # 机器 gate 依据（pass/findings/evidence）
 .chisel/<idea-name>/tasks/
   task-001.md                  # task 文件（含 Exports/Imports）
 .chisel/<idea-name>/task-workflow-state.yaml
@@ -250,6 +256,12 @@ Dashboard 链接只是补充，不替代需求、方案、Task 报告、CR 和�
 - 未触碰禁区文件
 - 无未声明的新增公共导出
 
+### To-be 完整性 gate
+
+`plan:confirm` 之前必须先执行 `plan:adversarial-review`：由 fresh reviewer 直接对照 `requirement.md`、澄清 AC/VC、as-is 证据和全部结构化 to-be 产物，写入 `to-be/adversarial-review.json` 与 `.md`。`fail` 必须带可执行 findings 并回到 `plan:design` 修复；只有机器校验的 `pass` 才能进入用户确认。审查轮次有上限，达到上限进入 `blocked`，不会把不完整方案交给用户。
+
+schema v2+ 的追溯矩阵严格执行：缺失/空矩阵失败，每个 AC 和 verification condition 必须精确映射，并做 task→matrix 双向校验。实现报告必须逐条给出非占位的 Acceptance Criteria Result 和 Traceability Evidence，且 `Completion Status: DONE`（或明确审阅过的 `DONE_WITH_CONCERNS`）后才允许 verification/review。
+
 ### 中断检测
 
 task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；长耗时操作前通过 heartbeat 续租，不再依赖固定 30 分钟猜测。
@@ -288,6 +300,8 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `control-plane.mjs` | 解析 linked worktree 共享控制面 |
 | `orchestration-transition.mjs` | 校验 resume step 与 revision 后显式切换状态并记录事件 |
 | `gate-check.mjs` | 阶段 postcondition gate 校验 |
+| `traceability-check.mjs` | 双向 AC/VC→task 覆盖和最终批准校验 |
+| `adversarial-review.mjs` | 确定性 to-be 完整性审查和有界修复循环记录 |
 | `task-init.mjs` | 初始化 task 文件和状态机 |
 | `workflow-status.mjs` | task 状态查询、回退、overlap 检测 |
 | `task-provenance.mjs` | 记录 task 执行基线/结果指纹与 changed-files 归属 |

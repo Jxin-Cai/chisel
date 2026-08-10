@@ -24,6 +24,7 @@
 - `scripts/verify-run.mjs` 将验证结果绑定到显式 `verification-contract.json` 以及当前 Git/workspace 指纹。
 - `scripts/review-budget.mjs` 从 `review-policy.json` 生成有界 review batches 和 skeptic 预算。
 - `scripts/gate-check.mjs` 管理每步 postcondition。
+- `plan:adversarial-review` 位于 `plan:design` 与 `plan:confirm` 之间：fresh reviewer 直接对照 requirement、clarification、as-is 和全部 to-be 结构化产物，写入 `to-be/adversarial-review.json`/`.md`；`to-be-adversarial-approved` gate 以机器规则阻断不完整方案，并在 findings 时回到 plan 修复循环。
 - `scripts/scope-check.mjs` 检查变更文件是否越界或触碰禁区。
 - `scripts/multi-repo-worktree.mjs` 多仓 worktree 检测/创建/状态/清理（支持非 git 工作空间下的多 git 仓库场景）。
 - `scripts/branch-merge.mjs` 在独立 integration worktree 中合并、验证、commit/push 和冲突现场管理，不切换已有主仓 checkout。
@@ -32,15 +33,17 @@
 - `scripts/debt-scan.mjs` 纯静态技术债务扫描器（无 LLM 依赖），explorer 探索前自动运行，产出 proposed 候选。
 - `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
 - `scripts/quick-dev-init.mjs` trivial 快速通道自动生成单 task + worktree-decision + traceability-matrix。
-- `scripts/traceability-check.mjs` 需求→task 可追溯性验证，final 阶段前确认所有 AC 被覆盖实现。
+- `scripts/traceability-check.mjs` 需求→task 可追溯性验证，拒绝缺失/空 final matrix，精确检查 AC/VC 与 task refs 双向映射，并在 final 阶段前确认所有 AC 被覆盖实现。
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check 数据写入 `cr-context.json`，D2-D9 agent 共用。
 - `scripts/merge-review.mjs` 在自动 CR/返修和 final summary 之后生成 Current Change Report，汇总 base/head、逐文件 diff 统计、验证命令、CR finding/observation、风险和 task 覆盖；人工批准绑定 Git HEAD、working-tree fingerprint、final summary 和报告内容，任一变化都会使批准失效。
 - `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
 - `scripts/session-metrics.mjs` 记录每个 idea 的步骤耗时、agent 调用次数、返修轮次等效率指标。
 - `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照，同时按数量（8）和总大小（25 MiB）双重上限清理，runner/events/transaction journal 不进入快照 payload。
-- **理解阶段**（`chisel-understand`）由主编排器调度三个 subagent：先调用原生 Explore subagent 侦察定位文件，然后调用 `agent-chisel-analyst`(sonnet) 深度走查产出结构化数据（evidence-ledger.json + coverage-matrix.json + ai-input/*.md），最后调用 `agent-chisel-writer`(sonnet) 从结构化数据生成面向人类的图文文档。主编排器只负责调度和质量验证，不直接 Read 业务代码。
-- **规划阶段**（`chisel-plan`）由主编排器直接执行：先调用原生 Plan subagent 设计方案框架，然后主编排器精化并写入 JSON 产物（tasks.json + traceability-matrix.json + impact-risk-report.json）+ 执行 6 步变更完整性自检，最后调用 `agent-chisel-writer`(sonnet) 生成 implementation-plan.md。
+- **理解阶段**（`chisel-understand`）仅在 `execution_profile=full` 时使用 Explore + Analyst 产出结构化数据；subagent 数量受分类预算约束，不是固定三 agent。人类文档由后台 `agent-chisel-writer` 根据完整 source manifest 生成，主编排器并行执行结构化 gate/评分，展示前等待 fresh receipt。
+- **规划阶段**（`chisel-plan`）分支执行：lightweight 只读 requirement、clarification、classification 与最多 12 文件/2 模块的 source manifest；full 才读取 as-is 并调用完整 Plan 链。两条分支均写入 tasks + traceability + impact-risk + design-notes，执行 8 步完整性自检，再由后台 Writer 生成 implementation-plan.md。
 - `agent-chisel-writer` 从结构化产物（JSON/md 表格）生成面向人类的图文中文文档（含 Mermaid），不探索代码、不做设计决策。支持 as-is 和 to-be 两种模式。
+- Writer 一律后台运行；`document-job.mjs` 记录 writer 的完整 required source、当时存在的 optional source/output 及 hash。classified 新流程没有 fresh complete receipt 时，as-is/to-be full gate 必须失败。
+- `requirement-classify.mjs` 在澄清完成后按 AC/VC、文件/模块边界、DB/API/迁移、显式风险与 risk tolerance 生成可重算的难度、执行档位和 subagent 预算；显式 moderate/standard/complex 是保守 floor。
 - `agent-chisel-coder` 只按已确认 task 实现，持续执行验证—修复循环并完成 diff 自检（bug/AC/scope 三项检查）。trivial/standard 默认继承主编排器当前模型，complex 和返修升级通过 model override 使用 opus。
 - `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查，每次加载一个维度定义。维度 batch 与 skeptic 验证严格受 `review-policy.json` 限制；高风险 finding 使用 3 角度投票，low/medium 使用单次验证，超出预算时串行 fallback，不再无界 fan-out。
 
@@ -68,10 +71,11 @@
 
 ## Quick-dev 快速通道
 
-- 当 complexity=trivial（scope≤2 项、无新表/API）时自动激活。
-- 缩短路径：`receive → clarify(2 维度) → quick-dev:init → implement → review:cr-light(spec-only) → final:summary → review:merge → done`。
+- Quick-dev 覆盖 `hotfix`、`minor`、`trivial` 三种 direct complexity；都必须通过 `quick-dev-ready` 的低风险有界 scope。
+- `hotfix` 路径：`receive → quick-dev:init → implement → review:cr-light → final → review:merge`，仅限显式、低风险、单文件范围；升级信号出现时必须回到澄清/分类。
+- `minor/trivial` 路径：`receive → clarify(core scope+AC) → classify(direct) → quick-dev:init → implement → review:cr-light → final → review:merge`。
 - 跳过：as-is 探索/确认、ai-input、plan、worktree 选择、D2-D9 CR。
-- `quick-dev-init.mjs` 从 requirement-clarification.json 自动生成单 task + worktree-decision(current-branch) + traceability-matrix。
+- `quick-dev-init.mjs` 从 requirement-clarification.json 自动生成单 task + worktree-decision + traceability-matrix；超过 2 文件/2 模块、宽泛 scope 或非低风险时写 scope-escalation 并强制重新分类进入 plan，禁止 coder。
 
 ## 需求可追溯性
 
