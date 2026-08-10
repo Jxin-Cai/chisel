@@ -1,29 +1,20 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync, mkdirSync } from 'node:fs';
-import { join, basename, resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, basename } from 'node:path';
 import {
-  atomicWriteFile, readTaskState, taskStateFile, readFrontmatter, detectComplexity
+  readTaskState, taskStateFile, detectComplexity
 } from './workflow-lib.mjs';
 import { WORKFLOW_PATHS } from './workflow-definition.mjs';
 import {
-  collectCrResults, collectTraceability, computeDashboardSummary,
+  collectCrResults, collectTraceability, computeReportSummary,
   countCrFindings, countTasksByStatus, normalizeApiChangePlan,
   normalizeCoverageMatrixRefs, normalizeDataChangePlan, normalizeStepTimings,
   normalizeTasksJson, normalizeTraceabilityTree, oneSentence,
   formatDuration, formatEvidence, parseTableSection
-} from './dashboard.mjs';
+} from './report-model.mjs';
 
-const __scriptDir = dirname(fileURLToPath(import.meta.url));
-const TEMPLATE_PATH = join(__scriptDir, 'assets', 'dashboard-template.html');
-let _tplCache = null;
-function getTemplate() {
-  if (!_tplCache) _tplCache = readFileSync(TEMPLATE_PATH, 'utf8');
-  return _tplCache;
-}
-
-// --- Data loading (mirrored from dashboard.mjs main) ---
+// --- Report data loading ---
 
 function readJson(ideaDir, rel) {
   const p = join(ideaDir, rel);
@@ -120,13 +111,9 @@ function collectStepOutputs(ideaDir, steps, currentStep, stepHistory) {
 
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
-function wrapHtml(title, body) {
-  return getTemplate().replace('{{TITLE}}', esc(title)).replace('{{BODY_HTML}}', body);
-}
+function wrapHtml(_title, body) { return body; }
 
-function blockHero(icon, title, subtitle) {
-  return `<div class="block-hero animate-in"><h1 class="block-hero-title">${icon} ${esc(title)}</h1>${subtitle ? `<p class="block-hero-subtitle">${esc(subtitle)}</p>` : ''}</div>\n`;
-}
+function blockHero() { return ''; }
 
 function pillClass(status) {
   if (['approved', 'pass', 'passed', 'success', 'complete', 'done', 'ready_for_human_review', 'ready', 'clean', 'low', 'none'].includes(status)) return 'pill-success';
@@ -155,7 +142,7 @@ function mdToSimpleHtml(md) {
 
 // --- Block renderers ---
 
-function renderOverviewBlock(data) {
+function renderOverviewSection(data) {
   const { summary, workflowSteps, currentIdx, timingSummary, currentStep, impactRisk, stepOutputs } = data;
   const ts = summary.taskStats;
   const cr = summary.crStats;
@@ -194,7 +181,7 @@ function renderOverviewBlock(data) {
   return wrapHtml(`总览 — ${data.ideaName}`, body);
 }
 
-function renderAsIsBlock(data) {
+function renderAsIsSection(data) {
   const { overview, coreWalkthrough, evidenceLedger, qualityScore, coverageMatrix } = data;
   let body = blockHero('📖', 'As-Is 现状理解', data.ideaName);
 
@@ -234,7 +221,7 @@ function renderAsIsBlock(data) {
   return wrapHtml(`As-Is — ${data.ideaName}`, body);
 }
 
-function renderToBeBlock(data) {
+function renderToBeSection(data) {
   const { implementationPlan, normalizedTasks, traceabilityTree, changePoints, dataChanges, apiChanges, taskDetails, impactRisk } = data;
   let body = blockHero('🎯', 'To-Be 方案', data.ideaName);
 
@@ -281,7 +268,7 @@ function renderToBeBlock(data) {
   return wrapHtml(`To-Be — ${data.ideaName}`, body);
 }
 
-function renderProgressBlock(data) {
+function renderProgressSection(data) {
   const { tasks, taskDetails, traceabilityTree } = data;
   const entries = Object.entries(tasks || {});
   let body = blockHero('🚀', '实现进度', data.ideaName);
@@ -321,7 +308,7 @@ function renderProgressBlock(data) {
   return wrapHtml(`进度 — ${data.ideaName}`, body);
 }
 
-function renderCrBlock(data) {
+function renderCrSection(data) {
   const { crResults, taskDetails, reviewReportMd } = data;
   let body = blockHero('🔍', 'CR 审查结果', data.ideaName);
 
@@ -368,7 +355,7 @@ function renderCrBlock(data) {
  * companion so that every value shown is bound to the exact snapshot that was
  * reviewed.
  */
-function renderCurrentChangeBlock(data) {
+function renderCurrentChangeSection(data) {
   const report = data.currentChangeReport;
   let body = blockHero('🧭', '当前变更', data.ideaName);
 
@@ -513,7 +500,7 @@ function renderCurrentChangeBlock(data) {
   return wrapHtml(`当前变更 — ${data.ideaName}`, body);
 }
 
-function renderTimelineBlock(data) {
+function renderTimelineSection(data) {
   const { timingSummary, stepOutputs, stepHistory } = data;
   let body = blockHero('⏱️', '时间线与产出', data.ideaName);
 
@@ -522,7 +509,7 @@ function renderTimelineBlock(data) {
     body += `<div class="card animate-in"><h2>环节耗时 · 总计 ${esc(timingSummary.total_label)}</h2>`;
     for (const s of timingSummary.steps) {
       const pct = Math.max(2, Math.round((s.duration_ms / maxMs) * 100));
-      body += `<div class="timing-row"><div class="timing-step">${esc(s.step)}${s.running ? ' ⏳' : ''}</div><div class="timing-bar"><div class="timing-fill" style="width:${pct}%"></div></div><div class="timing-val">${esc(s.duration_label)}</div></div>`;
+      body += `<div class="timing-row"><div class="timing-step">${esc(s.step)}${s.running ? ' · 进行中' : ''}</div><div class="timing-bar"><div class="timing-fill" style="width:${pct}%"></div></div><div class="timing-val">${esc(s.duration_label)}</div></div>`;
     }
     body += `</div>\n`;
   }
@@ -549,7 +536,7 @@ function renderTimelineBlock(data) {
   return wrapHtml(`时间线 — ${data.ideaName}`, body);
 }
 
-// --- Main ---
+// --- Public report sections ---
 
 function loadData(ideaDir) {
   const workflowState = readWorkflowState(ideaDir);
@@ -601,7 +588,7 @@ function loadData(ideaDir) {
     startedAt: workflowState?.started_at || '',
     lastUpdated: workflowState?.last_updated_at || ''
   });
-  const summary = computeDashboardSummary({
+  const summary = computeReportSummary({
     tasks: taskState.tasks,
     traceabilityModel: traceabilityTree,
     crResults,
@@ -635,51 +622,14 @@ function loadData(ideaDir) {
   };
 }
 
-const BLOCKS = {
-  overview: renderOverviewBlock,
-  'as-is': renderAsIsBlock,
-  'to-be': renderToBeBlock,
-  progress: renderProgressBlock,
-  'cr-results': renderCrBlock,
-  'current-change': renderCurrentChangeBlock,
-  timeline: renderTimelineBlock,
+const REPORT_SECTIONS = {
+  overview: renderOverviewSection,
+  'as-is': renderAsIsSection,
+  'to-be': renderToBeSection,
+  progress: renderProgressSection,
+  'cr-results': renderCrSection,
+  'current-change': renderCurrentChangeSection,
+  timeline: renderTimelineSection,
 };
 
-function main() {
-  const ideaDir = process.argv[2];
-  if (!ideaDir || !existsSync(ideaDir)) {
-    process.stderr.write('用法: dashboard-blocks.mjs <idea-dir> [--blocks overview,progress,...]\n');
-    process.exit(1);
-  }
-
-  const blocksArg = process.argv.find((a, i) => i > 0 && process.argv[i - 1] === '--blocks');
-  const requestedBlocks = blocksArg ? blocksArg.split(',').map(s => s.trim()) : Object.keys(BLOCKS);
-
-  const outDir = join(ideaDir, 'dashboard');
-  if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
-
-  const data = loadData(ideaDir);
-  const generated = [];
-
-  for (const blockName of requestedBlocks) {
-    const renderer = BLOCKS[blockName];
-    if (!renderer) {
-      process.stderr.write(`未知 block: ${blockName}\n`);
-      continue;
-    }
-    const html = renderer(data);
-    const fileName = `${blockName}.html`;
-    const outPath = join(outDir, fileName);
-    atomicWriteFile(outPath, html);
-    generated.push(fileName);
-  }
-
-  const absDir = resolve(outDir);
-  console.log(JSON.stringify({ generated, dir: absDir }));
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
-}
-
-export { BLOCKS, loadData };
+export { REPORT_SECTIONS, loadData };

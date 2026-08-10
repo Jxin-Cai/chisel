@@ -8,15 +8,15 @@
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/merge-review.mjs {IDEA_DIR} .
-node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks current-change
+node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports cr
 node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} merge-review-report-exists
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} review:merge
 ```
 
 命令顺序是硬性协议：先写入结构化 JSON/Markdown 报告，再生成独立的
-`dashboard/current-change.html`，通过 gate 后运行 phase-artifacts。将
+`reports/cr-report.html`，解析并保留生成器返回的 SHA-256。将
 `phase-artifacts.mjs` 输出原样发送到对话（其中必须有绝对路径 Markdown 链接，包含
-`dashboard/current-change.html`），再进入 AskUserQuestion。HTML renderer 直接读取
+`reports/cr-report.html`），再进入 AskUserQuestion 并停止等待用户决定。HTML renderer 直接读取
 `cr/current-change-report.json`，不得用截断 Markdown 代替结构化字段；用户应可在单独页面
 查看完整的 readiness、scope、diff、checks、machine CR、risk 和 decision 选项。
 
@@ -51,7 +51,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/merge-review.mjs {IDEA_DIR} --confirm approve
 node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} merge-review-confirmed
 ```
 
-输出 `confirmations/merge-review.json` 的文件链接。随后重新运行 runner；只有 gate 通过才能进入 `done` 和合并菜单。
+用户明确决定后才能运行 `merge-review.mjs --confirm ...`；该命令会把决定同时绑定到 Current Change JSON 和刚展示的 CR HTML 哈希。输出 `confirmations/merge-review.json` 的文件链接。随后重新运行 runner；只有 gate 通过才能进入 `done` 和合并菜单。
 
 ### Request changes
 

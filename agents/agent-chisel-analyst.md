@@ -58,7 +58,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/ai-input-templat
 
 | 产物 | 内容 |
 |------|------|
-| `as-is/evidence-ledger.json` | F-xxx 证据账本，每条 fact 含 id/description/file/line_start/line_end/status(confirmed) |
+| `as-is/evidence-ledger.json` | F-xxx 证据账本，每条 fact 含 id/claim/status(confirmed) 和 evidence[].file/line_start |
 | `as-is/coverage-matrix.json` | 入口/链路/数据/副作用四维覆盖，每项含 file+line 证据 |
 | `as-is/ai-input/facts.md` | 已确认事实表 |
 | `as-is/ai-input/call-graph.md` | 调用链 + 入口→终点映射 + 前端→API 映射 |

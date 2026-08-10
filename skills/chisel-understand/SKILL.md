@@ -40,7 +40,16 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/repo-map.mjs --project-root . --requirement {
 
 Read 生成的 `{idea_dir}/as-is/repo-map.json`，了解语言、入口候选、目录结构。
 
-然后运行 debt-scan（如有 entry_candidates，从中提取目录前缀缩小范围）：
+**Greenfield 快路径**：当 repo-map 的 `project_mode` 为 `greenfield`（兼容旧结果：`stats.source_files === 0`）时，说明没有历史实现可探索。立即运行：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/greenfield-as-is.mjs {idea_dir}
+node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {idea_dir} as-is-complete
+```
+
+脚本会一次性生成真实的 N/A 基线、AI 输入、人类摘要、document receipt 和质量分数。gate 通过后直接结束本 skill；不得启动 Explore / Analyst / Writer，不得把未来设计伪装成既有入口、调用链、数据模型或副作用。交付复杂度和风险级别保持不变，只裁剪没有意义的历史代码侦察。
+
+仅非 greenfield 继续运行 debt-scan（如有 entry_candidates，从中提取目录前缀缩小范围）：
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/debt-scan.mjs --project-root . --repo-map {idea_dir}/as-is/repo-map.json --output {idea_dir}/as-is/debt-signals/ --scope-dirs <目录前缀>
@@ -83,7 +92,7 @@ Analyst 产出以下结构化产物（每条 fact 必须有已验证的 file:lin
 
 | 产物 | 内容 |
 |------|------|
-| `as-is/evidence-ledger.json` | F-xxx 证据账本，每条 fact 含 id/description/file/line_start/line_end/status(confirmed) |
+| `as-is/evidence-ledger.json` | F-xxx 证据账本，每条 fact 含 id/claim/status(confirmed) 和 evidence[].file/line_start |
 | `as-is/coverage-matrix.json` | 入口/链路/数据/副作用四维覆盖，每项含 file+line 证据 |
 | `as-is/ai-input/facts.md` | 已确认事实表 |
 | `as-is/ai-input/call-graph.md` | 调用链 + 入口→终点映射 + 前端→API 映射 |

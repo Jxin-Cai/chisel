@@ -27,38 +27,44 @@ describe('phase artifact delivery', () => {
     assert.doesNotMatch(markdown, /\]\(as-is\//);
   });
 
-  it('adds only the exact generated dashboard page for each mapped phase', () => {
+  it('adds only the exact generated report for each mapped phase', () => {
     mkdirSync(join(ideaDir, 'as-is'), { recursive: true });
     mkdirSync(join(ideaDir, 'to-be'), { recursive: true });
     mkdirSync(join(ideaDir, 'cr'), { recursive: true });
     mkdirSync(join(ideaDir, 'confirmations'), { recursive: true });
-    mkdirSync(join(ideaDir, 'dashboard'), { recursive: true });
+    mkdirSync(join(ideaDir, 'reports'), { recursive: true });
     writeFileSync(join(ideaDir, 'as-is', 'overview.md'), '# Overview\n');
     writeFileSync(join(ideaDir, 'to-be', 'implementation-plan.md'), '# Plan\n');
     writeFileSync(join(ideaDir, 'cr', 'dim-d1-cr.md'), '# CR\n');
     writeFileSync(join(ideaDir, 'cr', 'current-change-report.json'), '{}\n');
     writeFileSync(join(ideaDir, 'cr', 'current-change-report.md'), '# Current\n');
     writeFileSync(join(ideaDir, 'confirmations', 'merge-review.json'), '{}\n');
-    writeFileSync(join(ideaDir, 'dashboard', 'as-is.html'), '<!doctype html>');
-    writeFileSync(join(ideaDir, 'dashboard', 'to-be.html'), '<!doctype html>');
-    writeFileSync(join(ideaDir, 'dashboard', 'cr-results.html'), '<!doctype html>');
-    writeFileSync(join(ideaDir, 'dashboard', 'current-change.html'), '<!doctype html>');
-    writeFileSync(join(ideaDir, 'dashboard', 'other.html'), '<!doctype html>');
+    writeFileSync(join(ideaDir, 'confirmations', 'cr-report.json'), '{}\n');
+    writeFileSync(join(ideaDir, 'confirmations', 'task-time-report.json'), '{}\n');
+    writeFileSync(join(ideaDir, 'reports', 'as-is-report.html'), '<!doctype html>');
+    writeFileSync(join(ideaDir, 'reports', 'to-be-report.html'), '<!doctype html>');
+    writeFileSync(join(ideaDir, 'reports', 'cr-report.html'), '<!doctype html>');
+    writeFileSync(join(ideaDir, 'reports', 'task-time-report.html'), '<!doctype html>');
+    writeFileSync(join(ideaDir, 'reports', 'other.html'), '<!doctype html>');
 
     const mappings = [
-      ['understand:explore', 'dashboard/as-is.html'],
-      ['plan:design', 'dashboard/to-be.html'],
-      ['review:cr', 'dashboard/cr-results.html'],
-      ['review:cr-light', 'dashboard/cr-results.html'],
-      ['review:cr-moderate', 'dashboard/cr-results.html'],
-      ['review:integration', 'dashboard/cr-results.html'],
-      ['review:merge', 'dashboard/current-change.html'],
+      ['understand:explore', 'reports/as-is-report.html'],
+      ['plan:design', 'reports/to-be-report.html'],
+      ['implement:code', 'reports/task-time-report.html'],
+      ['repair:code', 'reports/task-time-report.html'],
+      ['review:cr', 'reports/cr-report.html'],
+      ['review:cr-light', 'reports/cr-report.html'],
+      ['review:cr-moderate', 'reports/cr-report.html'],
+      ['review:integration', 'reports/cr-report.html'],
+      ['review:merge', 'reports/cr-report.html'],
     ];
     for (const [step, expected] of mappings) {
       const labels = collectPhaseArtifacts(ideaDir, step).map(item => item.label);
       assert.ok(labels.includes(expected), `${step} should list ${expected}`);
-      assert.ok(!labels.includes('dashboard/other.html'), `${step} must not expand dashboard/`);
+      assert.ok(!labels.includes('reports/other.html'), `${step} must not expand reports/`);
+      if (step.startsWith('review:cr') || step === 'review:integration') assert.ok(labels.includes('confirmations/cr-report.json'));
     }
+    assert.ok(collectPhaseArtifacts(ideaDir, 'final:summary').some(item => item.label === 'confirmations/task-time-report.json'));
   });
 
   it('does not claim a deliverable exists before it is written', () => {

@@ -92,7 +92,7 @@
 
 每个 Task 必须通过 `trace_refs` 关联到一个或多个需求/验收/验证追踪项，并通过 `change_point_refs` 关联到一个或多个 CP。
 
-同时写入 `to-be/traceability-matrix.json`。该文件表达需求链路，不要把 `RISK-*` 当作需求项；风险放入 `impact-risk-report.json.risk_matrix`，如需追踪风险缓解，可使用 `type: "risk_mitigation"`，dashboard 不计入需求覆盖率。
+同时写入 `to-be/traceability-matrix.json`。该文件表达需求链路，不要把 `RISK-*` 当作需求项；风险放入 `impact-risk-report.json.risk_matrix`，如需追踪风险缓解，可使用 `type: "risk_mitigation"`，报告覆盖率不计风险项。
 
 ```json
 {
@@ -174,7 +174,7 @@
 
 同时写入 `to-be/impact-risk-report.json`（详见独立 schema 定义）。
 
-> **flow_graph 必填说明**：impact-risk-report.json 的 `flow_graph` 字段描述功能全链路，nodes 包含链路上所有节点（保留/改造/新增/删除），edges 按调用/数据流方向连接。dashboard 据此自动渲染带颜色标记的全链路改造视图：灰色=保留、蓝色=改造、绿色=新增、红色=删除。
+> **flow_graph 必填说明**：impact-risk-report.json 的 `flow_graph` 字段描述功能全链路，nodes 包含链路上所有节点（保留/改造/新增/删除），edges 按调用/数据流方向连接。To-Be 报告据此呈现全链路改造信息。
 
 如涉及 DB 表/字段/关系新增、修改、删除，同时写入 `to-be/data-change-plan.json`：
 

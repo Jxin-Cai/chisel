@@ -1,18 +1,15 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { BLOCKS } from '../scripts/dashboard-blocks.mjs';
-import { loadData } from '../scripts/dashboard-blocks.mjs';
+import { REPORT_SECTIONS, loadData } from '../scripts/report-renderers.mjs';
 import { tmpdir } from 'node:os';
 
-const templatePath = join(process.cwd(), 'scripts/assets/dashboard-template.html');
-
-describe('dashboard blocks', () => {
+describe('report renderers', () => {
   it('exposes a current-change renderer and renders structured merge data', () => {
-    assert.equal(typeof BLOCKS['current-change'], 'function');
-    const html = BLOCKS['current-change']({
+    assert.equal(typeof REPORT_SECTIONS['current-change'], 'function');
+    const html = REPORT_SECTIONS['current-change']({
       ideaName: 'demo',
       currentChangeReport: {
         readiness: { status: 'ready_for_human_review', blockers: [] },
@@ -43,14 +40,14 @@ describe('dashboard blocks', () => {
       currentChangeReportSha256: 'snapshot-hash',
       mergeConfirmation: { decision: 'approve', report_sha256: 'snapshot-hash', confirmed_by: 'user', confirmed_at: '2026-08-09T00:00:00Z', comment: 'Looks good' },
     });
-    for (const text of ['当前变更', 'ready_for_human_review', 'Repository scope', 'src/demo.js', 'Automated checks', 'Machine CR', 'Risk &amp; compatibility', 'approve', 'Looks good']) {
+    for (const text of ['ready_for_human_review', 'Repository scope', 'src/demo.js', 'Automated checks', 'Machine CR', 'Risk &amp; compatibility', 'approve', 'Looks good']) {
       assert.match(html, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     }
   });
 
-  it('keeps long To-Be and CR markdown content in the block pages', () => {
+  it('keeps long To-Be and CR markdown content in report sections', () => {
     const marker = 'TAIL-MARKER-KEEP-FULL';
-    const planHtml = BLOCKS['to-be']({
+    const planHtml = REPORT_SECTIONS['to-be']({
       ideaName: 'demo',
       implementationPlan: `${'x'.repeat(3500)}${marker}`,
       normalizedTasks: [],
@@ -58,7 +55,7 @@ describe('dashboard blocks', () => {
       changePoints: [], dataChanges: null, apiChanges: null, taskDetails: {}, impactRisk: null,
     });
     assert.match(planHtml, new RegExp(marker));
-    const crHtml = BLOCKS['cr-results']({
+    const crHtml = REPORT_SECTIONS['cr-results']({
       ideaName: 'demo',
       crResults: [{ dimension: 'd1', result: 'pass', reworkItems: [], observations: [] }],
       reviewReportMd: `${'x'.repeat(3500)}${marker}`,
@@ -86,23 +83,10 @@ describe('dashboard blocks', () => {
       const loaded = loadData(ideaDir);
       assert.equal(loaded.currentChangeReportSha256, actualHash);
       assert.equal(loaded.mergeConfirmation, null);
-      assert.doesNotMatch(BLOCKS['current-change'](loaded), /STALE-CONFIRMATION|>approve</);
+      assert.doesNotMatch(REPORT_SECTIONS['current-change'](loaded), /STALE-CONFIRMATION|>approve</);
     } finally {
       rmSync(ideaDir, { recursive: true, force: true });
     }
   });
 
-  it('template includes resilient navigation, animation and accessibility fallbacks', () => {
-    const template = readFileSync(templatePath, 'utf8');
-    for (const marker of [
-      'id="sideNav"',
-      'IntersectionObserver',
-      'scrollIntoView',
-      'prefers-reduced-motion',
-      "typeof ScrollTrigger !== 'undefined'",
-      '动画库未加载',
-      '@media print',
-      'data-theme="dark"',
-    ]) assert.match(template, new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), marker);
-  });
 });

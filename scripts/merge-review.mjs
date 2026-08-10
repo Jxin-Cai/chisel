@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { atomicWriteFile, allTasksApproved, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { collectDimResults } from './cr-report.mjs';
 import { validateVerificationResult, workspaceIdentity } from './verification-lib.mjs';
+import { reportSourceFingerprint } from './report-confirm.mjs';
 
 const REPORT_JSON = 'cr/current-change-report.json';
 const REPORT_MD = 'cr/current-change-report.md';
 const CONFIRMATION = 'confirmations/merge-review.json';
+const HTML_REPORT = 'reports/cr-report.html';
 
 function readJson(path, fallback = null) {
   if (!existsSync(path)) return fallback;
@@ -23,6 +25,13 @@ function sha256(value) {
 
 function fileSha256(path) {
   return existsSync(path) ? sha256(readFileSync(path)) : '';
+}
+
+function validateHtmlReportFreshness(ideaDir) {
+  const path = join(ideaDir, HTML_REPORT);
+  if (!existsSync(path)) return `${HTML_REPORT} missing`;
+  const embedded = readFileSync(path, 'utf8').match(/<!-- report-source:([a-f0-9]{64}) -->/)?.[1] || '';
+  return embedded === reportSourceFingerprint(ideaDir, 'cr') ? '' : `${HTML_REPORT} is stale: source artifacts changed`;
 }
 
 function git(root, args, fallback = '') {
@@ -398,6 +407,10 @@ export function recordMergeReviewDecision(ideaDir, decision, comment = '') {
   const reason = validateMergeReviewReport(ideaDir);
   if (reason) throw new Error(reason);
   const reportPath = join(ideaDir, REPORT_JSON);
+  const htmlReportPath = join(ideaDir, HTML_REPORT);
+  if (!existsSync(htmlReportPath)) throw new Error(`${HTML_REPORT} missing; generate and show the CR report before asking for a decision`);
+  const htmlReason = validateHtmlReportFreshness(ideaDir);
+  if (htmlReason) throw new Error(htmlReason);
   const report = readJson(reportPath);
   const confirmation = {
     schema_version: 1,
@@ -407,6 +420,8 @@ export function recordMergeReviewDecision(ideaDir, decision, comment = '') {
     confirmed_at: new Date().toISOString(),
     report_file: REPORT_JSON,
     report_sha256: fileSha256(reportPath),
+    html_report_file: HTML_REPORT,
+    html_report_sha256: fileSha256(htmlReportPath),
     source_snapshot: report.repositories.map(repo => ({
       project_root: repo.project_root,
       head_commit: repo.head_commit,
@@ -425,10 +440,14 @@ export function validateMergeReviewConfirmation(ideaDir) {
   if (!existsSync(path)) return `${CONFIRMATION} missing`;
   const confirmation = readJson(path);
   if (!confirmation || confirmation.schema_version !== 1 || confirmation.phase !== 'merge-review') return `${CONFIRMATION} invalid schema`;
+  const htmlReason = validateHtmlReportFreshness(ideaDir);
+  if (htmlReason) return htmlReason;
   if (confirmation.decision !== 'approve') return `merge review decision is ${confirmation.decision || 'missing'}`;
   if (confirmation.confirmed_by !== 'user') return 'merge review confirmed_by must be user';
   if (!Number.isFinite(Date.parse(confirmation.confirmed_at))) return 'merge review confirmed_at must be ISO-8601';
   if (confirmation.report_sha256 !== fileSha256(join(ideaDir, REPORT_JSON))) return 'merge review approval is stale: report changed';
+  if (confirmation.html_report_file !== HTML_REPORT) return `merge review html_report_file must be ${HTML_REPORT}`;
+  if (confirmation.html_report_sha256 !== fileSha256(join(ideaDir, HTML_REPORT))) return 'merge review approval is stale: CR HTML report changed';
   const report = readJson(join(ideaDir, REPORT_JSON));
   const expected = JSON.stringify(report.repositories.map(repo => ({ project_root: repo.project_root, head_commit: repo.head_commit, workspace_fingerprint: repo.workspace_fingerprint })));
   if (JSON.stringify(confirmation.source_snapshot) !== expected) return 'merge review approval source snapshot mismatch';
@@ -461,4 +480,4 @@ function main() {
 
 if (fileURLToPath(import.meta.url) === process.argv[1]) main();
 
-export { CONFIRMATION, REPORT_JSON, REPORT_MD, fileSha256, repositoryRoots };
+export { CONFIRMATION, HTML_REPORT, REPORT_JSON, REPORT_MD, fileSha256, repositoryRoots };

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { closeSync, existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSnapshot } from './checkpoint.mjs';
@@ -61,8 +61,6 @@ export function acquireTransitionLock(lockPath) {
 export function performTransition(ideaDir, step, {
   expectedRevision,
   eventId,
-  openDashboard = false,
-  skipDashboard = false,
   statusFn,
 } = {}) {
   if (!existsSync(ideaDir)) throw new Error(`idea-dir not found: ${ideaDir}`);
@@ -121,18 +119,7 @@ export function performTransition(ideaDir, step, {
     try { recordStepFinish(ideaDir, previousStep); } catch { /* metrics are non-critical */ }
     try { recordStepStart(ideaDir, step); } catch { /* metrics are non-critical */ }
 
-    let dashboardUpdated = false;
-    if (!skipDashboard) {
-      try {
-        const scriptDir = dirname(fileURLToPath(import.meta.url));
-        const dashboardArgs = [join(scriptDir, 'dashboard.mjs'), ideaDir];
-        if (!openDashboard) dashboardArgs.push('--no-open');
-        const child = spawn('node', dashboardArgs, { detached: true, stdio: 'ignore' });
-        child.unref();
-        dashboardUpdated = true;
-      } catch { /* dashboard is observational, not transactional */ }
-    }
-    return { transitioned: true, ...event, transaction_id: transaction.transaction_id, recovered_transactions: transaction.recovered, dashboard_updated: dashboardUpdated, dashboard_opened: dashboardUpdated && openDashboard };
+    return { transitioned: true, ...event, transaction_id: transaction.transaction_id, recovered_transactions: transaction.recovered };
   } finally {
     closeSync(lockFd);
     try { unlinkSync(lockPath); } catch { /* already removed */ }
@@ -144,9 +131,8 @@ function main() {
   const ideaDir = args[0];
   const step = args[1];
   const expectedRevisionRaw = option(args, '--expected-revision');
-  const openDashboard = args.includes('--open-dashboard');
   if (!ideaDir || !step || expectedRevisionRaw === undefined) {
-    process.stderr.write('用法: orchestration-transition.mjs <idea-dir> <step> --expected-revision <n> [--event-id <id>] [--open-dashboard]\n');
+    process.stderr.write('用法: orchestration-transition.mjs <idea-dir> <step> --expected-revision <n> [--event-id <id>]\n');
     process.exit(1);
   }
   const expectedRevision = Number(expectedRevisionRaw);
@@ -157,7 +143,7 @@ function main() {
   const eventId = option(args, '--event-id') || undefined;
 
   try {
-    const result = performTransition(ideaDir, step, { expectedRevision, eventId, openDashboard });
+    const result = performTransition(ideaDir, step, { expectedRevision, eventId });
     console.log(JSON.stringify(result));
   } catch (error) {
     process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);

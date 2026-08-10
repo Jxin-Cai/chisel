@@ -2,6 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { extname, join, dirname } from 'node:path';
+import { projectModeFromRepoMap } from './project-profile.mjs';
 
 const EXTENSION_TO_LANGUAGE = {
   '.java': 'Java', '.kt': 'Kotlin', '.scala': 'Scala', '.groovy': 'Groovy',
@@ -298,7 +299,7 @@ export function generateRepoMap(projectRoot, options = {}) {
     c.type = classifyEntryType(c.file, frontendRoutes);
   }
 
-  return {
+  const result = {
     schema_version: 4,
     generated_at: new Date().toISOString(),
     project_root: projectRoot,
@@ -319,6 +320,8 @@ export function generateRepoMap(projectRoot, options = {}) {
       routes: frontendRoutes,
     },
   };
+  result.project_mode = projectModeFromRepoMap(result);
+  return result;
 }
 
 const STOP_WORDS = new Set([

@@ -27,7 +27,7 @@
 **已知违规案例（0.21.1–0.21.2）：**
 - `STEP_TO_PHASE` 缺 `review:cr-moderate`
 - `hooks.json` PostToolUse matcher 缺 `Edit`
-- `dashboard.mjs` detectComplexity 不支持 hotfix/minor/moderate
+- 旧聚合页面的复杂度检测不支持 hotfix/minor/moderate
 - `cr-parse` --type 索引在 splice 后错位
 
 ### P2: 状态转移完整性
@@ -71,7 +71,7 @@
 | Prompt | Iron Rule #5: 每步完成验证 gate | `iron-rules.md` |
 
 **历史回归案例（现由上述机制覆盖）：**
-- `rollback` 后 dashboard phase 未重置为 pending
+- `rollback` 后旧观察投影 phase 未重置为 pending
 - `orchestration-status` 冗余 done 检查位于 allTasksApproved guard 之外
 
 ### P5: 唯一正规来源
@@ -82,7 +82,7 @@
 | 脚本 | `enum-coverage-check.mjs` 检测重复定义 | `scripts/enum-coverage-check.mjs` |
 | 脚本 | `workflow-projector.mjs` 从 canonical JSON 生成旧 YAML 投影 | `scripts/workflow-projector.mjs` |
 
-`dashboard.mjs`、`orchestration-status.mjs` 和状态机均从 `workflow-definition.json` 派生路径；复杂度检测统一复用 `workflow-lib.mjs`。
+`report-model.mjs`、`orchestration-status.mjs` 和状态机均从 `workflow-definition.json` 派生路径；复杂度检测统一复用 `workflow-lib.mjs`。
 
 ---
 

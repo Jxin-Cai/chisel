@@ -26,9 +26,8 @@ disable-model-invocation: true
 3. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --locate --project-root . --idea <idea-name>`。从外层 workspace、原 repo 或 linked worktree 启动时，locator 读取持久 registry（v1/v2/v3）恢复 `{IDEA_DIR}`、workspace_root、各 repo/worktree、branch、base/default ref 和 lifecycle；新 idea 再用不带 `--locate` 的路径命令创建目录。可用 `CHISEL_CONTROL_ROOT` 显式覆盖
 4. 如果目录不存在，设 idea-dir = `none`
 5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --start --idea-dir {IDEA_DIR} --owner main-orchestrator`，保存返回的 `runner_id`
-6. 生成 Dashboard 分块并输出路径：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks overview`，解析 stdout JSON 的 `dir` 字段，**在消息中输出文件路径**：`📊 Dashboard: {dir}/overview.html`。用户可通过 Read tool 查看，或在浏览器中打开
-7. 执行路线图初始化（见下方 §路线图协议）
-8. 进入步骤执行循环。每步完成后先 TaskUpdate 标记对应 task 为 `completed`，再调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
+6. 执行路线图初始化（见下方 §路线图协议）
+7. 进入步骤执行循环。每步完成后先 TaskUpdate 标记对应 task 为 `completed`，再调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
 
 ## 自主完成契约
 
@@ -57,20 +56,20 @@ disable-model-invocation: true
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} <completed-step>
 ```
 
-将 stdout **原样输出到对话**。输出使用绝对路径 Markdown 链接，必须逐文件展示；不得只输出目录、只输出 Dashboard、只说“已生成”，也不得把链接留到最终总结才集中展示。
+将 stdout **原样输出到对话**。输出使用绝对路径 Markdown 链接，必须逐文件展示；不得只输出目录、只说“已生成”，也不得把链接留到最终总结才集中展示。
 
 当 `orchestration-runner.mjs` 返回非空 `completed_step_delivery` 时，优先原样输出其中的 `markdown` 字段。对于 confirm 等需要用户输入的步骤，必须严格按“生成独立 HTML → 输出绝对路径 Markdown 链接 → 等用户确认 → 写入确认凭据并进入下一步”的顺序执行：
 
-- `understand:explore` 完成后，运行 `dashboard-blocks.mjs {IDEA_DIR} --blocks as-is`，再运行
+- `understand:explore` 完成后，运行 `reports.mjs {IDEA_DIR} --reports as-is`，输出链接与 SHA-256 后停止等待用户确认；确认后写入哈希凭据，再运行
   `phase-artifacts.mjs {IDEA_DIR} understand:explore`，将 stdout 原样输出；提问
-  `understand:confirm` 前必须交付 `dashboard/as-is.html` 链接。
-- `plan:design` 完成后，运行 `dashboard-blocks.mjs {IDEA_DIR} --blocks to-be`，再运行
+  `understand:confirm` 前必须交付 `reports/as-is-report.html` 链接。
+- `plan:design` 与对抗审查完成后，运行 `reports.mjs {IDEA_DIR} --reports to-be`，输出链接与 SHA-256 后停止等待用户确认；确认后写入哈希凭据，再运行
   `phase-artifacts.mjs {IDEA_DIR} plan:design`，将 stdout 原样输出；提问
-  `plan:confirm` 前必须交付 `dashboard/to-be.html` 链接。
+  `plan:confirm` 前必须交付 `reports/to-be-report.html` 链接。
 - 自动 CR（`review:cr`、`review:cr-light`、`review:cr-moderate`、
-  `review:integration`）必须先生成 CR 报告和 `dashboard/cr-results.html`，再输出对应
-  phase-artifacts 绝对链接，之后才允许询问 findings 决策或变更状态。
-- `review:merge` 必须先生成结构化 Current Change Report、`dashboard/current-change.html`
+  `review:integration`）必须先生成 CR 报告和 `reports/cr-report.html`，输出绝对链接与 SHA-256 后停止；用户确认并写入 `confirmations/cr-report.json` 后，才允许处理 findings 或变更状态。
+- `final:summary` 必须生成 `reports/task-time-report.html`，输出链接与 SHA-256 后停止；用户确认并写入 `confirmations/task-time-report.json` 后，才允许进入 `review:merge`。
+- `review:merge` 必须先生成结构化 Current Change Report、更新 `reports/cr-report.html`
   和 phase artifacts 链接，再询问 Approve / Request changes / Comment。
 
 HTML 文件不存在时，`phase-artifacts.mjs` 只列出实际存在的其他文件，不得虚报。
@@ -171,15 +170,23 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 </HARD-GATE>
 
 <HARD-GATE principle="P2,P4">
-**仪表盘观察协议**：关键阶段完成后生成对应的 dashboard 分块 HTML 并在消息中输出可点击链接，便于用户查看（本地/远端均可）。Dashboard 是阶段产物链接的补充，不能替代逐文件交付。需要用户决策的阶段必须在提问前生成并交付对应 HTML。规则：
-- `understand:explore` 完成 → `node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks as-is`，输出 `📊 {dir}/as-is.html`，并通过 `phase-artifacts.mjs ... understand:explore` 交付。
-- `plan:design` 完成 → `--blocks to-be`，输出 `📊 {dir}/to-be.html`，并通过 `phase-artifacts.mjs ... plan:design` 交付。
-- `implement:code` / `repair:code` 每个 task 完成 → `--blocks progress`，输出 `📊 {dir}/progress.html`。
-- `review:cr` / `review:cr-light` / `review:cr-moderate` / `review:integration` 完成 → `--blocks cr-results`，输出 `📊 {dir}/cr-results.html`，先交付再询问自动 CR findings 决策。
-- `review:merge` → 先运行 `merge-review.mjs` 生成 `cr/current-change-report.json`，再运行 `--blocks current-change`，输出 `📊 {dir}/current-change.html`，先交付再询问 Approve / Request changes / Comment。
-- 用户主动要求全量或 `/chisel-report --format html` → 运行不带 `--blocks` 生成全部 7 块。
+**独立 HTML 报告与确认协议**：四类报告各自承载内容，不存在聚合页面。每次只能生成一份报告，并严格执行“生成 → 解析 stdout 中的 `path` 与 `sha256` → 立即输出绝对路径 Markdown 链接 → 停止自动推进并等待用户明确确认 → 写入哈希绑定的确认凭据 → gate 通过 → 才继续”。不得把“收到”“看到了”推断为确认，不得先生成下一份报告，不得用旧确认匹配重新生成的文件。
 
-仪表盘是状态投影，不是状态转移条件。不阻塞长程执行。
+用户明确确认后运行：
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} <as-is|to-be|cr|task-time> --confirm --expected-sha <刚才输出的 sha256>
+node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} <report-type>
+```
+
+阶段规则：
+- `understand:explore` 完成 → 生成 `as-is`，输出 `reports/as-is-report.html`，等待确认；同时完成 As-Is 详细确认内容后，由 `as-is-report-confirmed` gate 校验报告哈希。
+- `plan:design` 与对抗审查完成 → 生成 `to-be`，输出 `reports/to-be-report.html`，等待确认；同时完成方案详细确认后，由 `to-be-report-confirmed` gate 校验报告哈希。
+- `review:cr*` 每轮 CR 技术结果完成 → 生成 `cr`，输出 `reports/cr-report.html`，等待确认；`cr-report-confirmed` gate 通过后才能返修或继续。integration 使报告变化时必须重新生成、重新确认。
+- `final:summary` 完成 → 生成 `task-time`，输出 `reports/task-time-report.html`，等待确认；`task-time-report-confirmed` gate 通过后才能进入 merge review。
+- `review:merge` → 生成 Current Change 数据后重新生成 `cr`，输出链接并等待 Approve / Request changes / Comment；`merge-review.mjs --confirm` 会把决定绑定到该 HTML 报告哈希。
+- 用户主动要求四份报告时，也必须按 As-Is → To-Be → CR → 任务与耗时的顺序逐份生成、逐份确认，不能批量生成。
+
+报告确认是状态转移硬门禁。任何报告缺失、未确认或哈希过期时，流程必须停留在当前阶段。
 </HARD-GATE>
 
 <HARD-GATE principle="P2,P4">
@@ -203,30 +210,30 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 | resume_step | 动作 | postcondition |
 |---|---|---|
 | `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md`。若用户输入包含图片路径（.png/.jpg/.jpeg/.webp），用 Read tool 加载图片提取 UI 布局描述，写入 `{IDEA_DIR}/as-is/ui-snapshot.md` 作为需求补充上下文 | `requirement-exists` |
-| `understand:explore` | `/chisel-understand <idea-name>` | `as-is-complete` |
-| `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-confirmed` |
+| `understand:explore` | `/chisel-understand <idea-name>`；repo-map 识别 `source_files=0` 时走 greenfield 确定性快路径，不启动侦察 agent | `as-is-complete` |
+| `understand:confirm` | Read `${REF}/phase-confirm-details.md`；按其 understand:confirm 详细行为执行 | `as-is-report-confirmed` |
 | `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
 | `classify:requirement` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR}`；展示 difficulty、execution_profile、reasons 和 subagent_budget | `requirement-classified` |
 | `quick-dev:init` | 先执行轻量只读 discovery，写入非空 `quick-dev-scope.json`（`scope_mode=explicit`，含 `allowed_files`、`expected_files`、禁区和 AC）；超过 2 文件/2 模块、含宽泛 glob 或非低风险时写 `scope-escalation.json` 并回到 `classify:requirement`，不得继续实现。随后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}` | `quick-dev-ready` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
 | `plan:adversarial-review` | 运行 fresh reviewer 对照 requirement/clarification/as-is 与全部 to-be 结构化产物；写入 `to-be/adversarial-review.json`/`.md`。`fail` 必须修复 tasks/traceability/impact/implementation plan 后重跑，达到上限进入 `blocked` | `to-be-adversarial-approved` |
-| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-confirmed` |
+| `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-report-confirmed` |
 | `worktree:setup` | 多仓 worktree 设置：先运行 `multi-repo-worktree.mjs --detect <workspace-root>`，由用户确认仓库列表和隔离策略；yes → `--create <idea-name> --workspace <workspace-root> --repos ...`，创建每仓同逻辑分支并写入持久 v3 registry；no → 仍需显式记录 current-branch 决策。恢复时必须先运行 `--locate/--resume`，读取 decision/registry 并用 `git worktree list --porcelain` 验证路径；旧 v1/v2 decision 继续接受 | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | quick route 必须先通过 `quick-dev-ready`；否则禁止启动 coder。其余路径运行 `/chisel-implement <idea-name>` | `implementation-verified` |
-| `review:cr` | `/chisel-review <idea-name>`；先运行 `review-selector.mjs`，spec 必跑，再按实际 diff/path/content 选择维度和 Dynamic Workflow batches；旧 D2-D9 通过 skipped/auto-pass projection 兼容。 | `cr-complete` |
-| `review:cr-moderate` | `/chisel-review <idea-name>`（默认 moderate 维度由 selector 决定；高风险信号会升级） | `cr-complete` |
-| `review:cr-light` | `/chisel-review <idea-name>`（仅小型低风险 diff 使用；spec 必跑并记录 lite 理由） | `cr-complete` |
-| `review:integration` | `/chisel-review <idea-name>`（standard/complex 且多 task：验证跨 task 组合一致性） | `integration-cr-complete` |
+| `review:cr` | `/chisel-review <idea-name>`；先运行 `review-selector.mjs`，spec 必跑，再按实际 diff/path/content 选择维度和 Dynamic Workflow batches；旧 D2-D9 通过 skipped/auto-pass projection 兼容。 | `cr-report-confirmed` |
+| `review:cr-moderate` | `/chisel-review <idea-name>`（默认 moderate 维度由 selector 决定；高风险信号会升级） | `cr-report-confirmed` |
+| `review:cr-light` | `/chisel-review <idea-name>`（仅小型低风险 diff 使用；spec 必跑并记录 lite 理由） | `cr-report-confirmed` |
+| `review:integration` | `/chisel-review <idea-name>`（standard/complex 且多 task：验证跨 task 组合一致性） | `integration-cr-report-confirmed` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `implementation-verified` |
-| `final:summary` | Read `${REF}/phase-confirm-details.md`；按其 final:summary 详细行为执行 | `final-summary-complete` |
+| `final:summary` | 生成最终总结与任务耗时报告，交付链接并等待哈希确认 | `task-time-report-confirmed` |
 | `review:merge` | Read `${REF}/merge-review-guide.md`；生成绑定当前 Git HEAD + working-tree fingerprint 的 Current Change Report，逐文件输出报告，等待用户 Approve / Request changes / Comment。只有明确 Approve 才写入确认凭据 | `merge-review-confirmed` |
 | `blocked` | 停止，报告阻塞原因 | — |
 | `done` | Read `${REF}/phase-confirm-details.md`；按其完成后合并流程执行 | — |
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references`
 > 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
-> 可用 gate（仅限以下值）：`requirement-exists` | `clarification-complete` | `requirement-classified` | `as-is-complete` | `as-is-human-docs-ready` | `as-is-confirmed` | `quick-dev-ready` | `to-be-exists` | `to-be-human-docs-ready` | `to-be-adversarial-approved` | `to-be-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `implementation-verified` | `cr-complete` | `integration-cr-complete` | `rework-limit` | `all-approved` | `traceability-complete` | `final-summary-complete` | `merge-review-report-exists` | `merge-review-confirmed` | `done`。不要发明其他 gate 名称。
+> 可用 gate（仅限以下值）：`requirement-exists` | `clarification-complete` | `requirement-classified` | `as-is-complete` | `as-is-human-docs-ready` | `as-is-confirmed` | `as-is-report-confirmed` | `quick-dev-ready` | `to-be-exists` | `to-be-human-docs-ready` | `to-be-adversarial-approved` | `to-be-confirmed` | `to-be-report-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `implementation-verified` | `cr-complete` | `cr-report-confirmed` | `integration-cr-complete` | `integration-cr-report-confirmed` | `rework-limit` | `all-approved` | `traceability-complete` | `final-summary-complete` | `task-time-report-confirmed` | `merge-review-report-exists` | `merge-review-confirmed` | `done`。不要发明其他 gate 名称。
 
 ### Complexity 分级
 

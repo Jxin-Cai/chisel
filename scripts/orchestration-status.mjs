@@ -20,6 +20,7 @@ import {
 } from './workflow-lib.mjs';
 import { checkGate } from './gate-check.mjs';
 import { WORKFLOW_PATHS } from './workflow-definition.mjs';
+import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
 
 function readPreviousStep(ideaDir) {
   const p = join(ideaDir, 'workflow-state.yaml');
@@ -36,6 +37,8 @@ function buildResult(resumeStep, reason, ideaDir, phaseDetail = {}) {
   const complexity = phaseDetail.complexity || assessment.routing_complexity;
   const currentStep = ideaDir && ideaDir !== 'none' && existsSync(ideaDir) ? readPreviousStep(ideaDir) : null;
   const revision = ideaDir && ideaDir !== 'none' && existsSync(ideaDir) ? readWorkflowRevision(ideaDir) : 0;
+  const projectProfile = ideaDir && ideaDir !== 'none' && existsSync(ideaDir)
+    ? readProjectProfile(ideaDir) : { mode: PROJECT_MODES.UNKNOWN };
   const entries = Object.entries(phaseDetail).filter(([k, v]) => v !== undefined && v !== '' && k !== 'complexity');
   return {
     resume_step: resumeStep,
@@ -44,6 +47,8 @@ function buildResult(resumeStep, reason, ideaDir, phaseDetail = {}) {
     delivery_complexity: assessment.delivery_complexity,
     risk_level: assessment.risk_level,
     uncertainty_level: assessment.uncertainty_level,
+    project_mode: projectProfile.mode,
+    as_is_profile: projectProfile.mode === PROJECT_MODES.GREENFIELD ? 'fast' : 'full',
     routing_reasons: assessment.reasons.length > 0 ? assessment.reasons : undefined,
     current_step: currentStep || 'none',
     state_revision: revision,
@@ -87,7 +92,7 @@ function ensureVerificationBeforeReview(ideaDir, reviewTasks, reviewStep, reason
 }
 
 function ensureFinalAndMergeReview(ideaDir, complexity) {
-  const summary = checkGate(ideaDir, 'final-summary-complete');
+  const summary = checkGate(ideaDir, 'task-time-report-confirmed');
   if (!summary.pass) {
     return buildResult('final:summary', 'all tasks approved, final summary is pending or stale', ideaDir, { complexity, gate_reason: summary.reason });
   }
@@ -306,7 +311,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       if (exhausted) return buildResult('blocked', 'to-be adversarial review reached its repair limit', ideaDir, { complexity, ...exhausted });
       return buildResult('plan:adversarial-review', 'an adversarial completeness review is required before plan confirmation', ideaDir, { complexity });
     }
-    if (!checkGate(ideaDir, 'to-be-confirmed').pass) {
+    if (!checkGate(ideaDir, 'to-be-report-confirmed').pass) {
       return buildResult('plan:confirm', 'plan confirmation is missing', ideaDir, { complexity });
     }
     if (!checkGate(ideaDir, 'worktree-decided').pass) {
@@ -357,9 +362,15 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
   // === STANDARD / COMPLEX PATH ===
   const asIsGate = checkGate(ideaDir, 'as-is-complete');
   if (!asIsGate.pass) {
-    return buildResult('understand:explore', 'as-is documents are incomplete', ideaDir, { gate_reason: asIsGate.reason });
+    const profile = readProjectProfile(ideaDir);
+    return buildResult(
+      'understand:explore',
+      profile.mode === PROJECT_MODES.GREENFIELD ? 'greenfield as-is fast path is pending' : 'as-is documents are incomplete',
+      ideaDir,
+      { gate_reason: asIsGate.reason, as_is_profile: profile.mode === PROJECT_MODES.GREENFIELD ? 'fast' : 'full' },
+    );
   }
-  if (!checkGate(ideaDir, 'as-is-confirmed').pass) {
+  if (!checkGate(ideaDir, 'as-is-report-confirmed').pass) {
     return buildResult('understand:confirm', 'as-is structured confirmation is missing or invalid', ideaDir);
   }
   if (!checkGate(ideaDir, 'clarification-complete').pass) {
@@ -373,7 +384,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     if (exhausted) return buildResult('blocked', 'to-be adversarial review reached its repair limit', ideaDir, { complexity, ...exhausted });
     return buildResult('plan:adversarial-review', 'an adversarial completeness review is required before plan confirmation', ideaDir, { complexity });
   }
-  if (!checkGate(ideaDir, 'to-be-confirmed').pass) {
+  if (!checkGate(ideaDir, 'to-be-report-confirmed').pass) {
     return buildResult('plan:confirm', 'plan confirmation is missing', ideaDir, { complexity });
   }
   if (!checkGate(ideaDir, 'worktree-decided').pass) {
@@ -452,6 +463,8 @@ function formatOutput(result, compact) {
   console.log(`delivery_complexity: ${result.delivery_complexity}`);
   console.log(`risk_level: ${result.risk_level}`);
   console.log(`uncertainty_level: ${result.uncertainty_level}`);
+  console.log(`project_mode: ${result.project_mode}`);
+  console.log(`as_is_profile: ${result.as_is_profile}`);
   if (result.routing_reasons) console.log(`routing_reasons: ${JSON.stringify(result.routing_reasons)}`);
   console.log(`current_step: ${result.current_step}`);
   console.log(`state_revision: ${result.state_revision}`);

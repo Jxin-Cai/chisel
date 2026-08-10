@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
 
 const AS_IS_MAIN_FILES = [
   'as-is/repo-map.json',
@@ -71,14 +72,19 @@ function countMermaid(text) {
 
 function scoreCoverage(ideaDir) {
   const matrix = readJson(join(ideaDir, 'as-is/coverage-matrix.json'));
+  const greenfield = readProjectProfile(ideaDir).mode === PROJECT_MODES.GREENFIELD;
   let coveredDimensions = 0;
+  let notApplicableDimensions = 0;
   if (matrix) {
     for (const dim of COVERAGE_DIMENSIONS) {
       const items = matrix[dim];
+      const notApplicable = String(matrix.not_applicable?.[dim] || '').trim();
       if (Array.isArray(items) && items.length > 0) coveredDimensions++;
+      else if (Array.isArray(items) && notApplicable) notApplicableDimensions++;
     }
   }
-  const matrixScore = coveredDimensions / COVERAGE_DIMENSIONS.length;
+  const handledDimensions = coveredDimensions + notApplicableDimensions;
+  const matrixScore = handledDimensions / COVERAGE_DIMENSIONS.length;
 
   const budget = readText(join(ideaDir, 'as-is/context-budget.md'));
   let lineCoverageRate = 0;
@@ -103,13 +109,18 @@ function scoreCoverage(ideaDir) {
     frontendDetail = { ui_entries_count: matrix.ui_entries?.length || 0, field_traces_count: matrix.field_traces?.length || 0 };
   }
 
-  const score = Math.min(matrixScore * 0.5 + Math.min(lineCoverageRate, 1.0) * 0.5 + frontendBonus, 1.0);
+  const effectiveLineCoverageRate = greenfield ? 1 : lineCoverageRate;
+  const score = Math.min(matrixScore * 0.5 + Math.min(effectiveLineCoverageRate, 1.0) * 0.5 + frontendBonus, 1.0);
   return {
     score: round(score),
     detail: {
       matrix_dimensions: COVERAGE_DIMENSIONS.length,
       covered_dimensions: coveredDimensions,
-      line_coverage_rate: round(lineCoverageRate),
+      not_applicable_dimensions: notApplicableDimensions,
+      handled_dimensions: handledDimensions,
+      line_coverage_rate: greenfield ? null : round(lineCoverageRate),
+      applicable: !greenfield,
+      ...(greenfield ? { reason: 'greenfield repository has no historical source lines' } : {}),
       ...frontendDetail,
     },
   };
@@ -122,8 +133,10 @@ function scoreEvidenceDensity(ideaDir) {
     Array.isArray(f.evidence) && f.evidence.some(e => e.file && e.line_start > 0)
   ).length;
 
+  const greenfield = readProjectProfile(ideaDir).mode === PROJECT_MODES.GREENFIELD;
   let score;
-  if (facts.length >= 10) score = 1.0;
+  if (greenfield && factsWithEvidence === facts.length && facts.length > 0) score = 1.0;
+  else if (facts.length >= 10) score = 1.0;
   else if (facts.length >= 5) score = 0.7;
   else if (facts.length >= 3) score = 0.5;
   else score = 0.3;
@@ -134,7 +147,12 @@ function scoreEvidenceDensity(ideaDir) {
 
   return {
     score: round(score),
-    detail: { fact_count: facts.length, facts_with_evidence: factsWithEvidence },
+    detail: {
+      fact_count: facts.length,
+      facts_with_evidence: factsWithEvidence,
+      applicable: !greenfield,
+      ...(greenfield ? { reason: 'greenfield evidence density is not comparable to a historical codebase' } : {}),
+    },
   };
 }
 
@@ -147,7 +165,8 @@ function scoreUncertainty(ideaDir) {
 
   const checklist = sectionText(overview, '用户确认清单');
   const cItems = (checklist.match(/C-\d{3}/g) || []).length;
-  if (cItems > 0) score += 0.4;
+  const explicitlyNoConfirmation = checklist.includes('无需用户确认');
+  if (cItems > 0 || explicitlyNoConfirmation) score += 0.4;
 
   if (overview.includes('阅读充分性声明')) score += 0.3;
 
@@ -156,6 +175,7 @@ function scoreUncertainty(ideaDir) {
     detail: {
       has_uncertainty_section: score >= 0.3,
       confirmation_items: cItems,
+      explicitly_no_confirmation: explicitlyNoConfirmation,
       has_sufficiency_statement: overview.includes('阅读充分性声明'),
     },
   };
@@ -295,11 +315,11 @@ function generateWeaknesses(dimensions) {
     switch (dim) {
       case 'coverage': {
         const d = data.detail;
-        if (d.covered_dimensions < d.matrix_dimensions) {
-          const missing = COVERAGE_DIMENSIONS.length - d.covered_dimensions;
+        if (d.handled_dimensions < d.matrix_dimensions) {
+          const missing = COVERAGE_DIMENSIONS.length - d.handled_dimensions;
           weaknesses.push(`coverage: ${missing} 个 coverage-matrix 维度缺少覆盖项`);
         }
-        if (d.line_coverage_rate < 0.3) weaknesses.push(`coverage: 行覆盖率仅 ${(d.line_coverage_rate * 100).toFixed(0)}%`);
+        if (d.applicable !== false && d.line_coverage_rate < 0.3) weaknesses.push(`coverage: 行覆盖率仅 ${(d.line_coverage_rate * 100).toFixed(0)}%`);
         break;
       }
       case 'evidence_density':
@@ -307,7 +327,7 @@ function generateWeaknesses(dimensions) {
         break;
       case 'uncertainty':
         if (!data.detail.has_uncertainty_section) weaknesses.push('uncertainty: overview 缺少"不确定点"章节');
-        if (data.detail.confirmation_items === 0) weaknesses.push('uncertainty: 用户确认清单无 C-xxx 条目');
+        if (data.detail.confirmation_items === 0 && !data.detail.explicitly_no_confirmation) weaknesses.push('uncertainty: 用户确认清单无 C-xxx 条目');
         if (!data.detail.has_sufficiency_statement) weaknesses.push('uncertainty: 缺少"阅读充分性声明"');
         break;
       case 'diagram':

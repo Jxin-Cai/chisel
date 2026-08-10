@@ -11,7 +11,7 @@ import { workspaceIdentity } from './verification-lib.mjs';
 const MAX_SNAPSHOTS = 8;
 const MAX_TOTAL_SNAPSHOT_BYTES = 25 * 1024 * 1024;
 const MAX_PAYLOAD_BYTES = 10 * 1024 * 1024;
-const EXCLUDED_TOP_LEVEL = new Set(['snapshots', 'dashboard.html', 'events.ndjson', 'runner-state.json', '.transition.lock', '.file-transaction.lock', '.transactions']);
+const EXCLUDED_TOP_LEVEL = new Set(['snapshots', 'events.ndjson', 'runner-state.json', '.transition.lock', '.file-transaction.lock', '.transactions']);
 
 function getIdeaName(ideaDir) {
   const wsFile = join(ideaDir, 'workflow-state.yaml');

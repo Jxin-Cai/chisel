@@ -13,6 +13,8 @@ import {
 } from '../scripts/merge-review.mjs';
 import { workspaceIdentity } from '../scripts/verification-lib.mjs';
 import { initTaskState } from '../scripts/workflow-lib.mjs';
+import { generateReports } from '../scripts/reports.mjs';
+import { recordReportConfirmation } from '../scripts/report-confirm.mjs';
 
 function git(root, ...args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
@@ -78,6 +80,15 @@ describe('pre-merge current change report', () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+  function generateCrHtml() {
+    return generateReports(ideaDir, ['cr']).generated[0];
+  }
+
+  function confirmTaskTimeReport() {
+    const generated = generateReports(ideaDir, ['task-time']).generated[0];
+    recordReportConfirmation(ideaDir, 'task-time', generated.sha256);
+  }
+
   it('generates a reviewable report and requires explicit approval', () => {
     const report = generateMergeReview(ideaDir, root);
 
@@ -89,13 +100,16 @@ describe('pre-merge current change report', () => {
     assert.match(checkGate(ideaDir, 'merge-review-confirmed').reason, /missing/);
     assert.match(readFileSync(join(ideaDir, 'cr/current-change-report.md'), 'utf8'), /## Human Review Decision/);
 
+    generateCrHtml();
     recordMergeReviewDecision(ideaDir, 'approve', 'reviewed exact snapshot');
     assert.equal(validateMergeReviewConfirmation(ideaDir), '');
+    confirmTaskTimeReport();
     assert.equal(checkGate(ideaDir, 'done').pass, true);
   });
 
   it('does not treat comments or requested changes as merge approval', () => {
     generateMergeReview(ideaDir, root);
+    generateCrHtml();
     recordMergeReviewDecision(ideaDir, 'comment', 'please explain compatibility');
     assert.match(validateMergeReviewConfirmation(ideaDir), /decision is comment/);
 
@@ -105,11 +119,13 @@ describe('pre-merge current change report', () => {
 
   it('invalidates approval when the working tree changes', () => {
     generateMergeReview(ideaDir, root);
+    generateCrHtml();
     recordMergeReviewDecision(ideaDir, 'approve');
     appendFileSync(join(ideaDir, 'cr/current-change-report.md'), '\nchanged after approval\n');
     assert.match(validateMergeReviewConfirmation(ideaDir), /does not match/);
 
     generateMergeReview(ideaDir, root);
+    generateCrHtml();
     recordMergeReviewDecision(ideaDir, 'approve');
     writeFileSync(join(root, 'app.js'), 'export const value = 3;\n');
 

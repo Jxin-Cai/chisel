@@ -13,7 +13,7 @@ steps:
       check: as-is-complete
   - id: understand:confirm
     postcondition:
-      check: as-is-confirmed
+      check: as-is-report-confirmed
   - id: clarify:requirement
     postcondition:
       check: clarification-complete
@@ -28,7 +28,7 @@ steps:
       check: to-be-adversarial-approved
   - id: plan:confirm
     postcondition:
-      check: to-be-confirmed
+      check: to-be-report-confirmed
   - id: worktree:setup
     postcondition:
       check: worktree-decided
@@ -46,19 +46,19 @@ steps:
       check: implementation-verified
   - id: review:cr
     postcondition:
-      check: cr-complete
+      check: cr-report-confirmed
   - id: review:cr-light
     postcondition:
-      check: cr-complete
+      check: cr-report-confirmed
   - id: review:cr-moderate
     postcondition:
-      check: cr-complete
+      check: cr-report-confirmed
   - id: review:integration
     postcondition:
-      check: integration-cr-complete
+      check: integration-cr-report-confirmed
   - id: final:summary
     postcondition:
-      check: final-summary-complete
+      check: task-time-report-confirmed
   - id: review:merge
     postcondition:
       check: merge-review-confirmed

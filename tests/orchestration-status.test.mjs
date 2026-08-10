@@ -118,7 +118,7 @@ describe('orchestration review recovery', () => {
     runOrchestration(ideaDir);
     assert.equal(readFileSync(statePath, 'utf8'), before);
     assert.equal(existsSync(join(ideaDir, 'metrics.json')), false);
-    assert.equal(existsSync(join(ideaDir, 'dashboard.html')), false);
+    assert.equal(existsSync(join(ideaDir, 'reports')), false);
     assert.equal(existsSync(join(ideaDir, 'snapshots')), false);
   });
 });

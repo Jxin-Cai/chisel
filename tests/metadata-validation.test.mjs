@@ -6,6 +6,6 @@ describe('plugin metadata', () => {
   it('passes the offline strict metadata contract and keeps versions aligned', () => {
     const result = validateMetadata();
     assert.equal(result.valid, true, result.errors.join('\n'));
-    assert.equal(result.plugin_version, '0.42.0');
+    assert.equal(result.plugin_version, '0.43.0');
   });
 });

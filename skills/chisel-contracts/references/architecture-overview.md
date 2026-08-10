@@ -18,7 +18,7 @@
 - 运行态产物写入 `control-plane.mjs` locator 解析的持久 control root `.chisel/<idea-name>/`；外层 workspace 可以非 Git，locator 会从外层、原 repo 或 linked worktree 读取 registry，恢复 workspace_root、各 repo/worktree、branch、base/default ref 和 lifecycle，也可用 `CHISEL_CONTROL_ROOT` 覆盖。
 - `skills/chisel-contracts/workflow-definition.json` 是 step/phase/gate/complexity path 的唯一机器定义；脚本通过 `workflow-definition.mjs` 加载，不再复制枚举。
 - `scripts/orchestration-status.mjs` 是严格只读的恢复点计算器；`orchestration-runner.mjs` 持久化 runner 租约、iteration 和最后决策，恢复事务后驱动显式 transition。
-- `scripts/orchestration-transition.mjs` 是 workflow step 的唯一写入口：校验权威 resume step 与 expected revision，持有 transition lock，记录 `events.ndjson`，再更新 dashboard 投影。
+- `scripts/orchestration-transition.mjs` 是 workflow step 的唯一写入口：校验权威 resume step 与 expected revision，持有 transition lock，记录 `events.ndjson`，再更新任务与耗时报告投影。
 - `scripts/workflow-status.mjs` 和 `scripts/workflow-lib.mjs` 管理 task 状态机；task state 与 provenance 通过 durable file transaction 原子提交。
 - `scripts/task-provenance.mjs` 为每个 task/attempt 记录 `run_id`、owner、lease/heartbeat、执行前基线和执行后结果指纹；过期 lease 会留下 abandoned 审计记录，旧 run 不能提交。
 - `scripts/verify-run.mjs` 将验证结果绑定到显式 `verification-contract.json` 以及当前 Git/workspace 指纹。
@@ -31,12 +31,13 @@
 - `scripts/review-selector.mjs` 基于实际 diff/path/content 选择 review 风险与维度；spec 永远必跑，旧 D2-D9 通过 skipped/auto-pass projection 兼容。
 - `scripts/repo-map.mjs` 产出语言统计、目录结构和前端框架/路由检测（无 LLM 依赖），explorer 探索前自动运行。
 - `scripts/debt-scan.mjs` 纯静态技术债务扫描器（无 LLM 依赖），explorer 探索前自动运行，产出 proposed 候选。
-- `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险），explorer 完成后自动运行。
+- `scripts/repo-map.mjs` 同时输出 `project_mode`。当 `source_files=0` 时标记为 `greenfield`，`scripts/greenfield-as-is.mjs` 一次生成 N/A 基线并跳过 Explore/Analyst/Writer；交付复杂度和后续审查强度不因此降低。
+- `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险）；greenfield 的无历史代码维度按 N/A 处理，不要求伪造入口、调用链或 0/0 行覆盖率。
 - `scripts/quick-dev-init.mjs` trivial 快速通道自动生成单 task + worktree-decision + traceability-matrix。
 - `scripts/traceability-check.mjs` 需求→task 可追溯性验证，拒绝缺失/空 final matrix，精确检查 AC/VC 与 task refs 双向映射，并在 final 阶段前确认所有 AC 被覆盖实现。
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check 数据写入 `cr-context.json`，D2-D9 agent 共用。
 - `scripts/merge-review.mjs` 在自动 CR/返修和 final summary 之后生成 Current Change Report，汇总 base/head、逐文件 diff 统计、验证命令、CR finding/observation、风险和 task 覆盖；人工批准绑定 Git HEAD、working-tree fingerprint、final summary 和报告内容，任一变化都会使批准失效。
-- `scripts/dashboard.mjs` 生成自包含 HTML 仪表板（工作流进度/task 矩阵/CR 雷达图/traceability 覆盖度/as-is 查看器）。
+- `scripts/reports.mjs` 生成四份自包含 HTML：As-Is、To-Be、CR、任务与耗时报告。每份报告独立承载内容。
 - `scripts/session-metrics.mjs` 记录每个 idea 的步骤耗时、agent 调用次数、返修轮次等效率指标。
 - `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照，同时按数量（8）和总大小（25 MiB）双重上限清理，runner/events/transaction journal 不进入快照 payload。
 - **理解阶段**（`chisel-understand`）仅在 `execution_profile=full` 时使用 Explore + Analyst 产出结构化数据；subagent 数量受分类预算约束，不是固定三 agent。人类文档由后台 `agent-chisel-writer` 根据完整 source manifest 生成，主编排器并行执行结构化 gate/评分，展示前等待 fresh receipt。
@@ -53,7 +54,7 @@
 - **脚本产物**：`repo-map.json`（Phase 0）、`quality-score.json`（Phase 4）
 - **人类文档**（Writer 产出）：`overview.md`、`core-walkthrough.md`、`evidence-index.md`、`context-budget.md`
 - **枝干文件**（Writer 按需产出）：`details/entrypoints.md`、`details/data-model.md`、`details/api-contracts.md`、`details/data-flow.md`
-- 结构化产物是核心数据源（供 Planner 和 gate 使用），人类文档由 Writer 从结构化产物二次生成（供用户阅读和 dashboard 展示）。
+- 结构化产物是核心数据源（供 Planner 和 gate 使用），人类文档由 Writer 从结构化产物二次生成（供用户阅读和独立 HTML 报告展示）。
 
 
 ## 并行开发
@@ -84,12 +85,10 @@
 - `gate-check.mjs` 的 `traceability-complete` gate 在 final:summary 前阻断未覆盖情况。
 - 向后兼容：matrix 文件不存在时 gate 自动 pass。
 
-## 可视化仪表板
+## 独立 HTML 报告
 
-- `/chisel-report <idea-name> --format html` 手动生成 `{idea-dir}/dashboard/` 下分块 HTML。
-- **每次显式步骤切换后更新 dashboard 投影**，默认不打开浏览器、不阻塞执行；用户主动查看或进入人工确认时再打开。浏览器页面打开后每 30s 自动刷新。
-- 自包含 HTML，使用 Mermaid CDN + Chart.js CDN 渲染图表。
-- 含"步骤产出详情"表：展示当前需求的完整执行步骤列表、每步状态（已完成/进行中/待执行/已跳过）和对应的产出文件完成情况。
-- 含 As-Is 查看器（5 Tab：概览、核心走查、证据表、质量雷达图、覆盖矩阵）。
-- 含全链路改造视图：从 `impact-risk-report.json` 的 `flow_graph` 渲染带颜色标记的 Mermaid 流程图（灰=保留/蓝=改造/绿=新增/红=删除）。
-- `workflow-state.yaml` 的 `step_history` 提供时间线数据。
+- `scripts/report-model.mjs` 只负责数据采集、归一化和指标计算；`scripts/report-renderers.mjs` 只负责四类报告的内容片段；`scripts/reports.mjs` 将片段装入各自模板。
+- `/chisel-report <idea-name> --format html` 按 As-Is、To-Be、CR、任务与耗时的顺序逐份生成；一次只允许一份。
+- 每次生成后立即返回绝对路径和 SHA-256，等待用户明确确认。`report-confirm.mjs` 将确认绑定到文件哈希；重新生成会使旧确认失效。
+- `as-is-report-confirmed`、`to-be-report-confirmed`、`cr-report-confirmed`、`integration-cr-report-confirmed`、`task-time-report-confirmed` 和 `merge-review-confirmed` 是推进门禁。
+- 报告是自包含、响应式、可打印 HTML；`workflow-state.yaml.step_history` 为任务与耗时报告提供时间线数据。

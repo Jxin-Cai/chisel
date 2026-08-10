@@ -10,7 +10,7 @@
       "name": "chisel",
       "source": "./",
       "description": "Legacy system feature enhancement workflow for Claude Code",
-      "version": "0.42.0",
+      "version": "0.43.0",
       "homepage": "https://github.com/Jxin-Cai/chisel",
       "repository": "https://github.com/Jxin-Cai/chisel",
       "author": {

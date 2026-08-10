@@ -6,34 +6,32 @@ import { WORKFLOW_STEPS } from './workflow-definition.mjs';
 
 const STEP_OUTPUTS = Object.freeze({
   'receive-requirement': ['requirement.md', 'as-is/ui-snapshot.md'],
-  // Keep the source directory expansion for this phase, and add the generated
-  // dashboard page as an exact file.  Never expand dashboard/ itself: only
-  // advertise the page when it has actually been generated.
-  'understand:explore': ['as-is/', 'dashboard/as-is.html'],
+  // Report pages are exact files: only advertise a report after generation.
+  'understand:explore': ['as-is/', 'reports/as-is-report.html'],
   'understand:confirm': ['clarifications.json', 'clarifications.md', 'confirmations/as-is.json'],
   'clarify:requirement': ['requirement-clarification.json', 'requirement-clarification.md'],
   'classify:requirement': ['requirement-classification.json'],
-  'plan:design': ['to-be/', 'dashboard/to-be.html'],
+  'plan:design': ['to-be/', 'reports/to-be-report.html'],
   'plan:adversarial-review': ['to-be/adversarial-review.json', 'to-be/adversarial-review.md'],
   'plan:confirm': ['confirmations/to-be.json'],
   'worktree:setup': ['worktree-decision.json'],
   'quick-dev:init': ['tasks/', 'task-workflow-state.yaml', 'worktree-decision.json', 'quick-dev-scope.json', 'to-be/traceability-matrix.json'],
   'tasks:init': ['tasks/', 'task-workflow-state.yaml'],
-  'implement:code': ['task-reports/', 'verification-contract.json', 'verify-result.json'],
-  'repair:code': ['task-reports/', 'verification-contract.json', 'verify-result.json'],
-  'review:cr': ['cr/', 'dashboard/cr-results.html'],
-  'review:cr-light': ['cr/', 'dashboard/cr-results.html'],
-  'review:cr-moderate': ['cr/', 'dashboard/cr-results.html'],
-  'review:integration': ['cr/', 'dashboard/cr-results.html'],
-  'final:summary': ['final-summary.md'],
+  'implement:code': ['task-reports/', 'verification-contract.json', 'verify-result.json', 'reports/task-time-report.html'],
+  'repair:code': ['task-reports/', 'verification-contract.json', 'verify-result.json', 'reports/task-time-report.html'],
+  'review:cr': ['cr/', 'reports/cr-report.html', 'confirmations/cr-report.json'],
+  'review:cr-light': ['cr/', 'reports/cr-report.html', 'confirmations/cr-report.json'],
+  'review:cr-moderate': ['cr/', 'reports/cr-report.html', 'confirmations/cr-report.json'],
+  'review:integration': ['cr/', 'reports/cr-report.html', 'confirmations/cr-report.json'],
+  'final:summary': ['final-summary.md', 'reports/task-time-report.html', 'confirmations/task-time-report.json'],
   'review:merge': [
     'cr/current-change-report.json',
     'cr/current-change-report.md',
     'confirmations/merge-review.json',
-    'dashboard/current-change.html',
+    'reports/cr-report.html',
   ],
   blocked: [],
-  done: ['final-summary.md'],
+  done: ['final-summary.md', 'reports/task-time-report.html', 'confirmations/task-time-report.json'],
 });
 
 function filesBelow(path) {

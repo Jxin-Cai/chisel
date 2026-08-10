@@ -7,7 +7,7 @@ import {
   buildTraceabilityHierarchy,
   collectCrResults,
   collectTraceability,
-  computeDashboardSummary,
+  computeReportSummary,
   detectComplexity,
   formatDuration,
   formatEvidence,
@@ -22,7 +22,7 @@ import {
   parseTableSection,
   renderTaskChip,
   safeDomId,
-} from '../scripts/dashboard.mjs';
+} from '../scripts/report-model.mjs';
 
 function makeTmpDir() {
   return mkdtempSync(join(tmpdir(), 'chisel-dash-'));
@@ -131,7 +131,7 @@ describe('collectCrResults', () => {
   });
 });
 
-describe('dashboard normalization helpers', () => {
+describe('report normalization helpers', () => {
   it('normalizes task_id/risk_level and legacy id/risk', () => {
     assert.deepEqual(normalizeTaskItem({ task_id: 'task-001', risk_level: 'high', title: 'A', change_point_refs: ['CP-1'] }).id, 'task-001');
     assert.equal(normalizeTaskItem({ id: 'task-002', risk: 'medium' }).risk_level, 'medium');
@@ -258,8 +258,8 @@ describe('dashboard normalization helpers', () => {
     assert.match(chip, /data-return-target="trace-AC-001"/);
   });
 
-  it('computes dashboard summary from workflow, tasks, traceability and CR', () => {
-    const summary = computeDashboardSummary({
+  it('computes report summary from workflow, tasks, traceability and CR', () => {
+    const summary = computeReportSummary({
       tasks: { 'task-001': { status: 'approved' }, 'task-002': { status: 'coding' } },
       traceabilityModel: { percentage: 50, requirementItems: [{ coverage: 'complete' }, { coverage: 'missing' }] },
       crResults: [{ reworkItems: [{ '严重度': 'high', '置信度': '90' }], observations: [{}] }],

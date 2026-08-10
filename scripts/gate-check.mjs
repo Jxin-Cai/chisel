@@ -7,8 +7,10 @@ import { validateTasksDocument } from './task-init.mjs';
 import { validateVerificationResult } from './verification-lib.mjs';
 import { readTaskRun } from './task-provenance.mjs';
 import { validateMergeReviewConfirmation, validateMergeReviewReport } from './merge-review.mjs';
+import { reportStatus } from './report-confirm.mjs';
 import { checkDocumentJob } from './document-job.mjs';
 import { computeRequirementClassification } from './requirement-classify.mjs';
+import { PROJECT_MODES, projectModeFromRepoMap } from './project-profile.mjs';
 
 import { getTaskScope } from './scope-check.mjs';
 import { validateJsonFile } from './schemas/validate.mjs';
@@ -868,14 +870,18 @@ function validateRepoMap(ideaDir) {
   const doc = parsed.value;
   if (![1, 2, 3, 4].includes(doc?.schema_version)) return 'repo-map.json schema_version must be 1, 2, 3, or 4';
   if (!doc.generated_at || typeof doc.generated_at !== 'string') return 'repo-map.json missing generated_at';
-  if (!Array.isArray(doc.languages) || doc.languages.length === 0) return 'repo-map.json languages must be non-empty array';
+  if (!doc.stats || typeof doc.stats !== 'object') return 'repo-map.json missing stats';
+  if (!Number.isInteger(doc.stats.total_files) || doc.stats.total_files < 0) return 'repo-map.json stats.total_files must be a non-negative integer';
+  if (!Number.isInteger(doc.stats.source_files) || doc.stats.source_files < 0) return 'repo-map.json stats.source_files must be a non-negative integer';
+  const projectMode = projectModeFromRepoMap(doc);
+  const greenfield = projectMode === PROJECT_MODES.GREENFIELD;
+  if (doc.project_mode !== undefined && doc.project_mode !== projectMode) return 'repo-map.json project_mode is inconsistent with stats.source_files';
+  if (!Array.isArray(doc.languages) || (!greenfield && doc.languages.length === 0)) return 'repo-map.json languages must be non-empty for repositories with source files';
   for (const [index, lang] of doc.languages.entries()) {
     if (!lang?.language || typeof lang.language !== 'string') return `repo-map.json languages[${index}] missing language`;
     if (!Number.isInteger(lang.file_count) || lang.file_count <= 0) return `repo-map.json languages[${index}] missing positive file_count`;
   }
-  if (!doc.stats || typeof doc.stats !== 'object') return 'repo-map.json missing stats';
-  if (!Number.isInteger(doc.stats.total_files) || doc.stats.total_files <= 0) return 'repo-map.json stats.total_files must be positive';
-  if (!Number.isInteger(doc.stats.source_files)) return 'repo-map.json stats.source_files must be integer';
+  if (!greenfield && doc.stats.total_files <= 0) return 'repo-map.json stats.total_files must be positive for repositories with source files';
   if (doc.schema_version === 1) {
     if (!Array.isArray(doc.entry_candidates)) return 'repo-map.json entry_candidates must be an array';
     for (const [index, entry] of doc.entry_candidates.entries()) {
@@ -1495,7 +1501,8 @@ export function checkGate(ideaDir, gateId) {
       if (qualityReason) return result(gateId, false, qualityReason);
       const aiInputReason = validateAiInput(ideaDir);
       if (aiInputReason) return result(gateId, false, aiInputReason);
-      return result(gateId, true);
+      const repoMap = readJsonFile(join(ideaDir, 'as-is/repo-map.json')).value;
+      return result(gateId, true, '', { project_mode: projectModeFromRepoMap(repoMap) });
     }
     case 'as-is-confirmed': {
       if (has(ideaDir, 'confirmations/as-is.json') || has(ideaDir, 'clarifications.json')) {
@@ -1506,6 +1513,12 @@ export function checkGate(ideaDir, gateId) {
       if (!has(ideaDir, 'clarifications.md')) return result(gateId, false, 'clarifications.md missing — legacy confirm must produce clarifications');
       const decisionReason = validateClarificationDecisions(ideaDir);
       return decisionReason ? result(gateId, false, decisionReason) : result(gateId, true, '', { legacy: true });
+    }
+    case 'as-is-report-confirmed': {
+      const confirmation = checkGate(ideaDir, 'as-is-confirmed');
+      if (!confirmation.pass) return result(gateId, false, confirmation.reason);
+      const report = reportStatus(ideaDir, 'as-is');
+      return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'strategy-exists':
       return checkGate(ideaDir, 'to-be-exists');
@@ -1577,6 +1590,12 @@ export function checkGate(ideaDir, gateId) {
       if (newFlowTraces.some(Boolean)) return result(gateId, false, 'legacy .to-be-confirmed marker is forbidden when new-workflow artifacts exist');
       if (!has(ideaDir, 'to-be/implementation-plan.md')) return result(gateId, false, '.to-be-confirmed exists but implementation-plan.md is missing');
       return result(gateId, true, '', { legacy: true });
+    }
+    case 'to-be-report-confirmed': {
+      const confirmation = checkGate(ideaDir, 'to-be-confirmed');
+      if (!confirmation.pass) return result(gateId, false, confirmation.reason);
+      const report = reportStatus(ideaDir, 'to-be');
+      return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'tasks-exist':
       return result(gateId, has(ideaDir, 'tasks'), 'tasks directory missing');
@@ -1659,11 +1678,23 @@ export function checkGate(ideaDir, gateId) {
       }
       return validateDimensionCrComplete(ideaDir, gateId);
     }
+    case 'cr-report-confirmed': {
+      const cr = checkGate(ideaDir, 'cr-complete');
+      if (!cr.pass) return result(gateId, false, cr.reason);
+      const report = reportStatus(ideaDir, 'cr');
+      return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
+    }
     case 'integration-cr-complete': {
       const integration = validateIntegrationCrFile(ideaDir);
       if (!integration.valid) return result(gateId, false, integration.reason);
       if (integration.fm.result !== 'pass') return result(gateId, false, `integration CR result is ${integration.fm.result}`);
       return result(gateId, true);
+    }
+    case 'integration-cr-report-confirmed': {
+      const integration = checkGate(ideaDir, 'integration-cr-complete');
+      if (!integration.pass) return result(gateId, false, integration.reason);
+      const report = reportStatus(ideaDir, 'cr');
+      return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'rework-limit': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');
@@ -1786,6 +1817,12 @@ export function checkGate(ideaDir, gateId) {
       if (!traceGate.pass && !traceGate.skipped) return result(gateId, false, `traceability incomplete: ${traceGate.reason}`);
       return result(gateId, true);
     }
+    case 'task-time-report-confirmed': {
+      const summary = checkGate(ideaDir, 'final-summary-complete');
+      if (!summary.pass) return result(gateId, false, summary.reason);
+      const report = reportStatus(ideaDir, 'task-time');
+      return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
+    }
     case 'merge-review-report-exists': {
       const reason = validateMergeReviewReport(ideaDir);
       return reason ? result(gateId, false, reason) : result(gateId, true);
@@ -1795,7 +1832,7 @@ export function checkGate(ideaDir, gateId) {
       return reason ? result(gateId, false, reason) : result(gateId, true);
     }
     case 'done': {
-      const summary = checkGate(ideaDir, 'final-summary-complete');
+      const summary = checkGate(ideaDir, 'task-time-report-confirmed');
       if (!summary.pass) return result(gateId, false, summary.reason);
       const review = checkGate(ideaDir, 'merge-review-confirmed');
       return review.pass ? result(gateId, true) : result(gateId, false, review.reason);

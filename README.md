@@ -132,7 +132,7 @@ Bracketed steps may be skipped depending on complexity classification.
 |---|---|---|
 | 1 | **Receive requirement** | Parse user input, save as `requirement.md` |
 | 2 | **Clarify and classify** | Clarify first, then persist a fingerprinted difficulty, risk, execution profile, and subagent budget |
-| 3 | **Understand as-is (full only)** | Explorer/analyst produce structured evidence; a background Writer produces fresh human documents from the complete source manifest |
+| 3 | **Understand as-is (full only)** | Existing codebases use Explorer/analyst plus a background Writer. Repositories with zero historical source files use a deterministic greenfield baseline and launch no discovery agents. |
 | 4 | **Confirm as-is (full only)** | Human reviews 3-minute summary, risk map, misconceptions, signs off |
 | 5 | **Design strategy** | Planner produces implementation plan, tasks, traceability matrix |
 | 6 | **Adversarial completeness review** | A fresh reviewer checks every requirement/AC/VC against the complete to-be artifacts; findings force a planner repair and another review |
@@ -153,7 +153,7 @@ Bracketed steps may be skipped depending on complexity classification.
 | `minor` | Small compatible behavior change | Clarify, quick path, spec-only review |
 | `trivial` | ≤ 2 files, no new tables/APIs, < 3 cross-module dirs | Quick path with spec-only review |
 | `moderate` | Conservative post-clarification floor or bounded multi-file change | Lightweight plan from requirement/clarification plus a bounded source manifest; no as-is agents |
-| `standard` | Cross-module or boundary change | Full as-is/to-be flow plus integration review |
+| `standard` | Cross-module or boundary change | Full as-is/to-be flow plus integration review; greenfield repositories keep this delivery rigor while using the fast N/A as-is profile |
 | `complex` | High-risk, multi-repo, migration, or broad change | Full flow with all review dimensions and integration review |
 
 ### Human Checkpoints
@@ -231,6 +231,9 @@ Rollback only cleans whitelisted runtime artifacts — never deletes business so
 .chisel/<idea-name>/cr/current-change-report.md   # Human pre-merge report
 .chisel/<idea-name>/cr/current-change-report.json # Snapshot-bound report data
 .chisel/<idea-name>/confirmations/merge-review.json # Approve / request changes / hold decision
+.chisel/<idea-name>/confirmations/cr-report.json    # Hash-bound CR report confirmation
+.chisel/<idea-name>/confirmations/task-time-report.json # Hash-bound task/time report confirmation
+.chisel/<idea-name>/reports/                        # Four standalone HTML reports
 .chisel/<idea-name>/final-summary.md # Final change summary
 ```
 
@@ -240,7 +243,7 @@ After every completed workflow step, Chisel prints each deliverable as an absolu
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs <idea-dir> <completed-step>
 ```
 
-Dashboard links supplement these file links; they do not replace the underlying requirement, design, task report, review, and summary artifacts.
+Standalone HTML report links supplement these file links; they do not replace the underlying artifacts. Chisel generates As-Is, To-Be, CR, and task/time reports one at a time, immediately returns the file link and SHA-256, and blocks workflow progress until the user explicitly confirms that exact report version.
 
 <br/>
 
@@ -284,7 +287,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `/chisel-plan` | To-be planning (strategy + decomposition) |
 | `/chisel-implement` | Orchestrate coding subagents |
 | `/chisel-review` | Architect CR review |
-| `/chisel-report` | View recovery point, task state, and HTML dashboard |
+| `/chisel-report` | View recovery point/task state or generate four standalone HTML reports |
 | `/chisel-debug` | Reproduce-first root-cause workflow (standalone or return-diagnosis mode) |
 
 ### Agents
@@ -320,7 +323,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `debt-scan.mjs` | Static technical debt scanning |
 | `as-is-score.mjs` | As-is artifact quality scoring |
 | `cr-prepare.mjs` | Pre-compute diff and scope data for reviewer |
-| `dashboard.mjs` | Self-contained HTML dashboard generation |
+| `reports.mjs` | Four standalone HTML reports (As-Is, To-Be, CR, task/time) |
 
 <br/>
 

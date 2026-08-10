@@ -81,33 +81,37 @@ user-invocable: false
 
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-report.mjs {IDEA_DIR}
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks cr-results
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports cr
    node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} <cr-step>
    ```
 
    其中 `<cr-step>` 必须与当前路线一致：`review:cr`、`review:cr-light`、
    `review:cr-moderate` 或 `review:integration`。将最后一条命令 stdout
    **原样输出到对话**，确保包含绝对路径 Markdown 链接和
-   `dashboard/cr-results.html`；不得只说“已生成”、只给目录或把链接留到最终总结。
+   `reports/cr-report.html`；不得只说“已生成”、只给目录或把链接留到最终总结。
    报告 HTML 读取结构化 CR 结果，用户应能在独立浏览器页面 review。
 
-10. **报告交付后再处理 workflow 结果**
+10. **报告经用户确认后再处理 workflow 结果**
 
    <HARD-GATE principle="P2,P4">
-   只有完成步骤 9 的 `cr-report`、`cr-results.html` 和 phase artifact 链接交付后，
-   才能根据 `status` 执行状态变更或询问用户。禁止使用 `--finish-task`、
+   完成步骤 9 后必须输出 `reports.mjs` 返回的 `sha256` 并询问用户是否确认该 CR 报告，随后停止。用户明确确认前不得执行任何 task 状态变更。确认后运行：
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} cr --confirm --expected-sha <sha256>
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} cr
+   ```
+   第二条命令返回 `valid: true` 后，才能根据 `status` 执行状态变更。禁止使用 `--finish-task`、
    `--approve-task` 或其他命令改变 task CR 状态；`--mark-cr-requirement` 是唯一合法手段。
 
    **10a. 当 `status === "approved"`**：
 
-   报告和链接已交付后直接执行：
+   报告已获用户确认后执行：
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement approved
    ```
 
    **10b. 当 `status === "spec_failed"` 或 `status === "needs_rework"`**：
 
-   在已经交付的 HTML/文件链接之后，向用户展示 findings 摘要：
+   用户确认报告后，向用户展示 findings 摘要：
    - 失败维度列表及 finding 数量
    - 每个 finding 的维度、严重度（critical/high/medium/low）、一行描述
    - 受影响 task 列表（`affected_tasks`）
@@ -152,16 +156,16 @@ user-invocable: false
 当所有 per-task CR 通过且 task_count > 1 且复杂度为 standard/complex 时：
 1. 启动 `agent-chisel-reviewer`（opus），dimension=integration
 2. `cr-parse.mjs {IDEA_DIR} --dim integration`
-3. 先运行 `cr-report.mjs`、`dashboard-blocks.mjs --blocks cr-results` 和
-   `phase-artifacts.mjs {IDEA_DIR} review:integration`，将绝对路径链接交付。
-4. 交付完成后，pass 才可继续；fail 才可询问用户并执行
+3. 先运行 `cr-report.mjs`、`reports.mjs --reports cr` 和
+   `phase-artifacts.mjs {IDEA_DIR} review:integration`，将绝对路径链接与 SHA-256 交付，然后停止等待用户确认。
+4. 用户确认并通过 `report-confirm.mjs` 写入哈希凭据后，pass 才可继续；fail 才可执行
    `--mark-cr-requirement needs_rework`。
 
 Integration Review 不走验证子阶段，不使用 workflow。
 
 无论 integration pass 还是 fail，都必须先按步骤 9 生成 CR 汇总报告、
-`dashboard/cr-results.html`，并以 `review:integration` 作为 phase-artifacts step
-交付绝对路径链接；若 fail，完成交付后才可询问用户并执行
+`reports/cr-report.html`，并以 `review:integration` 作为 phase-artifacts step
+交付绝对路径链接并等待用户确认；若 fail，确认后才可执行
 `--mark-cr-requirement needs_rework`。不得先变更状态再生成报告。
 
 <HARD-GATE principle="P2,P4">

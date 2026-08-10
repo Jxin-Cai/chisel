@@ -131,7 +131,7 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 |---|---|---|
 | 1 | **接收需求** | 解析用户输入，按模板保存 `requirement.md` |
 | 2 | **澄清并分级** | 先澄清，再持久化带输入指纹的难度、风险、执行档位与 subagent 预算 |
-| 3 | **理解 as-is（仅 full）** | explorer/analyst 产出结构化证据；后台 Writer 按完整 source manifest 生成人类文档和 fresh receipt |
+| 3 | **理解 as-is（仅 full）** | 有历史源码时由 explorer/analyst 产出证据并由后台 Writer 生成人类文档；历史源码为 0 时走确定性 greenfield 基线，不启动侦察 agent |
 | 4 | **确认 as-is（仅 full）** | 人类审查 3 分钟摘要、风险地图、误解点，逐项确认 |
 | 5 | **方案设计** | planner 产出实现计划、task 定义、追溯矩阵 |
 | 6 | **对抗完整性审查** | fresh reviewer 逐项对照 requirement/clarification/as-is/to-be；发现遗漏即生成 findings，修复后重跑，直到 pass |
@@ -152,7 +152,7 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 | `minor` | 小型兼容行为变更 | 澄清、快速路径、仅 spec 审查 |
 | `trivial` | 涉及范围 ≤ 2 文件，无新增表/接口，跨模块目录 < 3 | 快速路径，仅 spec 审查 |
 | `moderate` | 澄清后的保守 floor 或有界多文件变更 | 只用 requirement/clarification 和有界 source manifest 轻量规划，不启动 as-is agents |
-| `standard` | 跨模块或边界变更 | 完整 as-is/to-be 流程和集成审查 |
+| `standard` | 跨模块或边界变更 | 完整 as-is/to-be 流程和集成审查；greenfield 保留该交付强度，但 as-is 使用快速 N/A 档位 |
 | `complex` | 高风险、多仓、迁移或大范围变更 | 全流程、全维度和集成审查 |
 
 ### 人工确认关卡
@@ -226,6 +226,9 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-st
 .chisel/<idea-name>/cr/current-change-report.md   # 人工审阅的合并前变更报告
 .chisel/<idea-name>/cr/current-change-report.json # 绑定代码快照的结构化报告
 .chisel/<idea-name>/confirmations/merge-review.json # 批准/要求修改/暂缓决定
+.chisel/<idea-name>/confirmations/cr-report.json    # 绑定哈希的 CR 报告确认
+.chisel/<idea-name>/confirmations/task-time-report.json # 绑定哈希的任务与耗时报告确认
+.chisel/<idea-name>/reports/                        # 四份独立 HTML 报告
 .chisel/<idea-name>/final-summary.md # 最终变更总结
 ```
 
@@ -235,7 +238,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-st
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs <idea-dir> <completed-step>
 ```
 
-Dashboard 链接只是补充，不替代需求、方案、Task 报告、CR 和最终总结等原始文件链接。
+独立 HTML 报告链接只是补充，不替代原始产物。Chisel 一次只生成 As-Is、To-Be、CR、任务与耗时中的一份，立即在对话中返回文件链接和 SHA-256，并阻止工作流继续，直到用户明确确认该文件版本。
 
 <br/>
 
@@ -279,7 +282,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `/chisel-plan` | to-be 规划（策略+拆解） |
 | `/chisel-implement` | 编排 coding subagent 实现 task |
 | `/chisel-review` | 架构师 CR 审查 |
-| `/chisel-report` | 查看恢复点和 task 状态（文本/HTML dashboard） |
+| `/chisel-report` | 查看恢复点和 task 状态，或生成四份独立 HTML 报告 |
 | `/chisel-debug` | reproduce-first 根因工作流（独立模式或返修诊断模式） |
 
 ### Agents
@@ -315,7 +318,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `debt-scan.mjs` | 静态技术债务扫描 |
 | `as-is-score.mjs` | as-is 产物质量评分 |
 | `cr-prepare.mjs` | CR 预计算数据 |
-| `dashboard.mjs` | 自包含 HTML 仪表板生成 |
+| `reports.mjs` | 四份独立 HTML 报告生成（As-Is、To-Be、CR、任务与耗时） |
 
 <br/>
 

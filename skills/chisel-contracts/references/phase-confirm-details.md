@@ -10,19 +10,19 @@
 `clarifications.json` 或创建确认凭据：
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks as-is
+node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports as-is
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} understand:explore
 ```
 
 将第二条命令 stdout 原样输出到对话，确保包含绝对路径
-`{IDEA_DIR}/dashboard/as-is.html` 的 Markdown 链接。用户打开并确认后，才写入
+`{IDEA_DIR}/reports/as-is-report.html` 的 Markdown 链接和生成器返回的 SHA-256。用户打开并明确确认后，才写入
 下方的澄清记录和 `confirmations/as-is.json`，通过 gate 后进入下一步。
 
 读取并展示 `{IDEA_DIR}/as-is/overview.md` 中的 `3分钟摘要`、`风险地图`、`用户确认清单` 和 `待澄清问题`，等用户逐项确认或补充。
 
 将结果写入 `{IDEA_DIR}/clarifications.json`（权威机器可读记录）和 `{IDEA_DIR}/clarifications.md`（人类可读镜像）。`clarifications.json` 必须包含每个 `C-xxx` 的 `id/question/decision/rationale/status/source`，状态只能是 `confirmed/defaulted/deferred`。
 
-同时写入 `{IDEA_DIR}/confirmations/as-is.json`，至少包含：`schema_version: 1`、`phase: "as-is"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`checklist`。
+同时写入 `{IDEA_DIR}/confirmations/as-is.json`，至少包含：`schema_version: 1`、`phase: "as-is"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`checklist`。随后运行 `report-confirm.mjs {IDEA_DIR} as-is --confirm --expected-sha <已展示哈希>`，把 `report_file` 与 `report_sha256` 合并进同一凭据。旧哈希不得复用。
 
 新流程不得只创建 `.as-is-confirmed` marker；该 marker 仅用于历史运行目录兼容。
 
@@ -55,12 +55,12 @@ impact/implementation-plan 修复，再运行结构校验和新的 fresh review�
 确认凭据或推进状态：
 
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/dashboard-blocks.mjs {IDEA_DIR} --blocks to-be
+node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports to-be
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 ```
 
 将第二条命令 stdout 原样输出到对话，确保包含绝对路径
-`{IDEA_DIR}/dashboard/to-be.html` 的 Markdown 链接。用户明确确认后，才写入
+`{IDEA_DIR}/reports/to-be-report.html` 的 Markdown 链接和 SHA-256。用户明确确认后，才写入
 `confirmations/to-be.json`，通过 gate 后进入下一步；若用户要求调整，回到
 `plan:design` 重新生成方案和 HTML。
 
@@ -78,7 +78,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 
 ### 确认凭据
 
-确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，必须严格包含以下结构（gate-check 会逐字段校验）：
+确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，必须严格包含以下结构（gate-check 会逐字段校验），然后运行 `report-confirm.mjs {IDEA_DIR} to-be --confirm --expected-sha <已展示哈希>` 绑定 HTML 文件：
 
 ```json
 {
@@ -129,7 +129,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 | task-001 | ... | ... | PASS |
 ```
 
-写完后运行 `final-summary-complete` gate。此时禁止创建 `.done`；必须先完成 `review:merge` 并获得用户对当前代码快照的明确批准。
+写完后先运行 `final-summary-complete` gate；通过后运行 `reports.mjs {IDEA_DIR} --reports task-time`。把 `reports/task-time-report.html` 的绝对路径与 SHA-256 返回用户，然后停止等待明确确认。确认后运行 `report-confirm.mjs {IDEA_DIR} task-time --confirm --expected-sha <已展示哈希>`，再运行 `task-time-report-confirmed` gate。该 gate 通过前不得进入 `review:merge`。此时禁止创建 `.done`；随后仍必须完成 merge review 并获得用户对当前代码快照的明确批准。
 
 ---
 
