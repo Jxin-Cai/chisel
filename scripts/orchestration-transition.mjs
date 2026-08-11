@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 import { closeSync, existsSync, openSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { basename, dirname, join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createSnapshot } from './checkpoint.mjs';
 import { commitFileTransaction, recoverFileTransactions } from './file-transaction.mjs';
 import { initWorkflowState, readWorkflowRevision, renderWorkflowPhaseUpdate } from './workflow-lib.mjs';
-import { recordStepFinish, recordStepStart } from './session-metrics.mjs';
+import { recordStepTransition } from './session-metrics.mjs';
 import { WORKFLOW_STEPS } from './workflow-definition.mjs';
+import { computeStatus } from './orchestration-status.mjs';
 
 function option(args, name) {
   const index = args.indexOf(name);
@@ -23,9 +23,7 @@ function readEvents(ideaDir) {
 }
 
 function forkRecommendedStep(ideaDir) {
-  const scriptDir = dirname(fileURLToPath(import.meta.url));
-  const output = execFileSync('node', [join(scriptDir, 'orchestration-status.mjs'), ideaDir, '--compact'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
-  const step = output.match(/^resume_step:\s*(.+)$/m)?.[1]?.trim();
+  const step = computeStatus(ideaDir).resume_step;
   if (!step) throw new Error('orchestration-status did not return resume_step');
   return step;
 }
@@ -63,6 +61,7 @@ export function performTransition(ideaDir, step, {
   eventId,
   statusFn,
 } = {}) {
+  const transitionStartedAt = Date.now();
   if (!existsSync(ideaDir)) throw new Error(`idea-dir not found: ${ideaDir}`);
   if (!WORKFLOW_STEPS.includes(step)) throw new Error(`unknown workflow step: ${step}`);
   if (expectedRevision === undefined || !Number.isInteger(expectedRevision) || expectedRevision < 0) {
@@ -116,10 +115,10 @@ export function performTransition(ideaDir, step, {
       { path: 'events.ndjson', content: `${eventsText}${JSON.stringify(event)}\n` },
       { path: 'workflow-state.yaml', content: rendered.content },
     ], { id: `workflow-${resolvedEventId}`, failAfterWrites });
-    try { recordStepFinish(ideaDir, previousStep); } catch { /* metrics are non-critical */ }
-    try { recordStepStart(ideaDir, step); } catch { /* metrics are non-critical */ }
+    try { recordStepTransition(ideaDir, previousStep, step, Date.now() - transitionStartedAt); } catch { /* metrics are non-critical */ }
 
-    return { transitioned: true, ...event, transaction_id: transaction.transaction_id, recovered_transactions: transaction.recovered };
+    const result = { transitioned: true, ...event, transaction_id: transaction.transaction_id, recovered_transactions: transaction.recovered };
+    return result;
   } finally {
     closeSync(lockFd);
     try { unlinkSync(lockPath); } catch { /* already removed */ }

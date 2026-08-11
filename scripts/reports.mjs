@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { atomicWriteFile } from './workflow-lib.mjs';
 import { REPORT_SECTIONS, loadData } from './report-renderers.mjs';
 import { fileSha256, reportSourceFingerprint, reportStatus } from './report-confirm.mjs';
+import { recordDuration } from './session-metrics.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const assetDir = join(scriptDir, 'assets');
@@ -46,6 +47,7 @@ export function renderReport(reportName, data, sourceFingerprint) {
 }
 
 export function generateReports(ideaDir, requested) {
+  const startedAt = Date.now();
   if (!ideaDir || !existsSync(ideaDir)) throw new Error(`idea-dir 不存在: ${ideaDir || '(empty)'}`);
   if (!Array.isArray(requested) || requested.length !== 1) throw new Error('每次必须且只能生成一份报告；确认后再生成下一份');
   const unknown = requested.filter(name => !REPORTS[name]);
@@ -66,7 +68,9 @@ export function generateReports(ideaDir, requested) {
       confirmation_file: status.confirmation_file || null,
     };
   });
-  return { dir: resolve(outDir), generated };
+  const result = { dir: resolve(outDir), generated };
+  try { recordDuration(ideaDir, 'report_generation', requested[0], Date.now() - startedAt, { output: generated[0]?.path || '' }); } catch { /* metrics are non-critical */ }
+  return result;
 }
 
 function main() {

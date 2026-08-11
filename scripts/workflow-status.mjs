@@ -10,6 +10,7 @@ import {
   getTasksFileOverlap,
   getTasksImpactOverlap,
   getTasksExportsImportsOverlap,
+  planParallelTaskBatches,
   initTaskState,
   initWorkflowState,
   markCr,
@@ -58,6 +59,7 @@ function help() {
     '  --init-tasks <idea-name> <spec...> 初始化 task-workflow-state.yaml',
     '  --next-tasks [code|review|rework]  输出下一批可执行 task',
     '  --start-task <task-id> [--project-root <path>] [--owner <id>] [--lease-seconds <n>]',
+    '  --prepare-task-batch [task-ids] [--project-root <path>] [--owner <id>] [--lease-seconds <n>]',
     '  --heartbeat <task-id> --run-id <id> [--lease-seconds <n>]',
     '  --start-review <task-id>           标记 task 开始 review',
     '  --finish-task <task-id> coded|failed --run-id <id>',
@@ -66,6 +68,7 @@ function help() {
     '  --rollback-step <step> [--dry-run]',
     '  --rollback-task <task-id> [--dry-run]',
     '  --check-overlap <task-id...>       检查 task 文件/影响面重叠',
+    '  --parallel-plan [task-id...]        输出确定性的无冲突执行批次',
     '  --help | help | -h                 显示帮助',
   ].join('\n');
 }
@@ -144,6 +147,51 @@ export async function main(argv) {
           lease_until: started.attempt.lease_until,
           resumed: started.resumed,
         });
+        break;
+      }
+      case '--parallel-plan': {
+        const taskIds = argv.slice(2).filter(value => !value.startsWith('--'))
+          .join(',').split(',').filter(Boolean);
+        print(planParallelTaskBatches(ideaDir, taskIds.length ? taskIds : null));
+        break;
+      }
+      case '--prepare-task-batch': {
+        const optionStart = argv.findIndex((value, index) => index >= 2 && value.startsWith('--'));
+        const rawTaskArgs = argv.slice(2, optionStart < 0 ? argv.length : optionStart);
+        const requested = rawTaskArgs.join(',').split(',').filter(Boolean);
+        const plan = planParallelTaskBatches(ideaDir, requested.length ? requested : null);
+        const batch = plan.batches[0] || [];
+        if (batch.length === 0) fail('--prepare-task-batch 没有可执行 task');
+        const projectRoot = option(argv, '--project-root', null);
+        const owner = option(argv, '--owner', process.env.CHISEL_RUN_OWNER || 'main-orchestrator');
+        const leaseSeconds = Number(option(argv, '--lease-seconds', '3600'));
+        const state = readTaskState(taskStateFile(ideaDir));
+        const starts = [];
+        const writes = [];
+        for (const taskId of batch) {
+          const task = state.tasks[taskId];
+          if (!task) fail(`unknown task: ${taskId}`);
+          const started = buildStartedTaskRun(ideaDir, taskId, {
+            projectRoots: projectRoot ? [projectRoot] : undefined,
+            owner,
+            leaseSeconds,
+          });
+          applyTaskStatus(state, taskId, 'coding');
+          writes.push({ path: taskRunPath(ideaDir, taskId), content: serializeTaskRun(started.run) });
+          starts.push({
+            task_id: taskId,
+            run_id: started.attempt.run_id,
+            owner: started.attempt.owner,
+            lease_until: started.attempt.lease_until,
+            resumed: started.resumed,
+          });
+        }
+        writes.push({ path: taskStateFile(ideaDir), content: serializeTaskState(state) });
+        commitFileTransaction(ideaDir, writes, {
+          id: `task-batch-start-${starts[0].run_id}-${starts.length}`,
+          failAfterWrites: Number(process.env.CHISEL_TX_FAIL_AFTER_WRITES || 0),
+        });
+        print({ prepared: true, batch, starts, remaining_batches: plan.batches.slice(1), plan });
         break;
       }
       case '--heartbeat': {

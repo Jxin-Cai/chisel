@@ -63,6 +63,30 @@ describe('report renderers', () => {
     assert.match(crHtml, new RegExp(marker));
   });
 
+  it('renders hierarchical As-Is UML and a linked To-Be change journey', () => {
+    const asIs = REPORT_SECTIONS['as-is']({
+      ideaName: 'demo', overview: '# 摘要', coreWalkthrough: '# 走查', evidenceLedger: null, qualityScore: null,
+      coverageMatrix: { links: [{ from: 'Controller', to: 'Service', kind: 'sync-call' }] },
+    });
+    assert.match(asIs, /UML Sequence/);
+    assert.match(asIs, /Controller/);
+    assert.match(asIs, /<details[^>]+as-is-overview[^>]+open/);
+    assert.match(asIs, /阅读路径/);
+
+    const toBe = REPORT_SECTIONS['to-be']({
+      ideaName: 'demo', implementationPlan: '# 方案', normalizedTasks: [],
+      traceabilityTree: { percentage: 100, covered: 1, total: 1 },
+      changePoints: [{ id: 'CP-1', node: 'Service', decision: '改造', risk_level: 'medium', summary: '增加目标行为' }],
+      dataChanges: null, apiChanges: null, taskDetails: {},
+      impactRisk: { flow_graph: { nodes: [{ id: 'N1', label: 'Controller', decision: '保留' }, { id: 'N2', label: 'Service', decision: '改造', cp_ref: 'CP-1' }], edges: [{ from: 'N1', to: 'N2' }] }, risk_matrix: [] },
+    });
+    assert.match(toBe, /UML Target Model/);
+    assert.match(toBe, /改造点全链路/);
+    assert.match(toBe, /href="#cp-cp-1"/);
+    assert.match(toBe, /id="cp-cp-1"/);
+    assert.match(toBe, /完整实施方案/);
+  });
+
   it('ignores a stale merge confirmation whose report hash does not match', () => {
     const ideaDir = mkdtempSync(join(tmpdir(), 'chisel-current-change-'));
     try {

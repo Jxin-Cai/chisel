@@ -8,6 +8,12 @@
 
 ## 方案总览
 
+以 Mermaid `sequenceDiagram` 或 `classDiagram` 开头，先展示目标主链路或目标模型，再解释设计决策。主图只保留核心节点，复杂分支通过链接跳到下方 CP 详情。
+
+## 改造链路图
+
+必须紧接方案总览提供 Mermaid `flowchart LR`：画出从入口到终点的完整链路，所有节点标注 `保留 / 改造 / 新增 / 删除`，改造节点同时标注 CP 编号。图中的 CP 编号必须与 `impact-risk-report.json.flow_graph.nodes[].cp_ref` 和下方改造点详情一致。
+
 ## 改造点映射
 
 基于 as-is 调用链（引用 `as-is/ai-input/call-graph.md`），标注每个链路节点的改造决策。

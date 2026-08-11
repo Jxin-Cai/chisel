@@ -38,7 +38,7 @@
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check 数据写入 `cr-context.json`，D2-D9 agent 共用。
 - `scripts/merge-review.mjs` 在自动 CR/返修和 final summary 之后生成 Current Change Report，汇总 base/head、逐文件 diff 统计、验证命令、CR finding/observation、风险和 task 覆盖；人工批准绑定 Git HEAD、working-tree fingerprint、final summary 和报告内容，任一变化都会使批准失效。
 - `scripts/reports.mjs` 生成四份自包含 HTML：As-Is、To-Be、CR、任务与耗时报告。每份报告独立承载内容。
-- `scripts/session-metrics.mjs` 记录每个 idea 的步骤耗时、agent 调用次数、返修轮次等效率指标。
+- `scripts/session-metrics.mjs` 使用 schema v2 同时记录步骤墙钟时间与可测量 span，将 `human_wait`、`active_workflow`、`verification`、`report_generation`、`control_plane` 和 Agent 调用次数分开归因；任务与耗时报告直接展示该分解。
 - `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照，同时按数量（8）和总大小（25 MiB）双重上限清理，runner/events/transaction journal 不进入快照 payload。
 - **理解阶段**（`chisel-understand`）仅在 `execution_profile=full` 时使用 Explore + Analyst 产出结构化数据；subagent 数量受分类预算约束，不是固定三 agent。人类文档由后台 `agent-chisel-writer` 根据完整 source manifest 生成，主编排器并行执行结构化 gate/评分，展示前等待 fresh receipt。
 - **规划阶段**（`chisel-plan`）分支执行：lightweight 只读 requirement、clarification、classification 与最多 12 文件/2 模块的 source manifest；full 才读取 as-is 并调用完整 Plan 链。两条分支均写入 tasks + traceability + impact-risk + design-notes，执行 8 步完整性自检，再由后台 Writer 生成 implementation-plan.md。
@@ -65,6 +65,7 @@
 - Worktree 决策在方案确认后（`plan:confirm` 之后、`tasks:init` 之前）由用户选择。
 - 用户选 `current-branch` 时，所有 task 串行执行，**不使用 Agent worktree 隔离**。
 - 用户选 `worktree` 时，`getNextTasks()` 返回多个 task 且文件/符号/不变量/共享资源均无冲突时，使用 `Agent(isolation: "worktree")` 并行编码（这是 Agent 工具的临时隔离，task 级，用完即弃），合并后统一更新状态。
+- 并行调度不再是全有或全无：`planParallelTaskBatches()` 对冲突图做稳定着色，自动生成尽可能早的安全执行波次；`workflow-status.mjs --prepare-task-batch` 在一次原子事务中领取首批所有 task 并返回各自 `run_id`，替代查询、冲突检测和逐 task 启动的多次控制面往返。
 - 路径目录和 glob 交叉会保守判定为冲突；共享资源用 `impact_surface.reads/writes` 建模，read/read 可并行，任一 write 冲突。旧 `shared_state` 等价于 write lock。返修 task 始终串行。
 - `chisel-review` 在所有 task 编码完成后进行动态 CR：spec 永远是门槛；小型低风险 diff 使用 lite，auth/payment/migration/concurrency/external boundary/verification mechanism 信号强制升级，其余维度按实际内容选择，输出理由与 batches。未选的旧 D2-D9 文件投影为 skipped/auto-pass，返修后从 spec 重新开始。
 - 自动 CR 通过后进入独立 `review:merge`：用户可 Approve / Request changes / Comment-hold；只有 Approve 且所有仓库快照未变化时 `merge-review-confirmed` gate 才通过。
@@ -88,6 +89,7 @@
 ## 独立 HTML 报告
 
 - `scripts/report-model.mjs` 只负责数据采集、归一化和指标计算；`scripts/report-renderers.mjs` 只负责四类报告的内容片段；`scripts/reports.mjs` 将片段装入各自模板。
+- As-Is 报告从 coverage matrix 生成 UML 时序或系统模型；To-Be 报告从 flow graph 同时生成目标 UML 模型和改造点全链路图。报告首屏只保留主干，目录锚点和可展开详情承载证据、CP、Task、风险与完整方案，改造节点可直接跳到对应 CP。
 - `/chisel-report <idea-name> --format html` 按 As-Is、To-Be、CR、任务与耗时的顺序逐份生成；一次只允许一份。
 - 每次生成后立即返回绝对路径和 SHA-256，等待用户明确确认。`report-confirm.mjs` 将确认绑定到文件哈希；重新生成会使旧确认失效。
 - `as-is-report-confirmed`、`to-be-report-confirmed`、`cr-report-confirmed`、`integration-cr-report-confirmed`、`task-time-report-confirmed` 和 `merge-review-confirmed` 是推进门禁。

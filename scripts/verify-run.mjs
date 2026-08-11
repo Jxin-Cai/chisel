@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { isAbsolute, join, resolve } from 'node:path';
 import { workspaceIdentity } from './verification-lib.mjs';
 import { durableAtomicWrite } from './file-transaction.mjs';
+import { recordDuration } from './session-metrics.mjs';
 
 function readPackage(projectRoot) {
   const path = join(projectRoot, 'package.json');
@@ -109,6 +110,7 @@ function verificationRoots(ideaDir, fallbackRoot) {
 }
 
 function main() {
+  const verifyStartedAt = Date.now();
   const ideaDir = process.argv[2];
   const projectRoot = process.argv[3] || '.';
   if (!ideaDir) {
@@ -159,6 +161,7 @@ function main() {
     repositories,
   };
   durableAtomicWrite(join(ideaDir, 'verify-result.json'), `${JSON.stringify(result, null, 2)}\n`);
+  try { recordDuration(ideaDir, 'verification', 'verify-run', Date.now() - verifyStartedAt, { repositories: repositories.length, checks: repositories.reduce((sum, repo) => sum + repo.checks.length, 0) }, status); } catch { /* metrics are non-critical */ }
   console.log(JSON.stringify({ status, repositories: repositories.map(repo => ({ project_root: repo.project_root, status: repo.status, checks: repo.checks.map(({ id, status: checkStatus }) => ({ id, status: checkStatus })) })) }));
   if (status !== 'pass') process.exit(1);
 }

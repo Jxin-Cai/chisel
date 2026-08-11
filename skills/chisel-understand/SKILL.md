@@ -66,6 +66,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/explore-prompt-g
 
 启动 Explore subagent（原生 `subagent_type: "Explore"`），传入构建好的 prompt。prompt 必须包含：
 
+启动前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {idea_dir} --agent-call understand:explore explore 1` 记录真实 Agent 调用。
+
 1. repo-map.json 路径和需求文件路径
 2. 按 explore-prompt-guide.md 的结构组织侦察任务
 3. 根据需求特征追加引导（字段变更→追踪透传链；接口变更→找 caller；异步→找消费者）
@@ -79,6 +81,8 @@ Explore agent 返回分层文件清单后，检查覆盖度报告：
 ### Phase 2: 深度走查（委托 Analyst Subagent）
 
 启动 `agent-chisel-analyst`，传入 TASK：
+
+启动前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {idea_dir} --agent-call understand:explore analyst 1`。
 
 ```json
 {
@@ -121,6 +125,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/writer-as-is-tas
 </HARD-GATE>
 
 先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs prepare {idea_dir} as-is` 创建带源文件 hash 的任务收据。随后启动 `agent-chisel-writer`，设置 `run_in_background: true`，传入 TASK：
+
+派发前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {idea_dir} --agent-call understand:explore writer 1`。
 
 ```json
 {

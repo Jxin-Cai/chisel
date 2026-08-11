@@ -55,6 +55,7 @@ user-invocable: false
    验证，再用该脚本按 `finding-count` 补充 skeptic 预算。
 
 8. **调用 Dynamic Workflow**
+   调用前按本轮实际预算记录 Agent 调用：`node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {IDEA_DIR} --agent-call <cr-step> reviewer <1 + activeDimensions.length>`；其中 1 是 spec reviewer。skeptic 实际调用数在 workflow 返回后按 finding vote 数追加记录。
    ```
    Workflow({
      scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/chisel-review.js",

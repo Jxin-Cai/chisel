@@ -51,7 +51,7 @@ describe('long-running resilience', () => {
     const output = JSON.parse(next.stdout);
     assert.equal(output.completed_step_delivery.step, 'receive-requirement');
     assert.equal(output.completed_step_delivery.artifacts[0].label, 'requirement.md');
-    assert.match(output.completed_step_delivery.markdown, /\[requirement\.md\]\(<\//);
+    assert.match(output.completed_step_delivery.markdown, /\[requirement\.md\]\(\//);
   });
 
   it('rolls a crashed task start transaction forward without duplicating the run', () => {

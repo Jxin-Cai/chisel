@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { getTasksFileOverlap, getTasksImpactOverlap, initTaskState, scopePatternsOverlap } from '../scripts/workflow-lib.mjs';
+import { getTasksFileOverlap, getTasksImpactOverlap, initTaskState, planParallelTaskBatches, scopePatternsOverlap } from '../scripts/workflow-lib.mjs';
 
 describe('parallel task overlap', () => {
   let ideaDir;
@@ -38,5 +38,18 @@ describe('parallel task overlap', () => {
     ]);
     const overlap = getTasksImpactOverlap(ideaDir, ['task-001', 'task-002']);
     assert.ok(overlap.some(item => item.kind === 'shared_resource'));
+  });
+
+  it('turns partial conflicts into deterministic parallel waves', () => {
+    initTaskState(ideaDir, 'idea', [
+      { taskId: 'task-001', expected_files: ['src/shared.js'] },
+      { taskId: 'task-002', expected_files: ['src/shared.js'] },
+      { taskId: 'task-003', expected_files: ['src/independent.js'] },
+    ]);
+    const plan = planParallelTaskBatches(ideaDir);
+    assert.deepEqual(plan.batches, [['task-001', 'task-003'], ['task-002']]);
+    assert.equal(plan.max_parallelism, 2);
+    assert.equal(plan.parallel_task_count, 2);
+    assert.equal(plan.serial_task_count, 1);
   });
 });

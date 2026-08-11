@@ -49,6 +49,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/plan-prompt-guide.md`�
 
 启动 Plan subagent（原生 `subagent_type: "Plan"`），prompt 必须包含：
 
+启动前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {idea_dir} --agent-call plan:design planner 1`。
+
 1. 必读文件列表：
    - `{idea_dir}/as-is/ai-input/facts.md`
    - `{idea_dir}/as-is/ai-input/call-graph.md`
@@ -184,6 +186,8 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/writer-to-be-task.md`�
 </HARD-GATE>
 
 先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs prepare {idea_dir} to-be`，再启动 `agent-chisel-writer`，设置 `run_in_background: true`，传入 TASK：
+
+派发前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {idea_dir} --agent-call plan:design writer 1`。
 
 ```json
 {

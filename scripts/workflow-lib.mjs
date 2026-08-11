@@ -476,6 +476,58 @@ export function getTasksImpactOverlap(ideaDir, taskIds) {
   return [...unique.values()];
 }
 
+/**
+ * Build deterministic execution waves for the currently runnable tasks.
+ *
+ * The previous API only returned pairwise conflicts and left the orchestrator
+ * to manually turn those conflicts into batches.  That made the parallel path
+ * effectively all-or-nothing.  This greedy graph-colouring pass keeps every
+ * non-conflicting task in the earliest possible wave while preserving stable
+ * task order for reproducible recovery.
+ */
+export function planParallelTaskBatches(ideaDir, requestedTaskIds = null) {
+  const runnable = getNextTasks(ideaDir);
+  const requested = requestedTaskIds?.length ? requestedTaskIds : runnable;
+  const taskIds = [...new Set(requested)].filter(taskId => runnable.includes(taskId));
+  const excluded = requested.filter(taskId => !taskIds.includes(taskId));
+  const fileOverlap = taskIds.length > 1 ? getTasksFileOverlap(ideaDir, taskIds) : [];
+  const impactOverlap = taskIds.length > 1 ? getTasksImpactOverlap(ideaDir, taskIds) : [];
+  const dependencyOverlap = taskIds.length > 1 ? getTasksExportsImportsOverlap(ideaDir, taskIds) : [];
+  const conflicts = new Map(taskIds.map(taskId => [taskId, new Set()]));
+  const connect = (left, right) => {
+    if (!conflicts.has(left) || !conflicts.has(right) || left === right) return;
+    conflicts.get(left).add(right);
+    conflicts.get(right).add(left);
+  };
+  for (const overlap of [...fileOverlap, ...impactOverlap]) connect(overlap.tasks?.[0], overlap.tasks?.[1]);
+  for (const overlap of dependencyOverlap) connect(overlap.importer, overlap.exporter);
+
+  const batches = [];
+  for (const taskId of taskIds) {
+    let target = batches.find(batch => batch.every(existing => !conflicts.get(taskId).has(existing)));
+    if (!target) {
+      target = [];
+      batches.push(target);
+    }
+    target.push(taskId);
+  }
+  const parallelTasks = batches.reduce((sum, batch) => sum + (batch.length > 1 ? batch.length : 0), 0);
+  return {
+    task_ids: taskIds,
+    excluded,
+    batches,
+    batch_count: batches.length,
+    max_parallelism: Math.max(0, ...batches.map(batch => batch.length)),
+    parallel_task_count: parallelTasks,
+    serial_task_count: taskIds.length - parallelTasks,
+    conflicts: {
+      file: fileOverlap,
+      impact: impactOverlap,
+      exports_imports: dependencyOverlap,
+    },
+  };
+}
+
 export function applyTaskStatus(state, taskId, nextStatus, { now = new Date().toISOString() } = {}) {
   if (!TASK_STATES.includes(nextStatus)) throw new Error(`invalid task status: ${nextStatus}`);
   const task = state.tasks[taskId];

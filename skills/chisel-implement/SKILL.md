@@ -63,6 +63,7 @@ digraph implement_flow {
      - `complex` → `agent-chisel-coder`，model override: opus
    - 预打包 coder 上下文：`node ${CLAUDE_PLUGIN_ROOT}/scripts/coder-prepare.mjs {IDEA_DIR} <task-id> .`
    - 启动选定的 coder agent，传入 TASK：
+   - 启动前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {IDEA_DIR} --agent-call implement:code coder 1`；返修模式将 step 改为 `repair:code`
      ```json
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>", "task_file": "tasks/<task-id>.md", "run_id": "<run-id>" }
      ```

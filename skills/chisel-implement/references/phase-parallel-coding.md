@@ -21,22 +21,19 @@
 
 ## 流程
 
-### 1. 文件与影响面冲突预检
+### 1. 生成确定性并行批次并一次性领取首批任务
 
 ```
-node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --check-overlap task-001,task-002,...
+node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --prepare-task-batch task-001,task-002,... --project-root . --owner main-orchestrator
 ```
 
-- 无 `file_overlap` 且无 `impact_overlap` → 所有 task 可并行
-- 有 `file_overlap` 或 `impact_overlap` → 重叠 task 必须串行，其余可并行
+- `batch` 是当前立即派发的最大安全批次。
+- `remaining_batches` 是后续波次；每个波次内部无文件、symbol、invariant、共享资源或 exports/imports 冲突。
+- `starts[]` 已包含每个 task 的 `run_id`，无需再逐 task 调用 `--start-task`。
 
-将 task 分为并行批次：同批次内无文件重叠、无 symbol/invariant/shared_state 影响面重叠。
+只查看计划而不领取任务时使用 `--parallel-plan task-001,task-002,...`。批次由脚本稳定生成，不再由主编排器手工拆分。
 
-### 2. 状态前置更新
-
-对当前批次所有 task **串行**调用 `--start-task <task-id> --project-root . --owner main-orchestrator`，保存每个 task 返回的 `run_id`（确保状态原子更新并记录主工作区基线）。
-
-### 3. 并行派发
+### 2. 并行派发
 
 对每个 task 使用 `Agent({ subagent_type: "agent-chisel-coder", model: <by_task_complexity>, isolation: "worktree" })`（`trivial`/`standard` 不传 model，继承主编排器当前模型；`complex` 传 model: opus），所有 Agent 调用在同一条消息中发出。TASK 输入增加 `"parallel": true` 和该 task 的 `"run_id"`。coder 进入临时 worktree 后必须先运行：
 
@@ -48,7 +45,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {IDEA_DIR} <task-id> --re
 
 注意：这里的 worktree 是 Agent 工具的 **临时隔离机制**（task 级，用完即弃），不是用户在 `worktree:setup` 阶段选择的需求级 worktree。Agent 的临时 worktree 在合并回收后自动清理。
 
-### 4. 合并回收
+### 3. 合并回收
 
 每个 Agent 返回后：
 
@@ -59,7 +56,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {IDEA_DIR} <task-id> --re
 2. 如果 Agent 报告无变更或失败：
    - `--finish-task <task-id> failed --run-id <run-id>`
 
-### 5. 批次推进
+### 4. 批次推进
 
 当前批次全部完成后：
 - 如有下一批次 → 重复 2-4

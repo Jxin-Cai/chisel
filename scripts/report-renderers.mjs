@@ -13,6 +13,7 @@ import {
   normalizeTasksJson, normalizeTraceabilityTree, oneSentence,
   formatDuration, formatEvidence, parseTableSection
 } from './report-model.mjs';
+import { summary as collectSessionMetrics } from './session-metrics.mjs';
 
 // --- Report data loading ---
 
@@ -128,6 +129,77 @@ function metric(label, value, hint = '', tone = '') {
   return `<div class="metric animate-in"><div class="metric-value ${cls}">${esc(value)}</div><div class="metric-label">${esc(label)}</div>${hint ? `<div class="metric-hint">${esc(hint)}</div>` : ''}</div>`;
 }
 
+function domId(value) {
+  const normalized = String(value || 'section').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return normalized || 'section';
+}
+
+function sectionNav(items) {
+  return `<nav class="section-nav" aria-label="报告目录"><span class="section-nav-label">阅读路径</span>${items.map(item => `<a href="#${esc(item.id)}">${esc(item.label)}</a>`).join('')}</nav>`;
+}
+
+function detailPanel(id, title, body, open = false) {
+  return `<details class="detail-panel" id="${esc(id)}"${open ? ' open' : ''}><summary><span>${esc(title)}</span><span class="detail-hint">展开详情</span></summary><div class="detail-body">${body}</div></details>`;
+}
+
+function renderAsIsUml(coverageMatrix = {}) {
+  const links = Array.isArray(coverageMatrix.links) ? coverageMatrix.links : [];
+  if (links.length > 0) {
+    const participants = [...new Set(links.flatMap(link => [link.from || link.source || link.caller, link.to || link.target || link.callee]).filter(Boolean))].slice(0, 8);
+    return `<section class="card diagram-card" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">UML Sequence</p><h2>当前核心时序</h2></div><span class="diagram-legend">${links.length} 次交互</span></div><div class="sequence-participants">${participants.map(name => `<span>${esc(name)}</span>`).join('')}</div><ol class="sequence-list">${links.slice(0, 12).map((link, index) => `<li><span class="sequence-index">${index + 1}</span><span class="sequence-node">${esc(link.from || link.source || link.caller || '上游')}</span><span class="sequence-arrow" aria-hidden="true">→</span><span class="sequence-node">${esc(link.to || link.target || link.callee || '下游')}</span><span class="sequence-kind">${esc(link.kind || link.depth || 'call')}</span></li>`).join('')}</ol></section>`;
+  }
+  const entrypoints = Array.isArray(coverageMatrix.entrypoints) ? coverageMatrix.entrypoints : [];
+  const data = Array.isArray(coverageMatrix.data) ? coverageMatrix.data : [];
+  const effects = Array.isArray(coverageMatrix.side_effects) ? coverageMatrix.side_effects : [];
+  return `<section class="card diagram-card" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">UML Model</p><h2>当前系统模型</h2></div><span class="diagram-legend">结构视图</span></div><div class="model-flow"><div class="model-column"><strong>入口</strong>${entrypoints.slice(0, 5).map(item => `<span>${esc(item.name || item.entrypoint || item.id)}</span>`).join('') || '<span>未识别入口</span>'}</div><span class="model-arrow">→</span><div class="model-column"><strong>数据模型</strong>${data.slice(0, 5).map(item => `<span>${esc(item.entity || item.table || item.name || item.id)}</span>`).join('') || '<span>无数据实体</span>'}</div><span class="model-arrow">→</span><div class="model-column"><strong>副作用</strong>${effects.slice(0, 5).map(item => `<span>${esc(item.description || item.kind || item.id)}</span>`).join('') || '<span>无外部副作用</span>'}</div></div></section>`;
+}
+
+function renderChangeFlow(impactRisk = {}, changePoints = []) {
+  const graph = impactRisk?.flow_graph || {};
+  const nodes = Array.isArray(graph.nodes) && graph.nodes.length ? graph.nodes : changePoints.map(cp => ({ id: cp.id, label: cp.node || cp.summary || cp.id, decision: cp.decision, cp_ref: cp.id }));
+  const edges = Array.isArray(graph.edges) ? graph.edges : [];
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const ordered = [];
+  const indegree = new Map(nodes.map(node => [node.id, 0]));
+  for (const edge of edges) if (indegree.has(edge.to)) indegree.set(edge.to, indegree.get(edge.to) + 1);
+  const queue = nodes.filter(node => indegree.get(node.id) === 0);
+  while (queue.length) {
+    const node = queue.shift();
+    if (ordered.some(item => item.id === node.id)) continue;
+    ordered.push(node);
+    for (const edge of edges.filter(item => item.from === node.id)) {
+      if (!indegree.has(edge.to)) continue;
+      indegree.set(edge.to, indegree.get(edge.to) - 1);
+      if (indegree.get(edge.to) <= 0) queue.push(byId.get(edge.to));
+    }
+  }
+  for (const node of nodes) if (!ordered.some(item => item.id === node.id)) ordered.push(node);
+  const unchanged = value => ['保留', 'keep', 'unchanged'].includes(String(value || '').toLowerCase());
+  const changed = ordered.filter(node => !unchanged(node.decision)).length;
+  return `<section class="card diagram-card" id="change-flow"><div class="card-heading"><div><p class="eyebrow">Change Journey</p><h2>改造点全链路</h2><p class="muted compact">高亮节点是本次新增、修改或删除的位置；点击节点跳到对应 CP 详情。</p></div><span class="diagram-legend">${changed}/${ordered.length} 节点变化</span></div><div class="change-chain" role="img" aria-label="To-Be 改造点全链路">${ordered.map((node, index) => {
+    const decision = node.decision || '改造';
+    const tone = decision === '新增' ? 'add' : decision === '删除' ? 'remove' : unchanged(decision) ? 'keep' : 'modify';
+    const cpRef = node.cp_ref || node.change_point_ref || (String(node.id || '').startsWith('CP-') ? node.id : '');
+    const content = `<span class="change-decision">${esc(decision)}</span><strong>${esc(node.label || node.name || node.id)}</strong>${cpRef ? `<small>${esc(cpRef)}</small>` : ''}`;
+    return `${index ? '<span class="chain-arrow" aria-hidden="true">→</span>' : ''}${cpRef ? `<a class="change-node ${tone}" href="#cp-${domId(cpRef)}">${content}</a>` : `<div class="change-node ${tone}">${content}</div>`}`;
+  }).join('')}</div><div class="change-legend"><span class="keep">保留</span><span class="modify">改造</span><span class="add">新增</span><span class="remove">删除</span></div></section>`;
+}
+
+function renderToBeUml(impactRisk = {}) {
+  const graph = impactRisk?.flow_graph || {};
+  const nodes = Array.isArray(graph.nodes) ? graph.nodes : [];
+  const edges = Array.isArray(graph.edges) ? graph.edges : [];
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  if (edges.length > 0) {
+    return `<section class="card diagram-card" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">UML Target Model</p><h2>目标交互模型</h2><p class="muted compact">先理解目标系统怎样协作，再查看下一张图中的具体改造位置。</p></div><span class="diagram-legend">${nodes.length} 个参与节点</span></div><ol class="sequence-list">${edges.slice(0, 16).map((edge, index) => {
+      const from = byId.get(edge.from);
+      const to = byId.get(edge.to);
+      return `<li><span class="sequence-index">${index + 1}</span><span class="sequence-node">${esc(from?.label || from?.name || edge.from)}</span><span class="sequence-arrow" aria-hidden="true">→</span><span class="sequence-node">${esc(to?.label || to?.name || edge.to)}</span><span class="sequence-kind">${esc(edge.label || edge.kind || 'interaction')}</span></li>`;
+    }).join('')}</ol></section>`;
+  }
+  return `<section class="card diagram-card" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">UML Target Model</p><h2>目标系统模型</h2></div><span class="diagram-legend">${nodes.length} 个节点</span></div><div class="model-flow">${nodes.slice(0, 10).map((node, index) => `${index ? '<span class="model-arrow">→</span>' : ''}<div class="model-column"><strong>${esc(node.label || node.name || node.id)}</strong><span>${esc(node.decision || '目标节点')}</span></div>`).join('') || '<div class="model-column"><strong>目标模型待补充</strong><span>flow_graph 暂无节点</span></div>'}</div></section>`;
+}
+
 function mdToSimpleHtml(md) {
   if (!md) return '';
   return md.split('\n').map(line => {
@@ -143,7 +215,7 @@ function mdToSimpleHtml(md) {
 // --- Block renderers ---
 
 function renderOverviewSection(data) {
-  const { summary, workflowSteps, currentIdx, timingSummary, currentStep, impactRisk, stepOutputs } = data;
+  const { summary, workflowSteps, currentIdx, timingSummary, currentStep, impactRisk, stepOutputs, performanceMetrics } = data;
   const ts = summary.taskStats;
   const cr = summary.crStats;
 
@@ -174,6 +246,19 @@ function renderOverviewSection(data) {
     body += `</div>\n`;
   }
 
+  if (performanceMetrics?.attribution) {
+    const attr = performanceMetrics.attribution;
+    const measured = attr.measured_spans_ms || {};
+    body += `<div class="card animate-in"><div class="card-heading"><div><p class="eyebrow">Time Attribution</p><h2>耗时归因</h2></div><span class="diagram-legend">wall ${esc(formatDuration(attr.wall_clock_ms || 0))}</span></div><div class="metric-grid compact-metrics">`;
+    body += metric('用户等待', formatDuration(attr.human_wait_ms || 0), 'confirm / clarify', 'warn');
+    body += metric('自动流程', formatDuration(attr.active_workflow_ms || 0), '非等待步骤', 'accent');
+    body += metric('验证', formatDuration(measured.verification || 0), 'test / build', measured.verification ? 'accent' : '');
+    body += metric('控制面', formatDuration(measured.control_plane || 0), 'runner / transition');
+    body += metric('报告生成', formatDuration(measured.report_generation || 0), 'HTML / hash');
+    body += metric('Agent', String(performanceMetrics.total_agent_calls || performanceMetrics.counters?.agent_calls || 0), '调用次数');
+    body += `</div></div>`;
+  }
+
   if (impactRisk?.summary?.highest_risk) {
     body += `<div class="card animate-in card-accent-orange"><h2>风险关注</h2><p>${esc(impactRisk.summary.highest_risk)}</p></div>\n`;
   }
@@ -190,33 +275,38 @@ function renderAsIsSection(data) {
     return wrapHtml(`As-Is — ${data.ideaName}`, body);
   }
 
-  if (overview) {
-    body += `<div class="card animate-in"><h2>概览</h2><div class="section-md">${mdToSimpleHtml(overview)}</div></div>\n`;
-  }
-  if (coreWalkthrough) {
-    body += `<div class="card animate-in"><h2>核心走查</h2><div class="section-md">${mdToSimpleHtml(coreWalkthrough)}</div></div>\n`;
-  }
+  body += sectionNav([
+    { id: 'as-is-sequence', label: '核心时序 / 模型' },
+    { id: 'as-is-overview', label: '现状摘要' },
+    { id: 'as-is-walkthrough', label: '链路走查' },
+    { id: 'as-is-evidence', label: '证据与质量' },
+  ]);
+  body += renderAsIsUml(coverageMatrix || {});
+  if (overview) body += detailPanel('as-is-overview', '现状摘要与风险地图', `<div class="section-md">${mdToSimpleHtml(overview)}</div>`, true);
+  if (coreWalkthrough) body += detailPanel('as-is-walkthrough', '核心链路与异常分支走查', `<div class="section-md">${mdToSimpleHtml(coreWalkthrough)}</div>`);
+  body += `<section id="as-is-evidence" class="detail-stack">`;
   if (qualityScore) {
     const dims = qualityScore.dimensions || qualityScore.scores || {};
-    body += `<div class="card animate-in"><h2>质量评分</h2><table><tr><th>维度</th><th>评分</th></tr>`;
+    let qualityBody = `<table><tr><th>维度</th><th>评分</th></tr>`;
     for (const [k, v] of Object.entries(dims)) {
       const score = typeof v === 'number' ? v : v?.score || 0;
       const pct = Math.round(score * 100);
       const tone = pct >= 80 ? 'success' : pct >= 60 ? 'accent' : 'warn';
-      body += `<tr><td>${esc(k)}</td><td><span class="pill pill-${tone === 'success' ? 'success' : tone === 'warn' ? 'warn' : 'accent'}">${pct}%</span></td></tr>`;
+      qualityBody += `<tr><td>${esc(k)}</td><td><span class="pill pill-${tone === 'success' ? 'success' : tone === 'warn' ? 'warn' : 'accent'}">${pct}%</span></td></tr>`;
     }
-    body += `</table></div>\n`;
+    body += detailPanel('as-is-quality', '质量评分', `${qualityBody}</table>`);
   }
   if (evidenceLedger) {
     const items = Array.isArray(evidenceLedger) ? evidenceLedger : (evidenceLedger.facts || evidenceLedger.items || []);
     if (items.length > 0) {
-      body += `<div class="card animate-in"><h2>证据索引</h2><table><tr><th>ID</th><th>声明</th><th>状态</th></tr>`;
+      let evidenceBody = `<table><tr><th>ID</th><th>声明</th><th>状态</th></tr>`;
       for (const e of items.slice(0, 20)) {
-        body += `<tr><td>${esc(e.id || '')}</td><td class="desc">${esc(oneSentence(e.claim || e.description || ''))}</td><td><span class="pill ${pillClass(e.status || 'pending')}">${esc(e.status || 'pending')}</span></td></tr>`;
+        evidenceBody += `<tr><td>${esc(e.id || '')}</td><td class="desc">${esc(oneSentence(e.claim || e.description || ''))}</td><td><span class="pill ${pillClass(e.status || 'pending')}">${esc(e.status || 'pending')}</span></td></tr>`;
       }
-      body += `</table></div>\n`;
+      body += detailPanel('as-is-evidence-index', `证据索引（${items.length}）`, `${evidenceBody}</table>`);
     }
   }
+  body += `</section>`;
 
   return wrapHtml(`As-Is — ${data.ideaName}`, body);
 }
@@ -237,32 +327,38 @@ function renderToBeSection(data) {
   body += metric('数据/API', `${dataChanges ? 1 : 0}/${apiChanges ? 1 : 0}`, 'DB/API 计划');
   body += `</div>\n`;
 
+  body += sectionNav([
+    { id: 'to-be-model', label: '目标 UML / 模型' },
+    { id: 'change-flow', label: '改造链路' },
+    { id: 'change-points', label: '改造点详情' },
+    { id: 'task-plan', label: 'Task 拆分' },
+    { id: 'risk-plan', label: '风险与完整方案' },
+  ]);
+  body += renderToBeUml(impactRisk || {});
+  body += renderChangeFlow(impactRisk || {}, changePoints);
+
   if (normalizedTasks.length > 0) {
-    body += `<div class="card animate-in"><h2>Task 拆分</h2><table><tr><th>Task</th><th>风险</th><th>关联需求</th><th>目标</th></tr>`;
+    let taskBody = `<table><tr><th>Task</th><th>风险</th><th>关联需求</th><th>目标</th></tr>`;
     for (const t of normalizedTasks) {
-      body += `<tr><td><strong>${esc(t.id)}</strong></td><td><span class="pill ${pillClass(t.risk_level)}">${esc(t.risk_level)}</span></td><td>${esc((t.trace_refs || []).join(', ') || '—')}</td><td class="desc">${esc(oneSentence(t.title || t.goal))}</td></tr>`;
+      taskBody += `<tr><td><strong>${esc(t.id)}</strong></td><td><span class="pill ${pillClass(t.risk_level)}">${esc(t.risk_level)}</span></td><td>${esc((t.trace_refs || []).join(', ') || '—')}</td><td class="desc">${esc(oneSentence(t.title || t.goal))}</td></tr>`;
     }
-    body += `</table></div>\n`;
+    body += detailPanel('task-plan', `Task 拆分（${normalizedTasks.length}）`, `${taskBody}</table>`);
   }
 
   if (changePoints.length > 0) {
-    body += `<div class="card animate-in"><h2>改造点</h2><table><tr><th>ID</th><th>决策</th><th>风险</th><th>说明</th></tr>`;
-    for (const cp of changePoints.slice(0, 15)) {
-      body += `<tr><td><strong>${esc(cp.id)}</strong></td><td><span class="pill ${pillClass(cp.decision === '删除' ? 'fail' : cp.decision === '新增' ? 'approved' : 'coding')}">${esc(cp.decision || '改造')}</span></td><td><span class="pill ${pillClass(cp.risk_level || 'low')}">${esc(cp.risk_level || 'low')}</span></td><td class="desc">${esc(cp.summary || cp.node || '')}</td></tr>`;
-    }
-    body += `</table></div>\n`;
+    body += `<section id="change-points" class="cp-grid">${changePoints.slice(0, 30).map(cp => detailPanel(`cp-${domId(cp.id)}`, `${cp.id} · ${cp.node || cp.summary || '改造点'}`, `<div class="cp-summary"><span class="pill ${pillClass(cp.decision === '删除' ? 'fail' : cp.decision === '新增' ? 'approved' : 'coding')}">${esc(cp.decision || '改造')}</span><span class="pill ${pillClass(cp.risk_level || 'low')}">${esc(cp.risk_level || 'low')}</span></div><p>${esc(cp.summary || cp.description || cp.node || '')}</p>${cp.reason ? `<p><strong>设计理由：</strong>${esc(cp.reason)}</p>` : ''}`)).join('')}</section>`;
   }
 
   if (impactRisk?.risk_matrix?.length) {
-    body += `<div class="card animate-in card-accent-red"><h2>风险矩阵</h2><table><tr><th>ID</th><th>描述</th><th>严重度</th><th>缓解</th></tr>`;
+    let riskBody = `<table><tr><th>ID</th><th>描述</th><th>严重度</th><th>缓解</th></tr>`;
     for (const r of impactRisk.risk_matrix.slice(0, 10)) {
-      body += `<tr><td>${esc(r.id)}</td><td class="desc">${esc(oneSentence(r.description))}</td><td><span class="pill ${pillClass(r.severity)}">${esc(r.severity)}</span></td><td class="desc">${esc(oneSentence(r.mitigation))}</td></tr>`;
+      riskBody += `<tr><td>${esc(r.id)}</td><td class="desc">${esc(oneSentence(r.description))}</td><td><span class="pill ${pillClass(r.severity)}">${esc(r.severity)}</span></td><td class="desc">${esc(oneSentence(r.mitigation))}</td></tr>`;
     }
-    body += `</table></div>\n`;
+    body += detailPanel('risk-plan', `风险矩阵（${impactRisk.risk_matrix.length}）`, `${riskBody}</table>`);
   }
 
   if (implementationPlan) {
-    body += `<div class="card animate-in"><h2>实施方案</h2><div class="section-md">${mdToSimpleHtml(implementationPlan)}</div></div>\n`;
+    body += detailPanel('implementation-plan', '完整实施方案', `<div class="section-md">${mdToSimpleHtml(implementationPlan)}</div>`);
   }
 
   return wrapHtml(`To-Be — ${data.ideaName}`, body);
@@ -562,6 +658,8 @@ function loadData(ideaDir) {
   const dataChangePlanMd = readMd(ideaDir, 'to-be/data-change-plan.md');
   const apiChangePlanJson = readJson(ideaDir, 'to-be/api-change-plan.json');
   const apiChangePlanMd = readMd(ideaDir, 'to-be/api-change-plan.md');
+  let performanceMetrics = null;
+  try { performanceMetrics = collectSessionMetrics(ideaDir); } catch { /* optional metrics */ }
 
   const normalizedTasks = normalizeTasksJson(tasksJson);
   const coverageRefs = normalizeCoverageMatrixRefs(coverageMatrix || {});
@@ -617,7 +715,7 @@ function loadData(ideaDir) {
     normalizedTasks, traceabilityTree, changePoints,
     crResults, reviewReportMd, currentChangeReport, currentChangeReportSha256, mergeConfirmation, impactRisk,
     overview, coreWalkthrough, evidenceLedger, qualityScore, coverageMatrix,
-    implementationPlan, dataChanges, apiChanges,
+    implementationPlan, dataChanges, apiChanges, performanceMetrics,
     stepHistory: workflowState?.step_history || [],
   };
 }

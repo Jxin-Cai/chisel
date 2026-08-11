@@ -67,7 +67,12 @@ function escapeLabel(value) {
 }
 
 function markdownTarget(path) {
-  return `<${path.replaceAll('>', '%3E')}>`;
+  // Codex resolves plain absolute Markdown destinations as local files. Angle
+  // brackets are only needed when whitespace would otherwise terminate the
+  // destination; wrapping every path prevents some clients from recognizing
+  // the target as a local absolute path.
+  const target = path.replaceAll('>', '%3E');
+  return /\s/.test(target) ? `<${target}>` : target;
 }
 
 export function formatPhaseArtifacts(ideaDir, step, artifacts = collectPhaseArtifacts(ideaDir, step)) {

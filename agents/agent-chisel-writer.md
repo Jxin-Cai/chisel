@@ -96,11 +96,13 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`。
 
 ### 写作原则
 
-1. **改造点映射表**：严格对照 call-graph 和 impact-risk-report.json 的 change_points + reuse_nodes
-2. **CP 详情**：从 design-notes.json 提取每个 CP 的设计理由、当前行为、目标行为
-3. **Task 拆分建议**：从 tasks.json 提取，保持 JSON 结构完整
-4. **变更完整性自检结果**：从 design-notes.json 的 self_check 字段提取
-5. **风险清单**：从 impact-risk-report.json 的 risk_matrix 提取
+1. **图先行**：文件开头必须有目标 UML 时序图或模型图；紧接一张改造点全链路图，图中高亮新增/改造/删除节点并标注 CP
+2. **主干收敛**：首屏只呈现目标、主链路、关键变化和最高风险；完整说明放到后续带明确标题的详情章节
+3. **改造点映射表**：严格对照 call-graph 和 impact-risk-report.json 的 change_points + reuse_nodes
+4. **CP 详情**：从 design-notes.json 提取每个 CP 的设计理由、当前行为、目标行为；标题必须包含 CP 编号，供 HTML 报告锚点跳转
+5. **Task 拆分建议**：从 tasks.json 提取，保持 JSON 结构完整
+6. **变更完整性自检结果**：从 design-notes.json 的 self_check 字段提取
+7. **风险清单**：从 impact-risk-report.json 的 risk_matrix 提取
 
 ## 限制
 

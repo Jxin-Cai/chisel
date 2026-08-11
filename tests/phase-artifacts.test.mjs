@@ -23,8 +23,18 @@ describe('phase artifact delivery', () => {
     assert.deepEqual(artifacts.map(item => item.label), ['as-is/ai-input/facts.md', 'as-is/overview.md']);
     assert.ok(artifacts.every(item => item.path.startsWith('/')));
     const markdown = formatPhaseArtifacts(ideaDir, 'understand:explore', artifacts);
-    assert.match(markdown, /\[as-is\/overview\.md\]\(<\//);
+    assert.match(markdown, /\[as-is\/overview\.md\]\(\//);
+    assert.doesNotMatch(markdown, /\]\(<\//);
     assert.doesNotMatch(markdown, /\]\(as-is\//);
+  });
+
+  it('uses angle brackets only when an absolute path contains whitespace', () => {
+    const markdown = formatPhaseArtifacts(ideaDir, 'receive-requirement', [
+      { label: 'plain.md', path: '/tmp/plain.md' },
+      { label: 'space.md', path: '/tmp/idea with spaces/space.md' },
+    ]);
+    assert.match(markdown, /\[plain\.md\]\(\/tmp\/plain\.md\)/);
+    assert.match(markdown, /\[space\.md\]\(<\/tmp\/idea with spaces\/space\.md>\)/);
   });
 
   it('adds only the exact generated report for each mapped phase', () => {
