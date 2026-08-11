@@ -12,7 +12,7 @@ function metricsPath(ideaDir) {
 
 const HUMAN_WAIT_STEPS = new Set([
   'understand:confirm', 'clarify:requirement', 'plan:confirm',
-  'worktree:setup', 'review:merge', 'blocked'
+  'worktree:setup', 'test:unit', 'review:cr-report', 'final:summary', 'review:merge', 'blocked'
 ]);
 
 function emptyMetrics() {

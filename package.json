@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test 'tests/*.test.mjs'",
+    "test:coverage": "node --test --experimental-test-coverage 'tests/*.test.mjs'",
     "validate": "node scripts/validate-plugin.mjs && node scripts/docs-inventory-check.mjs"
   }
 }

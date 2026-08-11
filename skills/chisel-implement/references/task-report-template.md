@@ -45,6 +45,14 @@ concerns: ""
 
 - [x] <AC> — Evidence: <文件:行号 / 验证命令 / 行为说明>
 
+## Requirement Unit Tests
+
+| Test File | Test Name | Trace Ref | RED Evidence | GREEN Evidence | Result |
+|---|---|---|---|---|---|
+| tests/example.test.ts | rejects empty input | AC-001/VC-001 | `<命令 + 预期失败原因>` | `<命令 + PASS>` | pass / fail |
+
+每个新增或改变的行为至少一行。RED Evidence 必须证明测试曾因目标行为缺失而失败，不能填写语法错误、环境错误或占位内容。
+
 ## Traceability Evidence
 
 | Trace Ref | Evidence | Result |

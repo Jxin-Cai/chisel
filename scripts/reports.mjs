@@ -15,7 +15,8 @@ const styles = readFileSync(join(assetDir, 'report-styles.css'), 'utf8');
 export const REPORTS = Object.freeze({
   'as-is': { file: 'as-is-report.html', template: 'as-is-report-template.html', blocks: ['as-is'] },
   'to-be': { file: 'to-be-report.html', template: 'to-be-report-template.html', blocks: ['to-be'] },
-  cr: { file: 'cr-report.html', template: 'cr-report-template.html', blocks: ['cr-results', 'current-change'] },
+  test: { file: 'test-report.html', template: 'test-report-template.html', blocks: ['unit-tests'] },
+  cr: { file: 'cr-report.html', template: 'cr-report-template.html', blocks: ['cr-results'] },
   'task-time': { file: 'task-time-report.html', template: 'task-time-report-template.html', blocks: ['overview', 'progress', 'timeline'] },
 });
 
@@ -79,7 +80,7 @@ function main() {
   const reportsIndex = args.indexOf('--reports');
   const requested = reportsIndex >= 0 ? String(args[reportsIndex + 1] || '').split(',').map(v => v.trim()).filter(Boolean) : [];
   if (!ideaDir) {
-    process.stderr.write('用法: reports.mjs <idea-dir> --reports <as-is|to-be|cr|task-time>（一次一份，确认后再继续）\n');
+    process.stderr.write('用法: reports.mjs <idea-dir> --reports <as-is|to-be|test|cr|task-time>（一次一份，确认后再继续）\n');
     process.exit(1);
   }
   try {

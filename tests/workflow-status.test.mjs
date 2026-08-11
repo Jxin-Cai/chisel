@@ -113,6 +113,10 @@ describe('workflow step timing', () => {
   it('does not append duplicate history for repeated same step updates', () => {
     initWorkflowState(ideaDir, 'idea');
 
+    const initialHistory = parseWorkflowStepHistory(readWorkflowText());
+    assert.equal(initialHistory.length, 1);
+    assert.equal(initialHistory[0].step, 'receive-requirement');
+
     updateWorkflowPhase(ideaDir, 'receive-requirement');
     updateWorkflowPhase(ideaDir, 'receive-requirement');
 

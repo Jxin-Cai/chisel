@@ -18,10 +18,12 @@ const STEP_DESCRIPTIONS = {
   'tasks:init': '初始化 task 状态机，生成 coder-context',
   'implement:code': '按 task 逐个实现代码',
   'repair:code': '按 CR 返修意见修复代码',
+  'test:unit': '运行单测与覆盖率，集中修复异常并确认测试报告',
   'review:cr': '多维度 Code Review（spec + D2-D9）',
   'review:cr-light': '轻量 Code Review（仅 spec 维度）',
   'review:cr-moderate': 'Code Review（spec + D3-D5）',
   'review:integration': '跨 task 集成一致性审查',
+  'review:cr-report': '全部 CR 返修闭环后生成并确认最终 CR 报告',
   'final:summary': '生成最终变更摘要 + 验证证据汇总',
   'review:merge': '生成当前变更报告，等待用户批准合并',
 };

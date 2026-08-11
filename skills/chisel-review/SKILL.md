@@ -74,45 +74,22 @@ user-invocable: false
    })
    ```
 
-9. **先生成并交付 CR 报告（任何用户决策或状态变更之前）**
+9. **处理多维 CR 结果并完成返修闭环**
 
-   workflow 返回后先读取 `status`，但不得立即询问用户，也不得先写入
-   `needs_rework` / `approved`。无论 `approved`、`spec_failed` 还是
-   `needs_rework`，都必须先执行完整的报告交付链：
+   workflow 返回后读取结构化 `status`。该阶段只形成机器 CR 结果并驱动返修，
+   不生成最终 CR 报告；最终报告必须等所有多维度 findings 修复并复审通过后再产出。
+   禁止使用 `--finish-task`、`--approve-task` 或其他命令改变 task CR 状态；
+   `--mark-cr-requirement` 是唯一合法手段。
 
-   ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-report.mjs {IDEA_DIR}
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports cr
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} <cr-step>
-   ```
+   **9a. 当 `status === "approved"`**：
 
-   其中 `<cr-step>` 必须与当前路线一致：`review:cr`、`review:cr-light`、
-   `review:cr-moderate` 或 `review:integration`。将最后一条命令 stdout
-   **原样输出到对话**，确保包含绝对路径 Markdown 链接和
-   `reports/cr-report.html`；不得只说“已生成”、只给目录或把链接留到最终总结。
-   报告 HTML 读取结构化 CR 结果，用户应能在独立浏览器页面 review。
-
-10. **报告经用户确认后再处理 workflow 结果**
-
-   <HARD-GATE principle="P2,P4">
-   完成步骤 9 后必须输出 `reports.mjs` 返回的 `sha256` 并询问用户是否确认该 CR 报告，随后停止。用户明确确认前不得执行任何 task 状态变更。确认后运行：
-   ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} cr --confirm --expected-sha <sha256>
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} cr
-   ```
-   第二条命令返回 `valid: true` 后，才能根据 `status` 执行状态变更。禁止使用 `--finish-task`、
-   `--approve-task` 或其他命令改变 task CR 状态；`--mark-cr-requirement` 是唯一合法手段。
-
-   **10a. 当 `status === "approved"`**：
-
-   报告已获用户确认后执行：
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement approved
    ```
 
-   **10b. 当 `status === "spec_failed"` 或 `status === "needs_rework"`**：
+   **9b. 当 `status === "spec_failed"` 或 `status === "needs_rework"`**：
 
-   用户确认报告后，向用户展示 findings 摘要：
+   向用户展示 findings 摘要：
    - 失败维度列表及 finding 数量
    - 每个 finding 的维度、严重度（critical/high/medium/low）、一行描述
    - 受影响 task 列表（`affected_tasks`）
@@ -149,25 +126,38 @@ user-invocable: false
      node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement approved
      ```
 
-   不得代替用户做出选择。不得在报告交付前询问或直接标记 needs_rework。
+   不得代替用户做出选择。确认处理范围后立即进入 repair；返修完成必须重新跑
+   单测覆盖率阶段，再从 spec 开始多维复审。
    </HARD-GATE>
+
+10. **仅在 CR 与返修全部完成后生成最终 CR 报告**
+
+   orchestration-status 返回 `review:cr-report` 时才执行：
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/cr-report.mjs {IDEA_DIR}
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports cr
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} review:cr-report
+   ```
+
+   报告聚焦本次开发功能、多维 CR 问题、返修措施、累计返修次数和最终复审结论。
+   输出绝对路径与 SHA-256 后停止等待用户确认；确认后运行：
+
+   ```bash
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} cr --confirm --expected-sha <sha256>
+   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} cr
+   ```
 
 ### Integration Review（条件触发）
 
 当所有 per-task CR 通过且 task_count > 1 且复杂度为 standard/complex 时：
 1. 启动 `agent-chisel-reviewer`（opus），dimension=integration
 2. `cr-parse.mjs {IDEA_DIR} --dim integration`
-3. 先运行 `cr-report.mjs`、`reports.mjs --reports cr` 和
-   `phase-artifacts.mjs {IDEA_DIR} review:integration`，将绝对路径链接与 SHA-256 交付，然后停止等待用户确认。
-4. 用户确认并通过 `report-confirm.mjs` 写入哈希凭据后，pass 才可继续；fail 才可执行
-   `--mark-cr-requirement needs_rework`。
+3. pass 后进入 `review:cr-report`；fail 时按 findings 进入 repair，修复后重跑单测与 CR。
 
 Integration Review 不走验证子阶段，不使用 workflow。
 
-无论 integration pass 还是 fail，都必须先按步骤 9 生成 CR 汇总报告、
-`reports/cr-report.html`，并以 `review:integration` 作为 phase-artifacts step
-交付绝对路径链接并等待用户确认；若 fail，确认后才可执行
-`--mark-cr-requirement needs_rework`。不得先变更状态再生成报告。
+Integration 结果必须纳入最终 CR 报告，但不得在返修闭环完成前提前生成报告。
 
 <HARD-GATE principle="P2,P4">
 spec 是门槛——fail 直接返修，不跑后续质量维度。

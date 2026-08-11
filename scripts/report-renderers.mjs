@@ -5,7 +5,8 @@ import { join, basename } from 'node:path';
 import {
   readTaskState, taskStateFile, detectComplexity
 } from './workflow-lib.mjs';
-import { WORKFLOW_PATHS } from './workflow-definition.mjs';
+import { STEP_GATE_MAP, WORKFLOW_PATHS } from './workflow-definition.mjs';
+import { checkGate } from './gate-check.mjs';
 import {
   collectCrResults, collectTraceability, computeReportSummary,
   countCrFindings, countTasksByStatus, normalizeApiChangePlan,
@@ -88,12 +89,15 @@ function collectStepOutputs(ideaDir, steps, currentStep, stepHistory) {
       { label: '核心走查', file: 'as-is/core-walkthrough.md' },
     ],
     'clarify:requirement': [{ label: '需求澄清', file: 'requirement-clarification.json' }],
+    'classify:requirement': [{ label: '需求分级', file: 'requirement-classification.json' }],
     'plan:design': [
       { label: '实现方案', file: 'to-be/implementation-plan.md' },
       { label: 'Tasks', file: 'to-be/tasks.json' },
     ],
     'implement:code': [{ label: 'Task 报告', file: 'task-reports/', isDir: true }],
+    'test:unit': [{ label: '单测结果', file: 'unit-test-result.json' }, { label: '单测报告', file: 'reports/test-report.html' }],
     'review:cr': [{ label: 'CR 结果', file: 'cr/', isDir: true }],
+    'review:cr-report': [{ label: 'CR 汇总报告', file: 'reports/cr-report.html' }],
     'final:summary': [{ label: '最终摘要', file: 'final-summary.md' }],
     'review:merge': [
       { label: '当前变更报告', file: 'cr/current-change-report.md' },
@@ -102,7 +106,9 @@ function collectStepOutputs(ideaDir, steps, currentStep, stepHistory) {
   };
   const visited = new Set((stepHistory || []).map(h => h.step));
   return steps.map(stepId => {
-    const status = stepId === currentStep ? 'current' : visited.has(stepId) ? 'done' : 'pending';
+    const gateId = STEP_GATE_MAP[stepId];
+    const gatePassed = gateId ? checkGate(ideaDir, gateId).pass : false;
+    const status = stepId === currentStep ? 'current' : visited.has(stepId) || gatePassed ? 'done' : 'pending';
     const outputs = (STEP_OUTPUTS_MAP[stepId] || []).map(o => ({ ...o, exists: existsSync(join(ideaDir, o.file)) }));
     return { step: stepId, status, outputs };
   });
@@ -146,7 +152,10 @@ function renderAsIsUml(coverageMatrix = {}) {
   const links = Array.isArray(coverageMatrix.links) ? coverageMatrix.links : [];
   if (links.length > 0) {
     const participants = [...new Set(links.flatMap(link => [link.from || link.source || link.caller, link.to || link.target || link.callee]).filter(Boolean))].slice(0, 8);
-    return `<section class="card diagram-card" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">UML Sequence</p><h2>当前核心时序</h2></div><span class="diagram-legend">${links.length} 次交互</span></div><div class="sequence-participants">${participants.map(name => `<span>${esc(name)}</span>`).join('')}</div><ol class="sequence-list">${links.slice(0, 12).map((link, index) => `<li><span class="sequence-index">${index + 1}</span><span class="sequence-node">${esc(link.from || link.source || link.caller || '上游')}</span><span class="sequence-arrow" aria-hidden="true">→</span><span class="sequence-node">${esc(link.to || link.target || link.callee || '下游')}</span><span class="sequence-kind">${esc(link.kind || link.depth || 'call')}</span></li>`).join('')}</ol></section>`;
+    const data = Array.isArray(coverageMatrix.data) ? coverageMatrix.data : [];
+    const relationships = Array.isArray(coverageMatrix.relationships) ? coverageMatrix.relationships : [];
+    const modelCard = `<section class="card diagram-card" id="as-is-models"><div class="card-heading"><div><p class="eyebrow">Key Models</p><h2>关键模型与模型关系</h2></div><span class="diagram-legend">${data.length} 个模型</span></div><div class="model-flow">${data.slice(0, 8).map((item, index) => `${index ? '<span class="model-arrow">→</span>' : ''}<div class="model-column"><strong>${esc(item.entity || item.table || item.name || item.id || '模型')}</strong><span>${esc(item.relationship || item.role || relationships[index]?.kind || '参与主链路')}</span></div>`).join('') || '<div class="model-column"><strong>未识别结构化模型</strong><span>详见数据模型证据</span></div>'}</div></section>`;
+    return `<section class="card diagram-card" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">UML Sequence</p><h2>当前核心时序</h2></div><span class="diagram-legend">${links.length} 次交互</span></div><div class="sequence-participants">${participants.map(name => `<span>${esc(name)}</span>`).join('')}</div><ol class="sequence-list">${links.slice(0, 12).map((link, index) => `<li><span class="sequence-index">${index + 1}</span><span class="sequence-node">${esc(link.from || link.source || link.caller || '上游')}</span><span class="sequence-arrow" aria-hidden="true">→</span><span class="sequence-node">${esc(link.to || link.target || link.callee || '下游')}</span><span class="sequence-kind">${esc(link.kind || link.depth || 'call')}</span></li>`).join('')}</ol></section>${modelCard}`;
   }
   const entrypoints = Array.isArray(coverageMatrix.entrypoints) ? coverageMatrix.entrypoints : [];
   const data = Array.isArray(coverageMatrix.data) ? coverageMatrix.data : [];
@@ -276,14 +285,12 @@ function renderAsIsSection(data) {
   }
 
   body += sectionNav([
-    { id: 'as-is-sequence', label: '核心时序 / 模型' },
-    { id: 'as-is-overview', label: '现状摘要' },
-    { id: 'as-is-walkthrough', label: '链路走查' },
-    { id: 'as-is-evidence', label: '证据与质量' },
+    { id: 'as-is-sequence', label: '现状执行链路 / 关键模型' },
+    { id: 'as-is-overview', label: '一句话现状总结' },
+    { id: 'as-is-evidence', label: '证据与质量（按需）' },
   ]);
   body += renderAsIsUml(coverageMatrix || {});
-  if (overview) body += detailPanel('as-is-overview', '现状摘要与风险地图', `<div class="section-md">${mdToSimpleHtml(overview)}</div>`, true);
-  if (coreWalkthrough) body += detailPanel('as-is-walkthrough', '核心链路与异常分支走查', `<div class="section-md">${mdToSimpleHtml(coreWalkthrough)}</div>`);
+  if (overview) body += detailPanel('as-is-overview', '现状总结（一段话）', `<p>${esc(oneSentence(overview))}</p>`, true);
   body += `<section id="as-is-evidence" class="detail-stack">`;
   if (qualityScore) {
     const dims = qualityScore.dimensions || qualityScore.scores || {};
@@ -328,16 +335,19 @@ function renderToBeSection(data) {
   body += `</div>\n`;
 
   body += sectionNav([
-    { id: 'to-be-model', label: '目标 UML / 模型' },
-    { id: 'change-flow', label: '改造链路' },
-    { id: 'change-points', label: '改造点详情' },
-    { id: 'task-plan', label: 'Task 拆分' },
-    { id: 'risk-plan', label: '风险与完整方案' },
+    { id: 'implementation-plan', label: '完整 To-Be 方案' },
+    { id: 'to-be-model', label: '目标模型' },
+    { id: 'change-flow', label: '变更点在 As-Is 节点上的呈现' },
+    { id: 'change-points', label: '全部变更点' },
+    { id: 'risk-plan', label: '风险点与风险评估' },
   ]);
+  if (implementationPlan) {
+    body += detailPanel('implementation-plan', '完整 To-Be 方案（完整实施方案）', `<div class="section-md">${mdToSimpleHtml(implementationPlan)}</div>`, true);
+  }
   body += renderToBeUml(impactRisk || {});
   body += renderChangeFlow(impactRisk || {}, changePoints);
 
-  if (normalizedTasks.length > 0) {
+  if ((normalizedTasks || []).length > 0) {
     let taskBody = `<table><tr><th>Task</th><th>风险</th><th>关联需求</th><th>目标</th></tr>`;
     for (const t of normalizedTasks) {
       taskBody += `<tr><td><strong>${esc(t.id)}</strong></td><td><span class="pill ${pillClass(t.risk_level)}">${esc(t.risk_level)}</span></td><td>${esc((t.trace_refs || []).join(', ') || '—')}</td><td class="desc">${esc(oneSentence(t.title || t.goal))}</td></tr>`;
@@ -357,11 +367,36 @@ function renderToBeSection(data) {
     body += detailPanel('risk-plan', `风险矩阵（${impactRisk.risk_matrix.length}）`, `${riskBody}</table>`);
   }
 
-  if (implementationPlan) {
-    body += detailPanel('implementation-plan', '完整实施方案', `<div class="section-md">${mdToSimpleHtml(implementationPlan)}</div>`);
-  }
-
   return wrapHtml(`To-Be — ${data.ideaName}`, body);
+}
+
+function renderUnitTestSection(data) {
+  const result = data.unitTestResult;
+  let body = blockHero('🧪', '单测与覆盖率', data.ideaName);
+  if (!result) {
+    body += `<div class="card animate-in"><p class="muted">暂无 unit-test-result.json；必须完成单测、覆盖率采集和异常集中返修后才能进入 CR。</p></div>`;
+    return wrapHtml(`单测 — ${data.ideaName}`, body);
+  }
+  const repositories = Array.isArray(result.repositories) ? result.repositories : [];
+  const tests = repositories.flatMap(repo => repo.requirement_unit_tests || []);
+  const anomalies = result.run_summary?.anomalies || [];
+  const coverage = repositories.map(repo => repo.coverage).filter(Boolean);
+  const average = key => coverage.length ? Math.round(coverage.reduce((sum, item) => sum + Number(item[key]?.pct || 0), 0) / coverage.length * 100) / 100 : 0;
+  body += `<div class="metric-grid stagger-group">`;
+  body += metric('执行结果', result.status, `${result.run_summary?.total_runs || 0} 轮`, result.status === 'pass' ? 'success' : 'danger');
+  body += metric('Lines', `${average('lines')}%`, '行覆盖率', average('lines') >= 80 ? 'success' : 'warn');
+  body += metric('Branches', `${average('branches')}%`, '分支覆盖率', average('branches') >= 80 ? 'success' : 'warn');
+  body += metric('返修次数', String(result.run_summary?.repair_count || 0), `${anomalies.length} 个异常`, anomalies.length ? 'warn' : 'success');
+  body += `</div>`;
+  body += `<div class="card animate-in"><h2>覆盖率明细</h2><table><tr><th>仓库</th><th>Lines</th><th>Statements</th><th>Functions</th><th>Branches</th></tr>`;
+  for (const repo of repositories) {
+    const c = repo.coverage || {};
+    body += `<tr><td class="desc">${esc(repo.project_root)}</td><td>${esc(c.lines?.pct ?? '—')}%</td><td>${esc(c.statements?.pct ?? '—')}%</td><td>${esc(c.functions?.pct ?? '—')}%</td><td>${esc(c.branches?.pct ?? '—')}%</td></tr>`;
+  }
+  body += `</table></div>`;
+  body += `<div class="card animate-in"><h2>本次需求补充的单测 List</h2>${tests.length ? `<table><tr><th>状态</th><th>测试文件</th></tr>${tests.map(test => `<tr><td>${esc(test.status)}</td><td class="desc">${esc(test.file)}</td></tr>`).join('')}</table>` : '<p class="muted">Git diff 中未识别到新增或修改的单测文件。</p>'}</div>`;
+  body += `<div class="card animate-in"><h2>单测通过与返修情况</h2><p>共执行 ${esc(result.run_summary?.total_runs || 0)} 轮，失败 ${esc(result.run_summary?.failed_runs || 0)} 轮，集中返修 ${esc(result.run_summary?.repair_count || 0)} 次，当前状态：<span class="pill ${pillClass(result.status)}">${esc(result.status)}</span>。</p>${anomalies.length ? `<table><tr><th>轮次</th><th>检查</th><th>异常</th><th>状态</th></tr>${anomalies.map(item => `<tr><td>${esc(item.run)}</td><td>${esc(item.check)}</td><td class="desc">${esc((item.failed_tests || []).join('; ') || oneSentence(item.output_tail || '未解析到测试名'))}</td><td>${item.resolved ? '已修复' : '待修复'}</td></tr>`).join('')}</table>` : '<p class="muted">未记录单测异常。</p>'}</div>`;
+  return wrapHtml(`单测 — ${data.ideaName}`, body);
 }
 
 function renderProgressSection(data) {
@@ -405,7 +440,7 @@ function renderProgressSection(data) {
 }
 
 function renderCrSection(data) {
-  const { crResults, taskDetails, reviewReportMd } = data;
+  const { crResults, taskDetails, reviewReportMd, normalizedTasks, tasks } = data;
   let body = blockHero('🔍', 'CR 审查结果', data.ideaName);
 
   if (crResults.length === 0) {
@@ -420,6 +455,15 @@ function renderCrSection(data) {
   body += metric('平均置信度', stats.avgConfidence ? `${stats.avgConfidence}%` : '—', '');
   body += metric('Observations', String(stats.observations), '参考建议');
   body += `</div>\n`;
+
+  if ((normalizedTasks || []).length > 0) {
+    body += `<div class="card animate-in"><h2>本次开发功能</h2><table><tr><th>Task</th><th>功能</th><th>状态</th><th>累计返修</th></tr>`;
+    for (const task of normalizedTasks || []) {
+      const state = tasks?.[task.id] || {};
+      body += `<tr><td>${esc(task.id)}</td><td class="desc">${esc(oneSentence(task.title || task.goal))}</td><td>${esc(state.status || 'pending')}</td><td>${esc(state.rework_count || 0)}</td></tr>`;
+    }
+    body += `</table></div>`;
+  }
 
   body += `<div class="card animate-in"><h2>维度总览</h2><table><tr><th>维度</th><th>结果</th><th>Rework</th><th>Obs</th></tr>`;
   for (const r of crResults) {
@@ -658,6 +702,7 @@ function loadData(ideaDir) {
   const dataChangePlanMd = readMd(ideaDir, 'to-be/data-change-plan.md');
   const apiChangePlanJson = readJson(ideaDir, 'to-be/api-change-plan.json');
   const apiChangePlanMd = readMd(ideaDir, 'to-be/api-change-plan.md');
+  const unitTestResult = readJson(ideaDir, 'unit-test-result.json');
   let performanceMetrics = null;
   try { performanceMetrics = collectSessionMetrics(ideaDir); } catch { /* optional metrics */ }
 
@@ -715,7 +760,7 @@ function loadData(ideaDir) {
     normalizedTasks, traceabilityTree, changePoints,
     crResults, reviewReportMd, currentChangeReport, currentChangeReportSha256, mergeConfirmation, impactRisk,
     overview, coreWalkthrough, evidenceLedger, qualityScore, coverageMatrix,
-    implementationPlan, dataChanges, apiChanges, performanceMetrics,
+    implementationPlan, dataChanges, apiChanges, unitTestResult, performanceMetrics,
     stepHistory: workflowState?.step_history || [],
   };
 }
@@ -724,6 +769,7 @@ const REPORT_SECTIONS = {
   overview: renderOverviewSection,
   'as-is': renderAsIsSection,
   'to-be': renderToBeSection,
+  'unit-tests': renderUnitTestSection,
   progress: renderProgressSection,
   'cr-results': renderCrSection,
   'current-change': renderCurrentChangeSection,

@@ -8,7 +8,7 @@ import { readTaskState, STEP_GATE_MAP, taskStateFile } from '../scripts/workflow
 import { changedFilesForProject } from '../scripts/task-provenance.mjs';
 import { controlRoot } from '../scripts/control-plane.mjs';
 
-const HUMAN_WAIT_STEPS = new Set(['understand:confirm', 'clarify:requirement', 'plan:confirm', 'worktree:setup', 'review:merge', 'blocked']);
+const HUMAN_WAIT_STEPS = new Set(['understand:confirm', 'clarify:requirement', 'plan:confirm', 'worktree:setup', 'test:unit', 'review:cr-report', 'final:summary', 'review:merge', 'blocked']);
 
 function readInput() {
   try {

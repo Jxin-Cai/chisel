@@ -34,33 +34,34 @@
 0. **建立执行归属** — 若 TASK 中 `parallel` 为 true，进入临时 worktree 后先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {idea_dir} {task_id} --rebase-baseline --project-root . --run-id {run_id}`。然后检查不变量：若步骤 0.5 已获取 `invariants` 则使用预打包数据；否则若 `{idea_dir}/invariants.jsonl` 存在，Read 它，将所有 `condition` 字段作为额外实现约束。
 1. **扫上下文** — Grep/Glob 定位 task 涉及的文件和函数
 2. **File Plan 对齐** — 读取 task 文件中的 `## File-Level Plan`：逐行确认 planned file 的 purpose、CP refs、Trace refs；实现时优先按文件级计划逐项完成。如发现必须修改计划外文件，先确认它不在 Forbidden Files 中，并在 report 的 `## File-Level Implementation Report` 标记 `Planned=no`、说明原因。
-3. **实现** — 修改代码，靠齐 as-is 风格
-4. **验证—修复循环** — 读取 task 的 `Verification Plan` 和仓库现有测试约定，先运行最小相关验证，再运行 task 要求的完整验证。失败时定位根因：
+3. **测试先行（RED）** — 对每个行为变更先按 task 的 Verification Plan 写具体单测，运行并确认它因目标行为尚未实现而失败。测试立即通过、语法错误或环境错误都不算 RED；生产代码已经先写时不得把事后补测伪装成 TDD。
+4. **最小实现（GREEN）** — 只修改足以让当前失败测试通过的生产代码，靠齐 as-is 风格；通过后才允许重构，并保持测试全绿。
+5. **验证—修复循环** — 读取 task 的 `Verification Plan` 和仓库现有测试约定，先运行最小相关验证，再运行 task 要求的完整验证和覆盖率命令。失败时定位根因：
    - 本次修改导致 → 修复后重跑，直到通过
    - 环境/依赖瞬态失败 → 保留输出，诊断后最多重试 2 次
    - 既有失败或缺少外部权限 → 用可复现命令和原始错误证明，返回 BLOCKED 或 DONE_WITH_CONCERNS（仅当所有 AC 已实现且失败确属非阻塞既有问题）
    不得把“已写代码”当作完成，不得用跳过测试、删除断言或降低检查标准换取通过。
-5. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
+6. **Scope 检查** — 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`，如有越界立即修正
 长耗时构建/测试前，运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {idea_dir} --heartbeat {task_id} --run-id {run_id}` 续租。
 
-6. **Diff 自检** — 运行 `git diff` 查看自己的全部变更，按以下清单快速检查：
+7. **Diff 自检** — 运行 `git diff` 查看自己的全部变更，按以下清单快速检查：
    - 是否引入了明显 bug（逻辑错误、空值处理、off-by-one）？
    - task 文件中每条 Acceptance Criteria 是否都被覆盖？
    - 是否越界修改了不该碰的文件？
    发现问题则立即修复，不等 CR 阶段。这一步在现有 turn 内完成，不额外调用 agent。
 
-7. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`。必须填写 `## File-Level Implementation Report`，覆盖 task `File-Level Plan` 中 `Report Required=true` 的文件，以及 scope-check JSON `changed_files[]` 的每个文件；每行 Evidence 必须是实际文件行号、验证命令或行为说明，不能留空或占位。
+8. **写 report** — Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/task-report-template.md`，按模板格式写入 `{idea_dir}/task-reports/{task_id}-report.md`。必须填写 `## File-Level Implementation Report`，覆盖 task `File-Level Plan` 中 `Report Required=true` 的文件，以及 scope-check JSON `changed_files[]` 的每个文件；每行 Evidence 必须是实际文件行号、验证命令或行为说明，不能留空或占位。
    - **Frontmatter 快速路由字段**（必须从实际结果同步填写）：
      - `scope_check_result`：从步骤 5 的 scope-check 输出取 `pass` / `fail`
      - `invariant_check_result`：从 Invariant Proofs 中取——全部 pass 则 `pass`，否则 `fail`
      - `completion_status`：与 `## Completion Status` 的 status 行一致
      - `concerns`：与 `## Completion Status` 的 concerns 行一致（无则空字符串）
-8. **Completion Status** — 填写模板中的 `## Completion Status`，不得省略该章节。只有 Acceptance Criteria、scope-check 和要求的验证均有证据时才能填写 DONE：
+9. **Completion Status** — 填写模板中的 `## Completion Status`，不得省略该章节。只有 Acceptance Criteria、scope-check 和要求的验证均有证据时才能填写 DONE：
    - DONE：正常完成
    - DONE_WITH_CONCERNS：完成但对某些决策不确定（如风格不一致的现有代码、不清楚的业务逻辑）
    - NEEDS_CONTEXT：缺少关键信息无法继续，不写 report，不标状态
    - BLOCKED：遇到无法绕过的阻碍（如依赖缺失、权限不足）
-9. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：
+10. **标状态** — 如果 TASK 中 `parallel` 为 true，跳过状态更新；否则：
    - DONE / DONE_WITH_CONCERNS → `--finish-task {task_id} coded --run-id {run_id}`
    - BLOCKED → `--finish-task {task_id} failed --run-id {run_id}`
    - NEEDS_CONTEXT → 不更新状态，直接结束并在输出中说明缺失信息

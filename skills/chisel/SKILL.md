@@ -116,9 +116,11 @@ digraph chisel_flow {
   worktree [label="worktree:setup\nregistry + locator"];
   tasks [label="tasks:init"];
   implement [label="implement:code"];
+  unittest [label="test:unit\ncoverage + anomaly repair + report"];
   review [label="review:cr\ndynamic dimensions"];
   review_light [label="review:cr-light\nspec + compatibility projection"];
   integration [label="review:integration\n(multi-task standard/complex)"];
+  cr_report [label="review:cr-report\nafter all CR rework"];
   repair [label="repair:code"];
   final [label="final:summary"];
   merge_review [label="review:merge\ncurrent change report + HIL"];
@@ -137,16 +139,16 @@ digraph chisel_flow {
   adversarial -> design [label="findings / repair"];
   p_confirm -> worktree;
   worktree -> tasks;
-  tasks -> implement -> review;
-  implement -> review_light [label="trivial"];
+  tasks -> implement -> unittest -> review;
+  unittest -> review_light [label="trivial"];
   review -> repair [label="needs_rework"];
   review_light -> repair [label="needs_rework"];
-  repair -> review [label="re-review"];
-  repair -> review_light [label="re-review (trivial)"];
+  repair -> unittest [label="fresh unit tests + coverage"];
   review -> integration [label="multi-task all approved"];
-  integration -> final [label="pass"];
-  review -> final [label="single-task all approved"];
-  review_light -> final [label="all approved"];
+  integration -> cr_report [label="pass"];
+  review -> cr_report [label="single-task all approved"];
+  review_light -> cr_report [label="all approved"];
+  cr_report -> final [label="user confirmed final CR report"];
   final -> merge_review -> done [label="user approved exact snapshot"];
 }
 ```
@@ -170,21 +172,22 @@ transition 会重新校验权威 `resume_step`，使用 revision 防止并发覆
 </HARD-GATE>
 
 <HARD-GATE principle="P2,P4">
-**独立 HTML 报告与确认协议**：四类报告各自承载内容，不存在聚合页面。每次只能生成一份报告，并严格执行“生成 → 解析 stdout 中的 `path` 与 `sha256` → 立即输出绝对路径 Markdown 链接 → 停止自动推进并等待用户明确确认 → 写入哈希绑定的确认凭据 → gate 通过 → 才继续”。不得把“收到”“看到了”推断为确认，不得先生成下一份报告，不得用旧确认匹配重新生成的文件。
+**独立 HTML 报告与确认协议**：五类报告各自承载内容，不存在聚合页面。每次只能生成一份报告，并严格执行“生成 → 解析 stdout 中的 `path` 与 `sha256` → 立即输出绝对路径 Markdown 链接 → 停止自动推进并等待用户明确确认 → 写入哈希绑定的确认凭据 → gate 通过 → 才继续”。不得把“收到”“看到了”推断为确认，不得先生成下一份报告，不得用旧确认匹配重新生成的文件。
 
 用户明确确认后运行：
 ```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} <as-is|to-be|cr|task-time> --confirm --expected-sha <刚才输出的 sha256>
+node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} <as-is|to-be|test|cr|task-time> --confirm --expected-sha <刚才输出的 sha256>
 node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} <report-type>
 ```
 
 阶段规则：
 - `understand:explore` 完成 → 生成 `as-is`，输出 `reports/as-is-report.html`，等待确认；同时完成 As-Is 详细确认内容后，由 `as-is-report-confirmed` gate 校验报告哈希。
 - `plan:design` 与对抗审查完成 → 生成 `to-be`，输出 `reports/to-be-report.html`，等待确认；同时完成方案详细确认后，由 `to-be-report-confirmed` gate 校验报告哈希。
-- `review:cr*` 每轮 CR 技术结果完成 → 生成 `cr`，输出 `reports/cr-report.html`，等待确认；`cr-report-confirmed` gate 通过后才能返修或继续。integration 使报告变化时必须重新生成、重新确认。
+- `test:unit` → 运行完整单测与覆盖率，集中收集异常并统一返修；全绿后生成 `test`，报告覆盖率、本需求单测 list、通过情况和返修次数，确认后才进入 CR。
+- `review:cr*` 只执行多维审查和返修闭环，不提前生成最终报告；全部 findings 修复并复审通过后进入 `review:cr-report`，一次性生成并确认 `cr`。
 - `final:summary` 完成 → 生成 `task-time`，输出 `reports/task-time-report.html`，等待确认；`task-time-report-confirmed` gate 通过后才能进入 merge review。
 - `review:merge` → 生成 Current Change 数据后重新生成 `cr`，输出链接并等待 Approve / Request changes / Comment；`merge-review.mjs --confirm` 会把决定绑定到该 HTML 报告哈希。
-- 用户主动要求四份报告时，也必须按 As-Is → To-Be → CR → 任务与耗时的顺序逐份生成、逐份确认，不能批量生成。
+- 用户主动要求全量报告时，也必须按 As-Is → To-Be → 单测 → CR → 任务与耗时的顺序逐份生成、逐份确认，不能批量生成。
 
 报告确认是状态转移硬门禁。任何报告缺失、未确认或哈希过期时，流程必须停留在当前阶段。
 </HARD-GATE>
@@ -221,10 +224,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 | `worktree:setup` | 多仓 worktree 设置：先运行 `multi-repo-worktree.mjs --detect <workspace-root>`，由用户确认仓库列表和隔离策略；yes → `--create <idea-name> --workspace <workspace-root> --repos ...`，创建每仓同逻辑分支并写入持久 v3 registry；no → 仍需显式记录 current-branch 决策。恢复时必须先运行 `--locate/--resume`，读取 decision/registry 并用 `git worktree list --porcelain` 验证路径；旧 v1/v2 decision 继续接受 | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | quick route 必须先通过 `quick-dev-ready`；否则禁止启动 coder。其余路径运行 `/chisel-implement <idea-name>` | `implementation-verified` |
-| `review:cr` | `/chisel-review <idea-name>`；先运行 `review-selector.mjs`，spec 必跑，再按实际 diff/path/content 选择维度和 Dynamic Workflow batches；旧 D2-D9 通过 skipped/auto-pass projection 兼容。 | `cr-report-confirmed` |
-| `review:cr-moderate` | `/chisel-review <idea-name>`（默认 moderate 维度由 selector 决定；高风险信号会升级） | `cr-report-confirmed` |
-| `review:cr-light` | `/chisel-review <idea-name>`（仅小型低风险 diff 使用；spec 必跑并记录 lite 理由） | `cr-report-confirmed` |
-| `review:integration` | `/chisel-review <idea-name>`（standard/complex 且多 task：验证跨 task 组合一致性） | `integration-cr-report-confirmed` |
+| `test:unit` | 运行 `verify-run.mjs` 获取新鲜完整测试证据；失败项写入 `unit-test-runs.json` 后集中返修，直到全绿；运行 `unit-test-evidence.mjs` 汇总覆盖率、本次需求单测 list、异常和返修次数；生成 `reports/test-report.html` 并等待哈希确认 | `unit-test-report-confirmed` |
+| `review:cr` | `/chisel-review <idea-name>`；先运行 `review-selector.mjs`，spec 必跑，再按实际 diff/path/content 选择维度和 Dynamic Workflow batches；findings 直接进入返修闭环，不提前生成最终 CR 报告。 | `cr-complete` |
+| `review:cr-moderate` | `/chisel-review <idea-name>`（默认 moderate 维度由 selector 决定；高风险信号会升级） | `cr-complete` |
+| `review:cr-light` | `/chisel-review <idea-name>`（仅小型低风险 diff 使用；spec 必跑并记录 lite 理由） | `cr-complete` |
+| `review:integration` | `/chisel-review <idea-name>`（standard/complex 且多 task：验证跨 task 组合一致性） | `integration-cr-complete` |
+| `review:cr-report` | 所有多维 CR findings 修复并复审通过后，运行 `cr-report.mjs` 和 `reports.mjs --reports cr`；报告聚焦开发功能、发现问题、返修措施及累计返修次数，交付链接并等待哈希确认 | `cr-report-confirmed` |
 | `repair:code` | `/chisel-implement <idea-name>`（返修模式） | `implementation-verified` |
 | `final:summary` | 生成最终总结与任务耗时报告，交付链接并等待哈希确认 | `task-time-report-confirmed` |
 | `review:merge` | Read `${REF}/merge-review-guide.md`；生成绑定当前 Git HEAD + working-tree fingerprint 的 Current Change Report，逐文件输出报告，等待用户 Approve / Request changes / Comment。只有明确 Approve 才写入确认凭据 | `merge-review-confirmed` |
@@ -233,7 +238,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 
 > `${REF}` = `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/references`
 > 只在执行该 step 时 Read 对应模板/指南文件，不要预读。
-> 可用 gate（仅限以下值）：`requirement-exists` | `clarification-complete` | `requirement-classified` | `as-is-complete` | `as-is-human-docs-ready` | `as-is-confirmed` | `as-is-report-confirmed` | `quick-dev-ready` | `to-be-exists` | `to-be-human-docs-ready` | `to-be-adversarial-approved` | `to-be-confirmed` | `to-be-report-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `implementation-verified` | `cr-complete` | `cr-report-confirmed` | `integration-cr-complete` | `integration-cr-report-confirmed` | `rework-limit` | `all-approved` | `traceability-complete` | `final-summary-complete` | `task-time-report-confirmed` | `merge-review-report-exists` | `merge-review-confirmed` | `done`。不要发明其他 gate 名称。
+> 可用 gate（仅限以下值）：`requirement-exists` | `clarification-complete` | `requirement-classified` | `as-is-complete` | `as-is-human-docs-ready` | `as-is-confirmed` | `as-is-report-confirmed` | `quick-dev-ready` | `to-be-exists` | `to-be-human-docs-ready` | `to-be-adversarial-approved` | `to-be-confirmed` | `to-be-report-confirmed` | `worktree-decided` | `tasks-exist` | `task-workflow-exists` | `task-integrity` | `task-report-exists` | `implementation-verified` | `unit-test-complete` | `unit-test-report-confirmed` | `cr-complete` | `cr-report-confirmed` | `integration-cr-complete` | `integration-cr-report-confirmed` | `rework-limit` | `all-approved` | `traceability-complete` | `final-summary-complete` | `task-time-report-confirmed` | `merge-review-report-exists` | `merge-review-confirmed` | `done`。不要发明其他 gate 名称。
 
 ### Complexity 分级
 
@@ -241,10 +246,10 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 
 | complexity | 路径 | 判定条件 |
 |---|---|---|
-| `hotfix` | `receive-requirement` → `quick-dev:init` → `implement:code` → `review:cr-light` → `final:summary` → `review:merge` → `done` | 显式标记 `## 复杂度: hotfix` |
-| `minor` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `quick-dev:init` → `implement:code` → `review:cr-light` → `final:summary` → `review:merge` → `done` | 澄清后 direct；≤2 文件/2 模块且低风险 |
-| `trivial` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `quick-dev:init` → `implement:code` → `review:cr-light` → `final:summary` → `review:merge` → `done` | 澄清后 direct；超 scope gate 自动升级 |
-| `moderate` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `plan:design` → `plan:adversarial-review` → `plan:confirm` → `worktree:setup` → `tasks:init` → `implement:code` → `review:cr-moderate` → `final:summary` → `review:merge` → `done` | lightweight，不依赖 as-is |
+| `hotfix` | `receive-requirement` → `quick-dev:init` → `implement:code` → `test:unit` → `review:cr-light` → `review:cr-report` → `final:summary` → `review:merge` → `done` | 显式标记 `## 复杂度: hotfix` |
+| `minor` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `quick-dev:init` → `implement:code` → `test:unit` → `review:cr-light` → `review:cr-report` → `final:summary` → `review:merge` → `done` | 澄清后 direct；≤2 文件/2 模块且低风险 |
+| `trivial` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `quick-dev:init` → `implement:code` → `test:unit` → `review:cr-light` → `review:cr-report` → `final:summary` → `review:merge` → `done` | 澄清后 direct；超 scope gate 自动升级 |
+| `moderate` | `receive-requirement` → `clarify:requirement` → `classify:requirement` → `plan:design` → `plan:adversarial-review` → `plan:confirm` → `worktree:setup` → `tasks:init` → `implement:code` → `test:unit` → `review:cr-moderate` → `review:cr-report` → `final:summary` → `review:merge` → `done` | lightweight，不依赖 as-is |
 | `standard` | 完整流程 | 默认 |
 | `complex` | 完整流程 + spike | >5 scope items |
 
@@ -266,7 +271,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --rollback-ste
 
 确认清理范围后再执行不带 `--dry-run` 的命令。rollback 只清理白名单内的 chisel 运行态产物。
 
-支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`clarify:requirement`、`plan:design`、`plan:confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`review:cr`、`repair:code`、`final:summary`、`review:merge`。
+支持 rollback 的 step：`receive-requirement`、`understand:explore`、`understand:confirm`、`clarify:requirement`、`plan:design`、`plan:confirm`、`worktree:setup`、`tasks:init`、`implement:code`、`test:unit`、`review:cr`、`review:cr-report`、`repair:code`、`final:summary`、`review:merge`。
 
 ---
 

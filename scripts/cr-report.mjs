@@ -37,8 +37,7 @@ function parseTableSection(text, heading) {
   });
 }
 
-function collectDimResults(ideaDir) {
-  const crDir = join(ideaDir, 'cr');
+function collectDimResultsFromDir(crDir, cycle = 'final') {
   if (!existsSync(crDir)) return [];
 
   const files = readdirSync(crDir).filter(f => /^dim-.*-cr\.md$/.test(f));
@@ -61,6 +60,7 @@ function collectDimResults(ideaDir) {
       result: fm.result || 'unknown',
       affected_tasks: Array.isArray(fm.affected_tasks) ? fm.affected_tasks : [],
       rework_count: Number(fm.rework_count || 0),
+      cycle,
       reworkItems,
       observations,
     });
@@ -68,6 +68,19 @@ function collectDimResults(ideaDir) {
 
   results.sort((a, b) => ORDERED_DIMS.indexOf(a.dimension) - ORDERED_DIMS.indexOf(b.dimension));
   return results;
+}
+
+function collectDimResults(ideaDir) {
+  return collectDimResultsFromDir(join(ideaDir, 'cr'));
+}
+
+function collectHistoricalDimResults(ideaDir) {
+  const historyDir = join(ideaDir, 'cr', 'history');
+  if (!existsSync(historyDir)) return [];
+  return readdirSync(historyDir, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && /^cycle-\d+$/.test(entry.name))
+    .sort((a, b) => Number(a.name.slice(6)) - Number(b.name.slice(6)))
+    .flatMap(entry => collectDimResultsFromDir(join(historyDir, entry.name), entry.name));
 }
 
 function normalizeSeverity(raw) {
@@ -83,6 +96,7 @@ function generateReport(ideaDir) {
   const ideaName = basename(ideaDir);
   const complexity = detectComplexity(ideaDir);
   const dimResults = collectDimResults(ideaDir);
+  const historicalResults = collectHistoricalDimResults(ideaDir);
 
   if (dimResults.length === 0) {
     return { generated: false, reason: 'no CR dimension results found' };
@@ -96,6 +110,7 @@ function generateReport(ideaDir) {
       index: idx,
     }))
   );
+  const repairedItems = historicalResults.flatMap(r => r.reworkItems.map(item => ({ ...item, dimension: r.dimension, dimName: r.name, cycle: r.cycle })));
 
   const allObservations = dimResults.flatMap(r =>
     r.observations.map((item, idx) => ({
@@ -150,6 +165,8 @@ function generateReport(ideaDir) {
   md += `| Observations | ${allObservations.length} |\n`;
   md += `| Highest Severity | ${highestSeverity} |\n`;
   md += `| Verdict | ${verdict} |\n`;
+  md += `| CR Repair Rounds | ${new Set(historicalResults.map(item => item.cycle)).size} |\n`;
+  md += `| Repaired Findings | ${repairedItems.length} |\n`;
   md += '\n';
 
   md += '## Dimension Results\n\n';
@@ -181,6 +198,17 @@ function generateReport(ideaDir) {
       if (suggestion) md += `**Suggestion**: ${suggestion}\n\n`;
       md += '---\n\n';
     }
+  }
+
+  if (repairedItems.length > 0) {
+    md += '## Repaired Findings History\n\n';
+    md += '| Cycle | Dimension | Problem | Repair Status |\n';
+    md += '|-------|-----------|---------|---------------|\n';
+    for (const item of repairedItems) {
+      const desc = item['问题描述'] || item.description || item.problem || '';
+      md += `| ${item.cycle} | ${item.dimension} | ${oneLine(desc, 100)} | fixed and re-reviewed |\n`;
+    }
+    md += '\n';
   }
 
   if (allObservations.length > 0) {
@@ -225,7 +253,7 @@ function main() {
   console.log(JSON.stringify(result));
 }
 
-export { generateReport, collectDimResults, normalizeSeverity, parseTableSection };
+export { generateReport, collectDimResults, collectHistoricalDimResults, normalizeSeverity, parseTableSection };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main();

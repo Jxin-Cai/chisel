@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, readRequirementClassification, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { validateTasksDocument } from './task-init.mjs';
 import { validateVerificationResult } from './verification-lib.mjs';
+import { validateUnitTestEvidence } from './unit-test-evidence.mjs';
 import { readTaskRun } from './task-provenance.mjs';
 import { validateMergeReviewConfirmation, validateMergeReviewReport } from './merge-review.mjs';
 import { reportStatus } from './report-confirm.mjs';
@@ -1627,6 +1628,16 @@ export function checkGate(ideaDir, gateId) {
       if (!reportGate.pass) return result(gateId, false, reportGate.reason);
       const verificationReason = validateVerificationResult(ideaDir, '.');
       return verificationReason ? result(gateId, false, verificationReason) : result(gateId, true);
+    }
+    case 'unit-test-complete': {
+      const reason = validateUnitTestEvidence(ideaDir, '.');
+      return reason ? result(gateId, false, reason) : result(gateId, true);
+    }
+    case 'unit-test-report-confirmed': {
+      const tests = checkGate(ideaDir, 'unit-test-complete');
+      if (!tests.pass) return result(gateId, false, tests.reason);
+      const report = reportStatus(ideaDir, 'test');
+      return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'cr-complete': {
       if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, 'task-workflow-state.yaml missing');

@@ -88,7 +88,21 @@ function ensureVerificationBeforeReview(ideaDir, reviewTasks, reviewStep, reason
       });
     }
   }
+  const unitTests = checkGate(ideaDir, 'unit-test-report-confirmed');
+  if (!unitTests.pass) {
+    return buildResult('test:unit', 'unit tests, coverage, anomaly repair, and the test report must complete before CR', ideaDir, {
+      ...phaseDetail,
+      unit_test_reason: unitTests.reason,
+      verification_tasks: reviewTasks,
+    });
+  }
   return buildResult(reviewStep, reason, ideaDir, { ...phaseDetail, next_tasks: reviewTasks });
+}
+
+function ensureCrReportBeforeFinal(ideaDir, complexity) {
+  const report = checkGate(ideaDir, 'cr-report-confirmed');
+  if (!report.pass) return buildResult('review:cr-report', 'multi-dimensional CR and all rework are complete; final CR report is pending or stale', ideaDir, { complexity, gate_reason: report.reason });
+  return ensureFinalAndMergeReview(ideaDir, complexity);
 }
 
 function ensureFinalAndMergeReview(ideaDir, complexity) {
@@ -158,6 +172,12 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     if (!classificationGate.pass) {
       return buildResult('classify:requirement', 'post-clarification difficulty classification is missing or stale', ideaDir, { gate_reason: classificationGate.reason });
     }
+    // A producer may finish classification before the runner gets its next tick.
+    // Still enter the explicit classify step once so workflow history and reports
+    // preserve the declared receive -> clarify -> classify ordering.
+    if (readPreviousStep(ideaDir) === 'clarify:requirement') {
+      return buildResult('classify:requirement', 'difficulty classification is complete; recording the explicit classification step', ideaDir);
+    }
   }
 
   const complexity = classifyChange(ideaDir).routing_complexity;
@@ -198,7 +218,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
     }
     if (allTasksApproved(ideaDir)) {
-      return ensureFinalAndMergeReview(ideaDir, complexity);
+      return ensureCrReportBeforeFinal(ideaDir, complexity);
     }
     const state = readTaskState(taskStateFile(ideaDir));
     return buildResult('blocked', 'no executable next step found (hotfix)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
@@ -243,7 +263,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       return buildResult('implement:code', 'there are confirmed tasks ready to code', ideaDir, { next_tasks: codeTasks, complexity });
     }
     if (allTasksApproved(ideaDir)) {
-      return ensureFinalAndMergeReview(ideaDir, complexity);
+      return ensureCrReportBeforeFinal(ideaDir, complexity);
     }
     const state = readTaskState(taskStateFile(ideaDir));
     return buildResult('blocked', 'no executable next step found (minor)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
@@ -292,7 +312,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       if (!traceGate.pass && !traceGate.skipped) {
         return buildResult('blocked', 'traceability incomplete', ideaDir, { complexity, trace_reason: traceGate.reason });
       }
-      return ensureFinalAndMergeReview(ideaDir, complexity);
+      return ensureCrReportBeforeFinal(ideaDir, complexity);
     }
     const state = readTaskState(taskStateFile(ideaDir));
     return buildResult('blocked', 'no executable next step found (trivial)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
@@ -353,7 +373,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
       if (!traceGate.pass && !traceGate.skipped) {
         return buildResult('blocked', 'traceability incomplete', ideaDir, { complexity, trace_reason: traceGate.reason });
       }
-      return ensureFinalAndMergeReview(ideaDir, complexity);
+      return ensureCrReportBeforeFinal(ideaDir, complexity);
     }
     const state = readTaskState(taskStateFile(ideaDir));
     return buildResult('blocked', 'no executable next step found (moderate)', ideaDir, { task_count: Object.keys(state.tasks).length, complexity });
@@ -449,7 +469,7 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
     if (!traceGate.pass && !traceGate.skipped) {
       return buildResult('blocked', 'traceability incomplete — not all requirements covered by approved tasks', ideaDir, { complexity, trace_reason: traceGate.reason });
     }
-    return ensureFinalAndMergeReview(ideaDir, complexity);
+    return ensureCrReportBeforeFinal(ideaDir, complexity);
   }
 
   const state = readTaskState(taskStateFile(ideaDir));

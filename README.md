@@ -120,7 +120,8 @@ Chisel stores runtime artifacts under the Git common root at `.chisel/<idea-name
 Receive requirement → Clarify requirement → Classify difficulty/profile
 → [Full only: Understand as-is → async Writer → User confirm]
 → Strategy design → async Writer → Adversarial completeness review (repair loop) → User confirm strategy
-→ Init tasks → Code → Architect CR → [Rework loop]
+→ Init tasks → Code → Unit tests/coverage and consolidated anomaly repair → Unit-test report
+→ Multi-dimensional Architect CR → [Rework loop] → Final CR report
 → Final summary → Current Change Report → User merge decision → Delivery
 ```
 
@@ -139,11 +140,13 @@ Bracketed steps may be skipped depending on complexity classification.
 | 7 | **Confirm plan** | Human reviews only after the adversarial gate passes |
 | 8 | **Init tasks** | Generate task files and state machine from `tasks.json` |
 | 9 | **Code** | Coder agent implements within scoped file boundaries |
-| 10 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
-| 11 | **Rework loop** | Up to 5 rounds per task; later rounds use a fresh agent and then become blocked |
-| 12 | **Final summary** | Aggregate changes, scope control, and delivery receipts |
-| 13 | **Merge review** | Generate the current change report; require Approve, Request changes, or Comment/hold |
-| 14 | **Delivery** | Convert, merge, or resolve through isolated integration worktrees after approval |
+| 10 | **Unit tests and coverage** | Fresh complete tests, coverage collection, consolidated anomaly repair, and a test report |
+| 11 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
+| 12 | **Rework loop** | Up to 5 rounds per task; later rounds use a fresh agent and then become blocked |
+| 13 | **CR report** | After every finding is repaired and re-reviewed, summarize features, findings, and fixes |
+| 14 | **Final summary** | Aggregate changes, scope control, and delivery receipts |
+| 15 | **Merge review** | Generate the current change report; require Approve, Request changes, or Comment/hold |
+| 16 | **Delivery** | Convert, merge, or resolve through isolated integration worktrees after approval |
 
 ### Complexity Classification
 
@@ -233,7 +236,7 @@ Rollback only cleans whitelisted runtime artifacts — never deletes business so
 .chisel/<idea-name>/confirmations/merge-review.json # Approve / request changes / hold decision
 .chisel/<idea-name>/confirmations/cr-report.json    # Hash-bound CR report confirmation
 .chisel/<idea-name>/confirmations/task-time-report.json # Hash-bound task/time report confirmation
-.chisel/<idea-name>/reports/                        # Four standalone HTML reports
+.chisel/<idea-name>/reports/                        # Five standalone HTML reports, including unit-test coverage
 .chisel/<idea-name>/final-summary.md # Final change summary
 ```
 
@@ -243,7 +246,7 @@ After every completed workflow step, Chisel prints each deliverable as an absolu
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs <idea-dir> <completed-step>
 ```
 
-Standalone HTML report links supplement these file links; they do not replace the underlying artifacts. Chisel generates As-Is, To-Be, CR, and task/time reports one at a time, immediately returns the file link and SHA-256, and blocks workflow progress until the user explicitly confirms that exact report version.
+Standalone HTML report links supplement these file links; they do not replace the underlying artifacts. Chisel generates As-Is, To-Be, unit-test, CR, and task/time reports one at a time, immediately returns the file link and SHA-256, and blocks workflow progress until the user explicitly confirms that exact report version. The unit-test report precedes CR and focuses on coverage, requirement-specific tests, failures, and repair count. The CR report is generated only after multi-dimensional review and rework are complete.
 
 <br/>
 
@@ -287,7 +290,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `/chisel-plan` | To-be planning (strategy + decomposition) |
 | `/chisel-implement` | Orchestrate coding subagents |
 | `/chisel-review` | Architect CR review |
-| `/chisel-report` | View recovery point/task state or generate four standalone HTML reports |
+| `/chisel-report` | View recovery point/task state or generate five standalone HTML reports |
 | `/chisel-debug` | Reproduce-first root-cause workflow (standalone or return-diagnosis mode) |
 
 ### Agents
@@ -323,7 +326,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `debt-scan.mjs` | Static technical debt scanning |
 | `as-is-score.mjs` | As-is artifact quality scoring |
 | `cr-prepare.mjs` | Pre-compute diff and scope data for reviewer |
-| `reports.mjs` | Four standalone HTML reports (As-Is, To-Be, CR, task/time) |
+| `reports.mjs` | Five standalone HTML reports (As-Is, To-Be, unit tests, CR, task/time) |
 
 <br/>
 

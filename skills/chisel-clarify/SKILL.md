@@ -61,7 +61,7 @@ user-invocable: false
 8. 将用户回答写入 `{IDEA_DIR}/requirement-clarification.json`（权威机器可读记录）
 9. 将人类可读镜像写入 `{IDEA_DIR}/requirement-clarification.md`
 10. 运行 gate 验证：`node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} clarification-complete`
-11. gate 通过后立即运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR}`。分级产物绑定 requirement + clarification 指纹；不得由模型手写或沿用 stale 结果。
+11. gate 通过后调用权威 runner 推进到 `classify:requirement`，不要在当前阶段提前运行分类脚本。进入分类阶段后再运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR}`。分级产物绑定 requirement + clarification 指纹；不得由模型手写或沿用 stale 结果。
 
 <HARD-GATE principle="P1,P2">
 此步骤澄清的是需求本身的诉求和边界，不是 as-is 理解的正确性（那是 understand:confirm 的职责）。

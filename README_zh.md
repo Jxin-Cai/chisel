@@ -119,7 +119,8 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 ```
 接收需求 → 需求澄清 → 难度/执行档位分级
 → [仅 full：理解 as-is → 后台 Writer → 用户确认] → 方案设计 → 后台 Writer
-→ 对抗完整性审查（失败则修复循环）→ 用户确认方案 → 初始化 task → 编码 → 架构师 CR → [返修闭环]
+→ 对抗完整性审查（失败则修复循环）→ 用户确认方案 → 初始化 task → 编码
+→ 单测/覆盖率与异常集中返修 → 单测报告 → 多维架构师 CR → [返修闭环] → CR 报告
 → 最终总结 → 当前变更报告 → 用户合并决策 → 交付
 ```
 
@@ -138,11 +139,13 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 | 7 | **确认方案** | 仅在对抗 gate 通过后，人类审查策略方向和 task 拆分 |
 | 8 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
 | 9 | **编码** | coder agent 在受限文件范围内编码 |
-| 10 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
-| 11 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
-| 12 | **最终总结** | 汇总变更、scope control 和交付回执 |
-| 13 | **合并前 CR** | 生成当前变更报告，要求用户选择批准、要求修改或评论/暂缓 |
-| 14 | **交付** | 用户确认后通过隔离 integration worktree 转分支、合并或进入冲突链路 |
+| 10 | **单测与覆盖率** | 新鲜完整单测、覆盖率采集、异常集中返修并产出单测报告 |
+| 11 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
+| 12 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
+| 13 | **CR 报告** | 多维 CR findings 全部修复并复审通过后，汇总功能、问题与返修 |
+| 14 | **最终总结** | 汇总变更、scope control 和交付回执 |
+| 15 | **合并前 CR** | 生成当前变更报告，要求用户选择批准、要求修改或评论/暂缓 |
+| 16 | **交付** | 用户确认后通过隔离 integration worktree 转分支、合并或进入冲突链路 |
 
 ### 复杂度分级
 
@@ -229,7 +232,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-st
 .chisel/<idea-name>/confirmations/merge-review.json # 批准/要求修改/暂缓决定
 .chisel/<idea-name>/confirmations/cr-report.json    # 绑定哈希的 CR 报告确认
 .chisel/<idea-name>/confirmations/task-time-report.json # 绑定哈希的任务与耗时报告确认
-.chisel/<idea-name>/reports/                        # 四份独立 HTML 报告
+.chisel/<idea-name>/reports/                        # 五份独立 HTML 报告（含单测覆盖率）
 .chisel/<idea-name>/final-summary.md # 最终变更总结
 ```
 
@@ -239,7 +242,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-st
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs <idea-dir> <completed-step>
 ```
 
-独立 HTML 报告链接只是补充，不替代原始产物。Chisel 一次只生成 As-Is、To-Be、CR、任务与耗时中的一份，立即在对话中返回文件链接和 SHA-256，并阻止工作流继续，直到用户明确确认该文件版本。
+独立 HTML 报告链接只是补充，不替代原始产物。Chisel 一次只生成 As-Is、To-Be、单测、CR、任务与耗时中的一份，立即在对话中返回文件链接和 SHA-256，并阻止工作流继续，直到用户明确确认该文件版本。单测报告位于 CR 前，聚焦覆盖率、本次需求单测 list、执行异常与返修次数；CR 报告只在多维 CR 返修闭环完成后生成。
 
 <br/>
 
@@ -283,7 +286,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `/chisel-plan` | to-be 规划（策略+拆解） |
 | `/chisel-implement` | 编排 coding subagent 实现 task |
 | `/chisel-review` | 架构师 CR 审查 |
-| `/chisel-report` | 查看恢复点和 task 状态，或生成四份独立 HTML 报告 |
+| `/chisel-report` | 查看恢复点和 task 状态，或生成五份独立 HTML 报告 |
 | `/chisel-debug` | reproduce-first 根因工作流（独立模式或返修诊断模式） |
 
 ### Agents
@@ -319,7 +322,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `debt-scan.mjs` | 静态技术债务扫描 |
 | `as-is-score.mjs` | as-is 产物质量评分 |
 | `cr-prepare.mjs` | CR 预计算数据 |
-| `reports.mjs` | 四份独立 HTML 报告生成（As-Is、To-Be、CR、任务与耗时） |
+| `reports.mjs` | 五份独立 HTML 报告生成（As-Is、To-Be、单测、CR、任务与耗时） |
 
 <br/>
 

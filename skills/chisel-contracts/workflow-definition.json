@@ -14,21 +14,23 @@
     "tasks:init": { "phase": "tasks", "gate": "task-workflow-exists" },
     "implement:code": { "phase": "implement", "gate": "implementation-verified" },
     "repair:code": { "phase": "implement", "gate": "implementation-verified" },
-    "review:cr": { "phase": "review", "gate": "cr-report-confirmed" },
-    "review:cr-light": { "phase": "review", "gate": "cr-report-confirmed" },
-    "review:cr-moderate": { "phase": "review", "gate": "cr-report-confirmed" },
-    "review:integration": { "phase": "review", "gate": "integration-cr-report-confirmed" },
+    "test:unit": { "phase": "test", "gate": "unit-test-report-confirmed" },
+    "review:cr": { "phase": "review", "gate": "cr-complete" },
+    "review:cr-light": { "phase": "review", "gate": "cr-complete" },
+    "review:cr-moderate": { "phase": "review", "gate": "cr-complete" },
+    "review:integration": { "phase": "review", "gate": "integration-cr-complete" },
+    "review:cr-report": { "phase": "review", "gate": "cr-report-confirmed" },
     "final:summary": { "phase": "final", "gate": "task-time-report-confirmed" },
     "review:merge": { "phase": "final", "gate": "merge-review-confirmed" },
     "blocked": { "phase": null, "gate": null },
     "done": { "phase": null, "gate": null }
   },
   "complexity_paths": {
-    "hotfix": ["receive-requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary", "review:merge"],
-    "minor": ["receive-requirement", "clarify:requirement", "classify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary", "review:merge"],
-    "trivial": ["receive-requirement", "clarify:requirement", "classify:requirement", "quick-dev:init", "implement:code", "review:cr-light", "final:summary", "review:merge"],
-    "moderate": ["receive-requirement", "clarify:requirement", "classify:requirement", "plan:design", "plan:adversarial-review", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr-moderate", "final:summary", "review:merge"],
-    "standard": ["receive-requirement", "clarify:requirement", "classify:requirement", "understand:explore", "understand:confirm", "plan:design", "plan:adversarial-review", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "final:summary", "review:merge"],
-    "complex": ["receive-requirement", "clarify:requirement", "classify:requirement", "understand:explore", "understand:confirm", "plan:design", "plan:adversarial-review", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "review:cr", "review:integration", "final:summary", "review:merge"]
+    "hotfix": ["receive-requirement", "quick-dev:init", "implement:code", "test:unit", "review:cr-light", "review:cr-report", "final:summary", "review:merge"],
+    "minor": ["receive-requirement", "clarify:requirement", "classify:requirement", "quick-dev:init", "implement:code", "test:unit", "review:cr-light", "review:cr-report", "final:summary", "review:merge"],
+    "trivial": ["receive-requirement", "clarify:requirement", "classify:requirement", "quick-dev:init", "implement:code", "test:unit", "review:cr-light", "review:cr-report", "final:summary", "review:merge"],
+    "moderate": ["receive-requirement", "clarify:requirement", "classify:requirement", "plan:design", "plan:adversarial-review", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "test:unit", "review:cr-moderate", "review:cr-report", "final:summary", "review:merge"],
+    "standard": ["receive-requirement", "clarify:requirement", "classify:requirement", "understand:explore", "understand:confirm", "plan:design", "plan:adversarial-review", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "test:unit", "review:cr", "review:integration", "review:cr-report", "final:summary", "review:merge"],
+    "complex": ["receive-requirement", "clarify:requirement", "classify:requirement", "understand:explore", "understand:confirm", "plan:design", "plan:adversarial-review", "plan:confirm", "worktree:setup", "tasks:init", "implement:code", "test:unit", "review:cr", "review:integration", "review:cr-report", "final:summary", "review:merge"]
   }
 }

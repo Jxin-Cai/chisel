@@ -167,7 +167,11 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 
 自检结果写入 `design-notes.json` 的 `self_check` 字段。
 
-#### 8. 对抗审查交接
+#### 8. 单测 RED→GREEN 可执行性
+
+逐个 task 检查 Verification Plan：必须包含具体测试文件、测试名、输入与断言、RED 命令及预期失败原因、GREEN 命令、完整测试/覆盖率命令和覆盖率产物路径。发现“补充相关测试”等占位内容必须就地修复。
+
+#### 9. 对抗审查交接
 
 将 `requirement.md`、`requirement-clarification.json` 中每个 AC 及 verification_conditions、
 所有 as-is 结构化文件、to-be 全部 JSON/Markdown 的路径和 hash 交给 fresh reviewer。审查输出必须

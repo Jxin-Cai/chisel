@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { initTaskState, initWorkflowState } from '../scripts/workflow-lib.mjs';
+import { initTaskState, initWorkflowState, updateWorkflowPhase } from '../scripts/workflow-lib.mjs';
 import { writeRequirementClassification } from '../scripts/requirement-classify.mjs';
 
 function makeTmpDir() {
@@ -120,5 +120,19 @@ describe('orchestration review recovery', () => {
     assert.equal(existsSync(join(ideaDir, 'metrics.json')), false);
     assert.equal(existsSync(join(ideaDir, 'reports')), false);
     assert.equal(existsSync(join(ideaDir, 'snapshots')), false);
+  });
+
+  it('records classify as an explicit step when its artifact was produced during clarification', () => {
+    initWorkflowState(ideaDir, 'idea');
+    updateWorkflowPhase(ideaDir, 'clarify:requirement');
+
+    const classificationStep = runOrchestration(ideaDir);
+    assert.equal(classificationStep.status, 0, classificationStep.stderr);
+    assert.match(classificationStep.stdout, /resume_step: classify:requirement/);
+
+    updateWorkflowPhase(ideaDir, 'classify:requirement');
+    const nextStep = runOrchestration(ideaDir);
+    assert.equal(nextStep.status, 0, nextStep.stderr);
+    assert.match(nextStep.stdout, /resume_step: quick-dev:init/);
   });
 });

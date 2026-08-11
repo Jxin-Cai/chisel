@@ -44,18 +44,24 @@ steps:
   - id: repair:code
     postcondition:
       check: implementation-verified
+  - id: test:unit
+    postcondition:
+      check: unit-test-report-confirmed
   - id: review:cr
     postcondition:
-      check: cr-report-confirmed
+      check: cr-complete
   - id: review:cr-light
     postcondition:
-      check: cr-report-confirmed
+      check: cr-complete
   - id: review:cr-moderate
     postcondition:
-      check: cr-report-confirmed
+      check: cr-complete
   - id: review:integration
     postcondition:
-      check: integration-cr-report-confirmed
+      check: integration-cr-complete
+  - id: review:cr-report
+    postcondition:
+      check: cr-report-confirmed
   - id: final:summary
     postcondition:
       check: task-time-report-confirmed

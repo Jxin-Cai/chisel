@@ -37,7 +37,7 @@
 - `scripts/traceability-check.mjs` 需求→task 可追溯性验证，拒绝缺失/空 final matrix，精确检查 AC/VC 与 task refs 双向映射，并在 final 阶段前确认所有 AC 被覆盖实现。
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check 数据写入 `cr-context.json`，D2-D9 agent 共用。
 - `scripts/merge-review.mjs` 在自动 CR/返修和 final summary 之后生成 Current Change Report，汇总 base/head、逐文件 diff 统计、验证命令、CR finding/observation、风险和 task 覆盖；人工批准绑定 Git HEAD、working-tree fingerprint、final summary 和报告内容，任一变化都会使批准失效。
-- `scripts/reports.mjs` 生成四份自包含 HTML：As-Is、To-Be、CR、任务与耗时报告。每份报告独立承载内容。
+- `scripts/reports.mjs` 生成五份自包含 HTML：As-Is、To-Be、单测覆盖率、CR、任务与耗时报告。每份报告独立承载内容。
 - `scripts/session-metrics.mjs` 使用 schema v2 同时记录步骤墙钟时间与可测量 span，将 `human_wait`、`active_workflow`、`verification`、`report_generation`、`control_plane` 和 Agent 调用次数分开归因；任务与耗时报告直接展示该分解。
 - `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照，同时按数量（8）和总大小（25 MiB）双重上限清理，runner/events/transaction journal 不进入快照 payload。
 - **理解阶段**（`chisel-understand`）仅在 `execution_profile=full` 时使用 Explore + Analyst 产出结构化数据；subagent 数量受分类预算约束，不是固定三 agent。人类文档由后台 `agent-chisel-writer` 根据完整 source manifest 生成，主编排器并行执行结构化 gate/评分，展示前等待 fresh receipt。
@@ -88,7 +88,7 @@
 
 ## 独立 HTML 报告
 
-- `scripts/report-model.mjs` 只负责数据采集、归一化和指标计算；`scripts/report-renderers.mjs` 只负责四类报告的内容片段；`scripts/reports.mjs` 将片段装入各自模板。
+- `scripts/report-model.mjs` 只负责数据采集、归一化和指标计算；`scripts/report-renderers.mjs` 只负责五类报告的内容片段；`scripts/reports.mjs` 将片段装入各自模板。
 - As-Is 报告从 coverage matrix 生成 UML 时序或系统模型；To-Be 报告从 flow graph 同时生成目标 UML 模型和改造点全链路图。报告首屏只保留主干，目录锚点和可展开详情承载证据、CP、Task、风险与完整方案，改造节点可直接跳到对应 CP。
 - `/chisel-report <idea-name> --format html` 按 As-Is、To-Be、CR、任务与耗时的顺序逐份生成；一次只允许一份。
 - 每次生成后立即返回绝对路径和 SHA-256，等待用户明确确认。`report-confirm.mjs` 将确认绑定到文件哈希；重新生成会使旧确认失效。

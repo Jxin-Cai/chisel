@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, renameSync, readdirSync, copyFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -80,6 +80,18 @@ function computeReworkCycle(ideaDir) {
   }
 }
 
+function archivePreviousCrResults(ideaDir) {
+  const crDir = join(ideaDir, 'cr');
+  const context = existsSync(join(crDir, 'cr-context.json')) ? JSON.parse(readFileSync(join(crDir, 'cr-context.json'), 'utf8')) : null;
+  const files = existsSync(crDir) ? readdirSync(crDir).filter(file => /^dim-.*-cr\.md$/.test(file)) : [];
+  if (!context || files.length === 0) return null;
+  const cycle = Number(context.rework_cycle || 0);
+  const target = join(crDir, 'history', `cycle-${cycle}`);
+  mkdirSync(target, { recursive: true });
+  for (const file of files) copyFileSync(join(crDir, file), join(target, file));
+  return target;
+}
+
 function main() {
   const ideaDir = process.argv[2];
   const baseRef = process.argv[3] || '';
@@ -151,6 +163,7 @@ function main() {
 
   // Incremental review: save previous context before overwriting
   if (existsSync(outPath)) {
+    try { archivePreviousCrResults(ideaDir); } catch { /* final report still has current cycle */ }
     try {
       renameSync(outPath, join(crDir, 'cr-context-prev.json'));
     } catch { /* non-critical: full re-review if rename fails */ }
@@ -192,7 +205,7 @@ function main() {
   console.log(JSON.stringify({ status: 'ok', path: outPath, task_count: taskIds.length, diff_lines: diff.split('\n').length, rework_cycle: reworkCycle, repair_diff_files_count: repairDiffFiles.length }));
 }
 
-export { computeFileHashes, computeRepairDiffFiles };
+export { archivePreviousCrResults, computeFileHashes, computeRepairDiffFiles };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main();

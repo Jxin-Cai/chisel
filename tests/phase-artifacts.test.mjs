@@ -50,29 +50,27 @@ describe('phase artifact delivery', () => {
     writeFileSync(join(ideaDir, 'cr', 'current-change-report.md'), '# Current\n');
     writeFileSync(join(ideaDir, 'confirmations', 'merge-review.json'), '{}\n');
     writeFileSync(join(ideaDir, 'confirmations', 'cr-report.json'), '{}\n');
+    writeFileSync(join(ideaDir, 'confirmations', 'test-report.json'), '{}\n');
     writeFileSync(join(ideaDir, 'confirmations', 'task-time-report.json'), '{}\n');
     writeFileSync(join(ideaDir, 'reports', 'as-is-report.html'), '<!doctype html>');
     writeFileSync(join(ideaDir, 'reports', 'to-be-report.html'), '<!doctype html>');
     writeFileSync(join(ideaDir, 'reports', 'cr-report.html'), '<!doctype html>');
+    writeFileSync(join(ideaDir, 'reports', 'test-report.html'), '<!doctype html>');
     writeFileSync(join(ideaDir, 'reports', 'task-time-report.html'), '<!doctype html>');
     writeFileSync(join(ideaDir, 'reports', 'other.html'), '<!doctype html>');
 
     const mappings = [
       ['understand:explore', 'reports/as-is-report.html'],
       ['plan:design', 'reports/to-be-report.html'],
-      ['implement:code', 'reports/task-time-report.html'],
-      ['repair:code', 'reports/task-time-report.html'],
-      ['review:cr', 'reports/cr-report.html'],
-      ['review:cr-light', 'reports/cr-report.html'],
-      ['review:cr-moderate', 'reports/cr-report.html'],
-      ['review:integration', 'reports/cr-report.html'],
+      ['test:unit', 'reports/test-report.html'],
+      ['review:cr-report', 'reports/cr-report.html'],
       ['review:merge', 'reports/cr-report.html'],
     ];
     for (const [step, expected] of mappings) {
       const labels = collectPhaseArtifacts(ideaDir, step).map(item => item.label);
       assert.ok(labels.includes(expected), `${step} should list ${expected}`);
       assert.ok(!labels.includes('reports/other.html'), `${step} must not expand reports/`);
-      if (step.startsWith('review:cr') || step === 'review:integration') assert.ok(labels.includes('confirmations/cr-report.json'));
+      if (step === 'review:cr-report') assert.ok(labels.includes('confirmations/cr-report.json'));
     }
     assert.ok(collectPhaseArtifacts(ideaDir, 'final:summary').some(item => item.label === 'confirmations/task-time-report.json'));
   });

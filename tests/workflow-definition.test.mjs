@@ -56,4 +56,17 @@ describe('canonical workflow definition', () => {
       assert.match(skill, new RegExp('^\\| `' + complexity + '` \\|', 'm'), `${complexity} missing from main skill table`);
     }
   });
+
+  it('gates CR behind the unit-test report and emits the CR report only after review', () => {
+    for (const complexity of ALL_COMPLEXITIES) {
+      const steps = WORKFLOW_PATHS[complexity].map(entry => entry.step);
+      const testIndex = steps.indexOf('test:unit');
+      const crIndex = steps.findIndex(step => step.startsWith('review:cr') && step !== 'review:cr-report');
+      const reportIndex = steps.indexOf('review:cr-report');
+      assert.ok(testIndex > steps.indexOf('implement:code'), `${complexity}: unit tests must follow implementation`);
+      assert.ok(crIndex > testIndex, `${complexity}: CR must follow the confirmed unit-test report`);
+      assert.ok(reportIndex > crIndex, `${complexity}: final CR report must follow multi-dimensional CR`);
+      if (steps.includes('review:integration')) assert.ok(reportIndex > steps.indexOf('review:integration'), `${complexity}: CR report must include integration review`);
+    }
+  });
 });

@@ -206,6 +206,9 @@ export function initWorkflowState(ideaDir, ideaName) {
     '  implement: pending',
     '  review: pending',
     '  final: pending',
+    'step_history:',
+    '  - step: receive-requirement',
+    `    entered_at: ${now}`,
     ''
   ].join('\n'));
 }
@@ -807,25 +810,35 @@ const ROLLBACK_STEPS = {
     ]
   },
   'implement:code': {
-    remove: ['task-reports', 'cr', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
+    remove: ['task-reports', 'verify-result.json', 'unit-test-result.json', 'unit-test-runs.json', 'reports/test-report.html', 'confirmations/test-report.json', 'cr', 'confirmations/cr-report.json', 'reports/cr-report.html', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
     reset: {
       from: ['coding', 'coded', 'reviewing', 'approved', 'needs_rework', 'repairing', 'failed', 'blocked'],
       to: 'confirmed'
     }
   },
   'repair:code': {
-    remove: ['task-reports', 'cr', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
+    remove: ['task-reports', 'verify-result.json', 'unit-test-result.json', 'reports/test-report.html', 'confirmations/test-report.json', 'cr', 'confirmations/cr-report.json', 'reports/cr-report.html', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
     reset: {
       from: ['repairing', 'coded', 'reviewing', 'approved'],
       to: 'needs_rework'
     }
   },
-  'review:cr': {
-    remove: ['cr', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
+  'test:unit': {
+    remove: ['unit-test-result.json', 'reports/test-report.html', 'confirmations/test-report.json', 'cr', 'confirmations/cr-report.json', 'reports/cr-report.html', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
     reset: {
       from: ['reviewing', 'approved', 'needs_rework', 'repairing', 'blocked'],
       to: 'coded'
     }
+  },
+  'review:cr': {
+    remove: ['cr', 'confirmations/cr-report.json', 'reports/cr-report.html', 'confirmations/merge-review.json', 'final-summary.md', '.done'],
+    reset: {
+      from: ['reviewing', 'approved', 'needs_rework', 'repairing', 'blocked'],
+      to: 'coded'
+    }
+  },
+  'review:cr-report': {
+    remove: ['cr/review-report.md', 'confirmations/cr-report.json', 'reports/cr-report.html', 'confirmations/merge-review.json', 'final-summary.md', '.done']
   },
   'final:summary': {
     remove: ['final-summary.md', 'cr/current-change-report.json', 'cr/current-change-report.md', 'confirmations/merge-review.json', '.done']

@@ -6,6 +6,7 @@ import { isAbsolute, join, resolve } from 'node:path';
 import { workspaceIdentity } from './verification-lib.mjs';
 import { durableAtomicWrite } from './file-transaction.mjs';
 import { recordDuration } from './session-metrics.mjs';
+import { appendUnitTestRun } from './unit-test-evidence.mjs';
 
 function readPackage(projectRoot) {
   const path = join(projectRoot, 'package.json');
@@ -18,8 +19,11 @@ function detectChecks(projectRoot) {
   if (pkg) {
     const scripts = pkg.scripts || {};
     const checks = [];
+    const coverageScript = ['test:coverage', 'coverage'].find(id => scripts[id]);
+    if (coverageScript) checks.push({ id: 'unit-test-coverage', command: 'npm', args: ['run', coverageScript] });
     for (const id of ['test', 'lint', 'typecheck', 'check', 'build']) {
       if (!scripts[id]) continue;
+      if (id === 'test' && coverageScript) continue;
       // Avoid running both a generic check and its explicit components when possible.
       if (id === 'check' && checks.some(check => ['lint', 'typecheck'].includes(check.id))) continue;
       checks.push({ id, command: 'npm', args: ['run', id] });
@@ -161,6 +165,9 @@ function main() {
     repositories,
   };
   durableAtomicWrite(join(ideaDir, 'verify-result.json'), `${JSON.stringify(result, null, 2)}\n`);
+  try { appendUnitTestRun(ideaDir, result); } catch (error) {
+    process.stderr.write(`${JSON.stringify({ warning: `cannot record unit-test run: ${error.message}` })}\n`);
+  }
   try { recordDuration(ideaDir, 'verification', 'verify-run', Date.now() - verifyStartedAt, { repositories: repositories.length, checks: repositories.reduce((sum, repo) => sum + repo.checks.length, 0) }, status); } catch { /* metrics are non-critical */ }
   console.log(JSON.stringify({ status, repositories: repositories.map(repo => ({ project_root: repo.project_root, status: repo.status, checks: repo.checks.map(({ id, status: checkStatus }) => ({ id, status: checkStatus })) })) }));
   if (status !== 'pass') process.exit(1);

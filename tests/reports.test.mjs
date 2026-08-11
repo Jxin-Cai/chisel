@@ -7,30 +7,31 @@ import { generateReports, REPORTS } from '../scripts/reports.mjs';
 import { recordReportConfirmation, reportStatus } from '../scripts/report-confirm.mjs';
 
 describe('standalone HTML reports', () => {
-  it('defines exactly four report deliverables', () => {
-    assert.deepEqual(Object.keys(REPORTS), ['as-is', 'to-be', 'cr', 'task-time']);
+  it('defines exactly five focused report deliverables', () => {
+    assert.deepEqual(Object.keys(REPORTS), ['as-is', 'to-be', 'test', 'cr', 'task-time']);
     assert.deepEqual(Object.values(REPORTS).map(report => report.file), [
-      'as-is-report.html', 'to-be-report.html', 'cr-report.html', 'task-time-report.html'
+      'as-is-report.html', 'to-be-report.html', 'test-report.html', 'cr-report.html', 'task-time-report.html'
     ]);
   });
 
-  it('generates four self-contained, independently titled HTML files', () => {
+  it('generates five self-contained, independently titled HTML files', () => {
     const ideaDir = mkdtempSync(join(tmpdir(), 'chisel-reports-'));
     try {
       mkdirSync(join(ideaDir, 'as-is'), { recursive: true });
       mkdirSync(join(ideaDir, 'to-be'), { recursive: true });
       mkdirSync(join(ideaDir, 'cr'), { recursive: true });
-      writeFileSync(join(ideaDir, 'requirement.md'), '# Requirement\n');
+      writeFileSync(join(ideaDir, 'requirement.md'), '# Requirement\n## Goal\nGenerate focused reports\n');
       writeFileSync(join(ideaDir, 'as-is/overview.md'), '# Current state\nAS-IS-MARKER\n');
       writeFileSync(join(ideaDir, 'to-be/implementation-plan.md'), '# Target state\nTO-BE-MARKER\n');
       writeFileSync(join(ideaDir, 'to-be/tasks.json'), JSON.stringify({ tasks: [{ task_id: 'task-001', title: 'Implement report flow' }] }));
       writeFileSync(join(ideaDir, 'cr/review-report.md'), '# Review\nCR-MARKER\n');
+      writeFileSync(join(ideaDir, 'unit-test-result.json'), JSON.stringify({ schema_version: 1, status: 'pass', repositories: [{ project_root: '/repo', coverage: { lines: { pct: 91 }, statements: { pct: 90 }, functions: { pct: 89 }, branches: { pct: 88 } }, requirement_unit_tests: [{ status: 'A', file: 'tests/new.test.mjs' }] }], run_summary: { total_runs: 2, failed_runs: 1, repair_count: 1, anomalies: [] } }));
       writeFileSync(join(ideaDir, 'cr/dim-d4-cr.md'), '---\ndimension: d4\nresult: pass\n---\n');
       writeFileSync(join(ideaDir, 'workflow-state.yaml'), 'current_step: implement:code\nstarted_at: 2026-08-10T00:00:00.000Z\nlast_updated_at: 2026-08-10T00:01:00.000Z\nstep_history:\n');
       writeFileSync(join(ideaDir, 'task-workflow-state.yaml'), 'tasks:\n  task-001:\n    status: coding\n');
 
       const generatedReports = Object.keys(REPORTS).map(type => generateReports(ideaDir, [type]).generated[0]);
-      assert.equal(generatedReports.length, 4);
+      assert.equal(generatedReports.length, 5);
       for (const generated of generatedReports) {
         const { path } = generated;
         assert.ok(existsSync(path));
@@ -46,10 +47,13 @@ describe('standalone HTML reports', () => {
       assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /TO-BE-MARKER/);
       assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /UML Target Model/);
       assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /改造点全链路/);
+      assert.match(readFileSync(join(ideaDir, 'reports/test-report.html'), 'utf8'), /单测与覆盖率/);
+      assert.match(readFileSync(join(ideaDir, 'reports/test-report.html'), 'utf8'), /tests\/new\.test\.mjs/);
       assert.match(readFileSync(join(ideaDir, 'reports/cr-report.html'), 'utf8'), /CR-MARKER/);
       const work = readFileSync(join(ideaDir, 'reports/task-time-report.html'), 'utf8');
       assert.match(work, /任务与耗时/);
       assert.match(work, /task-001/);
+      assert.match(work, /receive-requirement<\/td><td><span[^>]*>已完成<\/span>/, 'passed gates must not be reported as pending when legacy history is incomplete');
     } finally {
       rmSync(ideaDir, { recursive: true, force: true });
     }

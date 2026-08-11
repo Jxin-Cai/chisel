@@ -32,11 +32,11 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --summary
 
 ## html 格式：独立报告
 
-生成四类独立 HTML 报告。一次只能生成一份；每份都必须获得用户明确确认后，才能生成下一份或推进工作流。
+生成五类独立 HTML 报告。一次只能生成一份；每份都必须获得用户明确确认后，才能生成下一份或推进工作流。
 
 1. 从 `$ARGUMENTS` 解析 idea-name
 2. 运行 `control-plane.mjs --project-root . --idea <idea-name>`，将输出设为 `{IDEA_DIR}`
-3. 根据用户需要选择报告。全量请求按 `as-is → to-be → cr → task-time` 排序，但本轮只生成第一份：
+3. 根据用户需要选择报告。全量请求按 `as-is → to-be → test → cr → task-time` 排序，但本轮只生成第一份：
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports <report-type>
    ```
