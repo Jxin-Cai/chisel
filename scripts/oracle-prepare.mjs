@@ -78,7 +78,8 @@ export function prepareOracle(ideaDir, projectRoot) {
   const requirementPath = join(ideaDir, 'requirement.md');
   if (!existsSync(requirementPath)) fail(`requirement not found: ${requirementPath}`);
   const context = {
-    schema_version: 1,
+    schema_version: 2,
+    canonical_requirement: readFileSync(requirementPath, 'utf8'),
     requirement: readFileSync(requirementPath, 'utf8'),
     project: {
       root: projectRoot,

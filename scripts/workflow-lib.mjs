@@ -1071,6 +1071,15 @@ export function requirementClassificationFingerprint(ideaDir) {
     if (!existsSync(file)) return null;
     hash.update(rel).update('\0').update(readFileSync(file)).update('\0');
   }
+  let clarification;
+  try { clarification = JSON.parse(readFileSync(join(ideaDir, 'requirement-clarification.json'), 'utf8')); } catch { clarification = null; }
+  if (clarification?.schema_version === 2) {
+    for (const rel of ['requirement-original.md', 'requirement-inputs.json', 'confirmations/requirement.json']) {
+      const file = join(ideaDir, rel);
+      if (!existsSync(file)) return null;
+      hash.update(rel).update('\0').update(readFileSync(file)).update('\0');
+    }
+  }
   const escalation = join(ideaDir, 'scope-escalation.json');
   if (existsSync(escalation)) hash.update('scope-escalation.json').update('\0').update(readFileSync(escalation)).update('\0');
   return hash.digest('hex');

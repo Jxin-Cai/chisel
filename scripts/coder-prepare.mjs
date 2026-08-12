@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { dirname, join, relative, resolve } from 'node:path';
 import { readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
+import { requirementConfirmationStatus } from './requirement-context.mjs';
 
-const DEFAULT_SOFT_CONTEXT_BUDGET = 120_000;
 const SOURCE_EXTENSIONS = ['', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go', '.java', '.kt', '.rb', '.php'];
 
 function fail(msg) {
@@ -117,38 +118,22 @@ function discoverRelatedFiles(projectRoot, startingPoints, taskContent, starting
   return { hint_matches: hintMatches, dependencies, tests: unique(tests), callers: unique(callers) };
 }
 
-function packageSourceContext(projectRoot, startingPoints, related, softBudget = DEFAULT_SOFT_CONTEXT_BUDGET) {
-  const priority = unique([...startingPoints, ...related.dependencies, ...related.tests, ...related.callers]);
-  const startingSet = new Set(startingPoints);
-  const included = {};
-  const omitted = [];
-  let characters = 0;
-  for (const file of priority) {
-    const content = safeRead(join(projectRoot, file));
-    if (content === null) continue;
-    // Starting points are always complete. The budget is deliberately soft:
-    // it reduces pre-packaging, never the coder's permission to read files.
-    if (!startingSet.has(file) && characters + content.length > softBudget) {
-      omitted.push(file);
-      continue;
-    }
-    included[file] = content;
-    characters += content.length;
-  }
+function sha256(content) {
+  return createHash('sha256').update(content).digest('hex');
+}
+
+function fileRef(ideaDir, relativePath, selector = undefined) {
+  const content = safeRead(join(ideaDir, relativePath));
+  if (content === null) return null;
   return {
-    files: included,
-    inventory: {
-      soft_budget_characters: softBudget,
-      packaged_characters: characters,
-      budget_exceeded_by_starting_points: characters > softBudget,
-      included_files: Object.keys(included),
-      omitted_related_files: omitted,
-      note: 'Omitted files remain readable. The soft budget is not an exploration boundary.',
-    },
+    path: relativePath,
+    ...(selector ? { selector } : {}),
+    sha256: sha256(content),
+    bytes: Buffer.byteLength(content),
   };
 }
 
-function readReworkItems(ideaDir, taskId) {
+function reworkRefs(ideaDir, taskId) {
   const crDir = join(ideaDir, 'cr');
   if (!existsSync(crDir)) return null;
   const items = [];
@@ -160,43 +145,26 @@ function readReworkItems(ideaDir, taskId) {
       if (fm.result !== 'fail') continue;
       if (fm.affected_tasks && !fm.affected_tasks.includes(taskId)) continue;
       const section = content.match(/## Rework Items[\s\S]*?(?=\n## |$)/)?.[0];
-      if (section) items.push({ dimension: fm.dimension || file, section });
+      if (section) items.push({ dimension: fm.dimension || file, ...fileRef(ideaDir, `cr/${file}`, 'section:Rework Items') });
     }
   } catch { /* optional rework context */ }
   return items.length > 0 ? items : null;
 }
 
-export function buildDecisionContext(ideaDir, task, taskFrontmatter = {}) {
-  const notes = safeJson(join(ideaDir, 'to-be', 'design-notes.json')) || {};
+export function buildDecisionRefs(ideaDir, task, taskFrontmatter = {}) {
   const confirmation = safeJson(join(ideaDir, 'confirmations', 'to-be.json'));
   const cpRefs = unique([...(taskFrontmatter.change_point_refs || []), ...(task.change_point_refs || [])]);
-  const allChangePoints = Array.isArray(notes.change_point_details) ? notes.change_point_details : [];
-  const relevantChangePoints = cpRefs.length > 0
-    ? allChangePoints.filter(point => cpRefs.includes(point.cp_id || point.id))
-    : allChangePoints;
   const confirmed = (confirmation?.status === 'confirmed' && confirmation?.confirmed_by === 'user')
     || existsSync(join(ideaDir, '.to-be-confirmed'));
   return {
     user_confirmed: confirmed,
     confirmed_at: confirmed ? confirmation.confirmed_at : null,
     task_change_point_refs: cpRefs,
-    goal_behavior: notes.goal_behavior || null,
-    non_goal_behavior: notes.non_goal_behavior || null,
-    strategy_overview: notes.strategy_overview || notes.tl_dr || null,
-    relevant_change_points: relevantChangePoints,
-    historical_behaviors: Array.isArray(notes.historical_behaviors) ? notes.historical_behaviors : [],
-    verification_surface: Array.isArray(notes.verification_surface) ? notes.verification_surface : [],
-    confirmed_scope_guidance: {
-      starting_scope: Array.isArray(notes.allowed_scope) ? notes.allowed_scope : [],
-      forbidden_scope: Array.isArray(notes.forbidden_scope) ? notes.forbidden_scope : [],
-    },
-    api_contract: safeJson(join(ideaDir, 'to-be', 'api-change-plan.json')),
-    data_contract: safeJson(join(ideaDir, 'to-be', 'data-change-plan.json')),
-    interpretation: [
-      'Confirmed goals, non-goals, contracts, invariants, and design tradeoffs express user intent and must be honored.',
-      'Implementation approaches, current-behavior claims, file lists, and impact predictions are hypotheses; verify them against source and runtime evidence.',
-      'starting_scope and task starting_points are navigation, not modification boundaries. Confirmed forbidden_scope and explicit_forbidden_paths remain constraints.',
-    ],
+    design_notes_ref: fileRef(ideaDir, 'to-be/design-notes.json', cpRefs.length > 0
+      ? `change_point_details[cp_id in ${cpRefs.join(',')}]`
+      : 'goal_behavior,non_goal_behavior,strategy_overview'),
+    api_contract_ref: fileRef(ideaDir, 'to-be/api-change-plan.json'),
+    data_contract_ref: fileRef(ideaDir, 'to-be/data-change-plan.json'),
   };
 }
 
@@ -225,30 +193,57 @@ function main() {
   ]);
   const startingFiles = concreteFiles(startingHints, projectRoot);
   const related = discoverRelatedFiles(projectRoot, startingFiles, taskContent, startingHints, ideaDir);
-  const source = packageSourceContext(projectRoot, startingFiles, related);
-  const decisionContext = buildDecisionContext(ideaDir, task, fm);
+  const decisionRefs = buildDecisionRefs(ideaDir, task, fm);
+  const clarification = safeJson(join(ideaDir, 'requirement-clarification.json'));
+  const requirementConfirmation = clarification?.schema_version === 2 ? requirementConfirmationStatus(ideaDir) : null;
+  if (requirementConfirmation && !requirementConfirmation.valid) fail(`canonical requirement is not confirmed: ${requirementConfirmation.reason}`);
 
   const context = {
-    schema_version: 3,
+    schema_version: 5,
     generated_at: new Date().toISOString(),
     task_id: taskId,
-    goal: sectionText(taskContent, '目标行为') || task.description || '',
-    acceptance_criteria: listItems(taskContent, 'Acceptance Criteria'),
+    task_complexity: fm.task_complexity || 'standard',
     starting_points: startingHints,
     explicit_forbidden_paths: unique([...(fm.forbidden_files || []), ...listItems(taskContent, 'Forbidden Files / Areas')]),
-    original_requirement: safeRead(join(ideaDir, 'requirement.md')) || '',
-    decision_context: decisionContext,
-    source_context: source.files,
-    discovery: { ...related, ...source.inventory },
-    advisory_context: {
-      constraints: safeRead(join(ideaDir, 'as-is', 'ai-input', 'constraints.md')),
-      change_surface: safeRead(join(ideaDir, 'as-is', 'ai-input', 'change-surface.md')),
-      note: 'Advisory only; verify every claim against source code and runtime behavior.',
+    trace_refs: unique(fm.trace_refs || []),
+    change_point_refs: unique(fm.change_point_refs || []),
+    task_ref: fileRef(ideaDir, task.file),
+    task_source_ref: fileRef(ideaDir, 'to-be/tasks.json', `tasks[task_id=${taskId}]`),
+    requirement_ref: fileRef(ideaDir, 'requirement.md'),
+    clarification_ref: fileRef(ideaDir, 'requirement-clarification.json'),
+    requirement_provenance: requirementConfirmation ? {
+      canonical_ref: 'requirement.md',
+      original_input_ref: 'requirement-original.md',
+      input_ledger_ref: 'requirement-inputs.json',
+      confirmation_ref: 'confirmations/requirement.json',
+      requirement_sha256: requirementConfirmation.requirement_sha256,
+      source_fingerprint: requirementConfirmation.source_fingerprint,
+    } : { canonical_ref: 'requirement.md', legacy: true },
+    decision_refs: decisionRefs,
+    discovery: related,
+    advisory_refs: {
+      constraints: fileRef(ideaDir, 'as-is/ai-input/constraints.md'),
+      change_surface: fileRef(ideaDir, 'as-is/ai-input/change-surface.md'),
     },
-    rework_items: readReworkItems(ideaDir, taskId),
+    rework_refs: reworkRefs(ideaDir, taskId),
+    search_seeds: unique([
+      ...(fm.allowed_symbols || []),
+      ...startingFiles.map(file => file.split('/').pop()?.replace(/\.[^.]+$/, '')),
+      ...(fm.trace_refs || []),
+      ...(fm.change_point_refs || []),
+    ]),
+    retrieval: {
+      script: '${CLAUDE_PLUGIN_ROOT}/scripts/context-query.mjs',
+      idea_dir: ideaDir,
+      max_rounds: 6,
+      max_files_per_round: 8,
+      max_characters_per_read: 24000,
+    },
     coder_contract: [
+      'Resolve requirement_ref before interpreting the task; it is the sole requirement baseline.',
+      'Use context-query and repository search iteratively; do not load every referenced file up front.',
       'The task brief and starting_points are navigation hints, not fact or scope boundaries.',
-      'Honor user-confirmed goals, non-goals, contracts, invariants, and design tradeoffs in decision_context.',
+      'Resolve decision_refs selectively and honor confirmed goals, non-goals, contracts, invariants, and design tradeoffs.',
       'Treat plan claims about existing code, exact files, and implementation mechanics as hypotheses to verify firsthand.',
       'Independently grep callers, read neighboring tests, and trace dependencies before editing.',
       'Modify files outside starting_points when required; record the reason in the final summary.',
@@ -263,15 +258,15 @@ function main() {
   writeFileSync(outPath, `${JSON.stringify(context, null, 2)}\n`);
   console.log(JSON.stringify({
     status: 'ok', path: outPath, starting_points: startingHints.length, concrete_starting_files: startingFiles.length,
-    packaged_files: Object.keys(source.files).length, omitted_related_files: source.inventory.omitted_related_files.length,
-    packaged_characters: source.inventory.packaged_characters, has_rework: Boolean(context.rework_items),
+    discovered_files: unique([...related.dependencies, ...related.tests, ...related.callers]).length,
+    bootstrap_bytes: Buffer.byteLength(JSON.stringify(context)), has_rework: Boolean(context.rework_refs),
   }));
 }
 
 export {
   discoverRelatedFiles,
   importDependencies,
-  packageSourceContext,
+  fileRef,
 };
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

@@ -1,6 +1,6 @@
 ---
 name: agent-chisel-coder
-description: Use this agent to implement or repair a concrete Chisel task from original requirements and first-hand repository evidence. Do not invoke it for planning, reporting, or review.
+description: Use this agent to implement or repair a concrete Chisel task from the user-confirmed canonical requirement and first-hand repository evidence. Do not invoke it for planning, reporting, or review.
 model: inherit
 color: green
 tools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash"]

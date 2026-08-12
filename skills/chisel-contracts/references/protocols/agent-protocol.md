@@ -23,7 +23,7 @@ Invariant Proofs 必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须�
 
 ### 禁止累积摘要注入
 
-编排器向分析、写作和审查 agent 传递最小的当前阶段上下文。Coder 的上下文由 `coder-prepare.mjs` 直接从原始需求与仓库源码构建，不受本节限制。
+编排器向分析、写作和审查 agent 传递最小的当前阶段上下文。Coder 只接收 `coder-prepare.mjs` 生成的轻量 bootstrap 路径，并由自身通过 `context-query.mjs` 从用户确认的权威需求与仓库源码循环检索所需片段。
 
 绝不传递：
 - 无关阶段的累积摘要

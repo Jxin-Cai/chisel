@@ -80,7 +80,7 @@ describe('Stop gate guard', () => {
 
   it('emits the Claude Stop decision contract from the command entrypoint', () => {
     workflow(root, 'idea', 'receive-requirement');
-    const result = spawnSync('node', [join(process.cwd(), 'hooks/stop-gate-guard.mjs')], {
+    const result = spawnSync(process.execPath, [join(process.cwd(), 'hooks/stop-gate-guard.mjs')], {
       input: JSON.stringify({ cwd: root, hook_event_name: 'Stop', stop_hook_active: false }),
       encoding: 'utf8',
     });

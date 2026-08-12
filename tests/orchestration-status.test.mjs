@@ -36,7 +36,7 @@ function writeTrivialClarification(ideaDir) {
 }
 
 function runOrchestration(ideaDir) {
-  return spawnSync('node', ['scripts/orchestration-status.mjs', ideaDir], {
+  return spawnSync(process.execPath, ['scripts/orchestration-status.mjs', ideaDir], {
     cwd: process.cwd(),
     encoding: 'utf8'
   });

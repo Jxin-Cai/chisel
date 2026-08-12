@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initTaskState } from '../scripts/workflow-lib.mjs';
-import { packageSourceContext } from '../scripts/coder-prepare.mjs';
+import { queryRefs, querySource, queryTask, readSlice } from '../scripts/context-query.mjs';
 
 const script = new URL('../scripts/coder-prepare.mjs', import.meta.url).pathname;
 
@@ -70,35 +70,46 @@ Increment the public result.
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it('packages complete starting points and discovers dependencies, callers, and tests without exposing expected_files', () => {
+  it('writes a compact reference-only bootstrap and discovers related file paths', () => {
     execFileSync(process.execPath, [script, ideaDir, 'task-001', root]);
     const raw = readFileSync(join(ideaDir, 'coder-context/task-001.json'), 'utf8');
     const context = JSON.parse(raw);
-    assert.equal(context.schema_version, 3);
+    assert.equal(context.schema_version, 5);
+    assert.equal(context.requirement_ref.path, 'requirement.md');
+    assert.match(context.requirement_ref.sha256, /^[a-f0-9]{64}$/);
     assert.deepEqual(context.starting_points, ['src/feature.js']);
-    assert.match(context.source_context['src/feature.js'], /line89/);
     assert.ok(context.discovery.dependencies.includes('src/helper.js'));
     assert.ok(context.discovery.callers.includes('src/caller.js'));
     assert.ok(context.discovery.tests.includes('tests/feature.test.js'));
+    assert.equal(Object.hasOwn(context, 'canonical_requirement'), false);
+    assert.equal(Object.hasOwn(context, 'original_requirement'), false);
+    assert.equal(Object.hasOwn(context, 'source_context'), false);
+    assert.equal(raw.includes('line89'), false);
+    assert.ok(Buffer.byteLength(raw) < 4096, `bootstrap too large: ${Buffer.byteLength(raw)} bytes`);
     assert.equal(Object.hasOwn(context, 'task_content'), false);
     assert.equal(Object.hasOwn(context, 'style_samples'), false);
     assert.equal(raw.includes('ORACLE_SECRET_ASSERTION'), false);
-    assert.equal(context.decision_context.user_confirmed, true);
-    assert.equal(context.decision_context.goal_behavior, 'Return the confirmed public value.');
-    assert.equal(context.decision_context.non_goal_behavior, 'Do not change serialization.');
-    assert.deepEqual(context.decision_context.relevant_change_points.map(point => point.cp_id), ['CP-1']);
-    assert.match(context.decision_context.interpretation.join('\n'), /hypotheses/);
+    assert.equal(context.decision_refs.user_confirmed, true);
+    assert.equal(context.decision_refs.design_notes_ref.selector, 'change_point_details[cp_id in CP-1]');
     assert.match(context.coder_contract.join('\n'), /not fact or scope boundaries/);
   });
 
-  it('treats the context budget as soft for starting points and omits whole related files instead of truncating them', () => {
-    const large = 'x'.repeat(150);
-    writeFileSync(join(root, 'src/large.js'), large);
-    writeFileSync(join(root, 'src/related.js'), 'y'.repeat(100));
-    const packaged = packageSourceContext(root, ['src/large.js'], { dependencies: ['src/related.js'], tests: [], callers: [] }, 100);
-    assert.equal(packaged.files['src/large.js'], large);
-    assert.equal(packaged.files['src/related.js'], undefined);
-    assert.equal(packaged.inventory.budget_exceeded_by_starting_points, true);
-    assert.deepEqual(packaged.inventory.omitted_related_files, ['src/related.js']);
+  it('supports bounded task, reference, source, and line-range retrieval', () => {
+    const task = queryTask(ideaDir, 'task-001', ['goal', 'acceptance_criteria']);
+    assert.match(task.task.goal, /Increment the public result/);
+    assert.match(task.task.acceptance_criteria, /AC-001/);
+    assert.match(task.source_sha256, /^[a-f0-9]{64}$/);
+
+    const refs = queryRefs(ideaDir, ['CP-1']);
+    assert.ok(refs.some(match => match.path === 'to-be/design-notes.json' && match.value === 'CP-1'));
+
+    const source = querySource(root, 'feature\\(', 10);
+    assert.ok(source.some(line => line.includes('src/feature.js')));
+
+    const slice = readSlice(root, 'src/feature.js', '1:2', 0, 256);
+    assert.match(slice.content, /^1: import/);
+    assert.match(slice.sha256, /^[a-f0-9]{64}$/);
+    assert.equal(slice.truncated, false);
+    assert.throws(() => readSlice(root, '../outside.txt'), /escapes selected root/);
   });
 });

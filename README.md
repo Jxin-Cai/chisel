@@ -131,15 +131,15 @@ Bracketed steps may be skipped depending on complexity classification.
 
 | # | Step | Description |
 |---|---|---|
-| 1 | **Receive requirement** | Parse user input, save as `requirement.md` |
-| 2 | **Clarify and classify** | Clarify first, then persist a fingerprinted difficulty, risk, execution profile, and subagent budget |
+| 1 | **Receive requirement** | Parse user input into a temporary `requirement.md`; clarification freezes it as `requirement-original.md` |
+| 2 | **Clarify, confirm, and classify** | Let the model identify material gaps, persist every user addition, synthesize a development-ready `requirement.md`, bind user confirmation to its hash, then classify difficulty, risk, execution profile, and subagent budget |
 | 3 | **Understand as-is (full only)** | Existing codebases use Explorer/analyst plus deterministic rendering. Repositories with zero historical source files use a greenfield baseline and launch no discovery agents. |
 | 4 | **Confirm as-is (full only)** | Human reviews 3-minute summary, risk map, misconceptions, signs off |
 | 5 | **Design strategy** | Planner produces implementation plan, tasks, traceability matrix |
 | 6 | **Adversarial completeness review** | A fresh reviewer checks every requirement/AC/VC against the complete to-be artifacts; findings force a planner repair and another review |
 | 7 | **Confirm plan** | Human reviews only after the adversarial gate passes |
 | 8 | **Init tasks** | Generate task files and state machine from `tasks.json` |
-| 9 | **Code** | Coder starts from the original requirement and navigation hints, then independently traces source, callers, dependencies, and tests |
+| 9 | **Code** | Coder starts from the user-confirmed canonical requirement and navigation hints, then independently traces source, callers, dependencies, and tests |
 | 10 | **Unit tests and coverage** | Fresh complete tests, coverage collection, consolidated anomaly repair, and a test report |
 | 11 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
 | 12 | **Rework loop** | Up to 5 rounds per task; later rounds use a fresh agent and then become blocked |
@@ -298,7 +298,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `scripts/document-render.mjs` | Deterministically render human-readable docs from structured artifacts without an agent call |
 | `agent-chisel-analyst` | Deep code walkthrough, produce structured as-is data (sonnet) |
 | `agent-chisel-coder` | Implement directly from the original requirement, source code, and runtime evidence without producing process-proof reports |
-| `agent-chisel-oracle` | Freeze 3–8 executable black-box assertions from only the raw requirement and public entry points before coding |
+| `agent-chisel-oracle` | Freeze 3–8 executable black-box assertions from only the user-confirmed canonical requirement and public entry points before coding |
 | `agent-chisel-reviewer` | Multi-dimension CR with single-dimension-per-pass (opus) |
 
 ### Scripts

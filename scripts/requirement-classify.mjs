@@ -5,6 +5,7 @@ import {
   atomicWriteFile,
   requirementClassificationFingerprint,
 } from './workflow-lib.mjs';
+import { requirementConfirmationStatus } from './requirement-context.mjs';
 
 function listSize(value) {
   if (Array.isArray(value)) return value.length;
@@ -154,6 +155,11 @@ export const buildRequirementClassification = computeRequirementClassification;
 export function writeRequirementClassification(ideaDir) {
   if (!existsSync(join(ideaDir, 'requirement.md')) || !existsSync(join(ideaDir, 'requirement-clarification.json'))) {
     throw new Error('requirement.md and requirement-clarification.json are required');
+  }
+  const clarification = JSON.parse(readFileSync(join(ideaDir, 'requirement-clarification.json'), 'utf8'));
+  if (clarification?.schema_version === 2) {
+    const confirmation = requirementConfirmationStatus(ideaDir);
+    if (!confirmation.valid) throw new Error(`canonical requirement is not confirmed: ${confirmation.reason}`);
   }
   const result = buildRequirementClassification(ideaDir);
   atomicWriteFile(join(ideaDir, 'requirement-classification.json'), `${JSON.stringify(result, null, 2)}\n`);

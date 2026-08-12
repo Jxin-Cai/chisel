@@ -5,7 +5,8 @@
 - `{IDEA_DIR}/requirement-clarification.json`：权威机器可读记录，供 Planner 和后续 gate 使用。
 - `{IDEA_DIR}/requirement-clarification.md`：人类可读镜像，便于用户审阅。
 
-**复杂度裁剪**：minor/trivial 覆盖 `functional_scope` + `acceptance_criteria`；moderate 再覆盖 `compatibility_constraints` + `priority`；standard/complex 覆盖全部 7 维度。
+本文件是澄清审计记录，不是下游需求语义源。下游只以用户确认后的 `requirement.md` 为权威需求。
+维度按相关性填写；不适用项可以记录为 `not_applicable` 及理由，不需要为满足固定数量而向用户提问。
 
 ---
 
@@ -13,10 +14,12 @@
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "source_step": "clarify:requirement",
   "clarified_at": "2026-05-19T00:00:00.000Z",
   "requirement_ref": "requirement.md",
+  "original_requirement_ref": "requirement-original.md",
+  "input_ledger_ref": "requirement-inputs.json",
   "as_is_ref": "as-is/overview.md",
   "dimensions": {
     "functional_scope": {
@@ -63,7 +66,14 @@
     }
   },
   "unresolved": [],
-  "planner_hints": ["<给 planner 的特别提示>"]
+  "planner_hints": ["<给 planner 的特别提示>"],
+  "readiness": {
+    "status": "ready",
+    "checked_dimensions": ["goal", "scope", "behavior", "edge_cases", "compatibility", "non_functional", "acceptance"],
+    "assumptions_confirmed": ["<已由用户通过最终 MD 确认的低风险假设>"],
+    "remaining_questions": []
+  },
+  "canonical_requirement_ref": "requirement.md"
 }
 ```
 

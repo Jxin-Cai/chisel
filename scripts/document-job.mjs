@@ -15,7 +15,7 @@ const JOBS = Object.freeze({
   },
   'to-be': {
     sources: ['requirement.md', 'requirement-clarification.json', 'requirement-classification.json', 'to-be/design-notes.json', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json'],
-    optionalSources: ['to-be/data-change-plan.json', 'to-be/api-change-plan.json', 'as-is/ai-input/call-graph.md', 'document-jobs/as-is.json'],
+    optionalSources: ['requirement-original.md', 'requirement-inputs.json', 'confirmations/requirement.json', 'to-be/data-change-plan.json', 'to-be/api-change-plan.json', 'as-is/ai-input/call-graph.md', 'document-jobs/as-is.json'],
     outputs: ['to-be/implementation-plan.md'],
   },
 });

@@ -26,10 +26,12 @@ describe('independent acceptance oracle', () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it('prepares only the original requirement and public entry evidence, then freezes it', () => {
+  it('prepares only the canonical requirement and public entry evidence, then freezes it', () => {
     const prepared = prepareOracle(ideaDir, root);
     const context = JSON.parse(readFileSync(prepared.context_path, 'utf8'));
     assert.equal(prepared.status, 'prepared');
+    assert.equal(context.schema_version, 2);
+    assert.equal(context.canonical_requirement, context.requirement);
     assert.match(context.requirement, /public value is 42/);
     assert.deepEqual(context.project.public_entries.map(entry => entry.path), ['src/index.js']);
     assert.equal(JSON.stringify(context).includes('expected_files'), false);

@@ -7,7 +7,7 @@ import { atomicWriteFile } from './workflow-lib.mjs';
 
 export const REPORT_CONFIRMATIONS = Object.freeze({
   'as-is': { report: 'reports/as-is-report.html', confirmation: 'confirmations/as-is.json', phase: 'as-is', sources: ['requirement.md', 'as-is/'] },
-  'to-be': { report: 'reports/to-be-report.html', confirmation: 'confirmations/to-be.json', phase: 'to-be', sources: ['requirement-clarification.json', 'to-be/'] },
+  'to-be': { report: 'reports/to-be-report.html', confirmation: 'confirmations/to-be.json', phase: 'to-be', sources: ['requirement.md', 'requirement-original.md', 'requirement-inputs.json', 'requirement-clarification.json', 'confirmations/requirement.json', 'to-be/'] },
   test: { report: 'reports/test-report.html', confirmation: 'confirmations/test-report.json', phase: 'unit-test-report', sources: ['verify-result.json', 'unit-test-result.json', 'unit-test-runs.json', 'task-workflow-state.yaml', 'task-reports/'] },
   cr: { report: 'reports/cr-report.html', confirmation: 'confirmations/cr-report.json', phase: 'cr-report', sources: ['task-workflow-state.yaml', 'verify-result.json', 'unit-test-result.json', 'confirmations/test-report.json', 'cr/'] },
   'task-time': { report: 'reports/task-time-report.html', confirmation: 'confirmations/task-time-report.json', phase: 'task-time-report', sources: ['requirement.md', 'requirement-classification.json', 'requirement-clarification.json', 'to-be/', 'workflow-state.yaml', 'task-workflow-state.yaml', 'task-reports/', 'final-summary.md'] },

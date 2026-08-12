@@ -33,9 +33,9 @@ describe('long-running resilience', () => {
 
   it('persists a runner lease and rejects a concurrent owner', () => {
     const ideaDir = join(root, '.chisel', 'idea');
-    const first = spawnSync('node', ['scripts/orchestration-runner.mjs', '--start', '--idea-dir', ideaDir, '--owner', 'agent-a'], { cwd: process.cwd(), encoding: 'utf8' });
+    const first = spawnSync(process.execPath, ['scripts/orchestration-runner.mjs', '--start', '--idea-dir', ideaDir, '--owner', 'agent-a'], { cwd: process.cwd(), encoding: 'utf8' });
     assert.equal(first.status, 0, first.stderr);
-    const second = spawnSync('node', ['scripts/orchestration-runner.mjs', '--next', '--idea-dir', ideaDir, '--owner', 'agent-b'], { cwd: process.cwd(), encoding: 'utf8' });
+    const second = spawnSync(process.execPath, ['scripts/orchestration-runner.mjs', '--next', '--idea-dir', ideaDir, '--owner', 'agent-b'], { cwd: process.cwd(), encoding: 'utf8' });
     assert.notEqual(second.status, 0);
     assert.match(second.stderr, /leased by agent-a/);
     assert.ok(existsSync(join(ideaDir, 'runner-state.json')));
@@ -43,10 +43,10 @@ describe('long-running resilience', () => {
 
   it('returns the completed phase files when the runner advances', () => {
     const ideaDir = join(root, '.chisel', 'delivery');
-    const first = spawnSync('node', ['scripts/orchestration-runner.mjs', '--start', '--idea-dir', ideaDir, '--owner', 'agent-a'], { cwd: process.cwd(), encoding: 'utf8' });
+    const first = spawnSync(process.execPath, ['scripts/orchestration-runner.mjs', '--start', '--idea-dir', ideaDir, '--owner', 'agent-a'], { cwd: process.cwd(), encoding: 'utf8' });
     assert.equal(first.status, 0, first.stderr);
     writeFileSync(join(ideaDir, 'requirement.md'), '# Req\n## 复杂度: trivial\n## 目标\n实现小改动\n');
-    const next = spawnSync('node', ['scripts/orchestration-runner.mjs', '--next', '--idea-dir', ideaDir, '--owner', 'agent-a'], { cwd: process.cwd(), encoding: 'utf8' });
+    const next = spawnSync(process.execPath, ['scripts/orchestration-runner.mjs', '--next', '--idea-dir', ideaDir, '--owner', 'agent-a'], { cwd: process.cwd(), encoding: 'utf8' });
     assert.equal(next.status, 0, next.stderr);
     const output = JSON.parse(next.stdout);
     assert.equal(output.completed_step_delivery.step, 'receive-requirement');
@@ -59,10 +59,10 @@ describe('long-running resilience', () => {
     mkdirSync(ideaDir, { recursive: true });
     initTaskState(ideaDir, 'idea', [{ taskId: 'task-001', status: 'confirmed' }]);
     const command = ['scripts/workflow-status.mjs', ideaDir, '--start-task', 'task-001', '--project-root', root, '--owner', 'agent-a'];
-    const failed = spawnSync('node', command, { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, CHISEL_TX_FAIL_AFTER_WRITES: '1' } });
+    const failed = spawnSync(process.execPath, command, { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, CHISEL_TX_FAIL_AFTER_WRITES: '1' } });
     assert.notEqual(failed.status, 0);
     assert.equal(readTaskState(taskStateFile(ideaDir)).tasks['task-001'].status, 'confirmed');
-    const recovered = spawnSync('node', command, { cwd: process.cwd(), encoding: 'utf8' });
+    const recovered = spawnSync(process.execPath, command, { cwd: process.cwd(), encoding: 'utf8' });
     assert.equal(recovered.status, 0, recovered.stderr);
     const run = JSON.parse(readFileSync(join(ideaDir, 'task-runs', 'task-001.json'), 'utf8'));
     assert.equal(run.attempts.length, 1);
@@ -101,7 +101,7 @@ describe('long-running resilience', () => {
   });
 
   it('blocks direct Bash writes to protected machine state', () => {
-    const result = spawnSync('node', ['hooks/pre-tool-write-guard.mjs'], {
+    const result = spawnSync(process.execPath, ['hooks/pre-tool-write-guard.mjs'], {
       cwd: process.cwd(), encoding: 'utf8',
       input: JSON.stringify({ tool_name: 'Bash', cwd: root, tool_input: { command: 'printf hacked > .chisel/idea/workflow-state.yaml' } }),
     });

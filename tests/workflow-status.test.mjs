@@ -19,7 +19,7 @@ function makeTmpDir() {
 }
 
 function runWorkflowStatus(ideaDir, ...args) {
-  return spawnSync('node', ['scripts/workflow-status.mjs', ideaDir, ...args], {
+  return spawnSync(process.execPath, ['scripts/workflow-status.mjs', ideaDir, ...args], {
     cwd: process.cwd(),
     encoding: 'utf8'
   });

@@ -44,8 +44,10 @@
 - **规划阶段**（`chisel-plan`）两条分支均写入 tasks + traceability + impact-risk + design-notes，执行完整性自检，再由确定性 renderer 生成 implementation-plan.md。
 - `document-job.mjs` 继续记录 renderer 的完整 required source、optional source/output 及 hash；receipt stale 时重新渲染，不启动 Writer agent。
 - `requirement-classify.mjs` 在澄清完成后按 AC/VC、文件/模块边界、DB/API/迁移、显式风险与 risk tolerance 生成可重算的难度、执行档位和 subagent 预算；显式 moderate/standard/complex 是保守 floor。
-- `agent-chisel-coder` 只按已确认 task 实现，持续执行验证—修复循环并完成 diff 自检（bug/AC/scope 三项检查）。trivial/standard 默认继承主编排器当前模型，complex 和返修升级通过 model override 使用 opus。
-- `agent-chisel-oracle` 在编码前只读取原始 requirement 与公开入口，冻结 3–8 条可执行黑盒断言；它不读取 plan/task/report/diff，不拥有 skill、状态机或 HTML 产物。全量验证后执行同一份断言，失败只作为 Coder 返修信号。
+- `requirement-context.mjs` 在澄清前冻结 `requirement-original.md`，维护追加式 `requirement-inputs.json`，并把用户确认绑定到完整 `requirement.md` 及所有输入证据的指纹。schema v2 澄清流程中，任一后续用户输入都会使确认、分类及依赖它的计划失效。
+- `coder-prepare.mjs` 为当前 task 生成 schema v5 轻量 bootstrap，只保存带 hash 的 requirement/task/decision 引用、检索种子、已发现路径和硬边界，不复制需求或源码正文。`context-query.mjs` 提供有界的 task 字段、CP/AC、源码命中和行区间读取。
+- `agent-chisel-coder` 只按已确认 task 实现，并在自身上下文内按“未知项 → 搜索 → 局部读取 → 停止条件”循环补齐证据，持续执行验证—修复循环并完成 diff 自检。trivial/standard 默认继承主编排器当前模型，complex 和返修升级通过 model override 使用 opus。
+- `agent-chisel-oracle` 在编码前只读取用户确认的权威 `requirement.md` 与公开入口，冻结 3–8 条可执行黑盒断言；它不读取澄清问答、plan/task/report/diff，不拥有 skill、状态机或 HTML 产物。全量验证后执行同一份断言，失败只作为 Coder 返修信号。
 - `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查，每次加载一个维度定义。维度 batch 严格受 `review-policy.json` 限制；所有维度结束后先由 Opus 全局汇总，只对高风险、矛盾或不确定项执行有界独立 skeptic 核验，再由 Opus 综合证据完成最终真伪裁决、共同根因合并和返修策略，完成前禁止返修。
 
 ## As-Is 分层结构

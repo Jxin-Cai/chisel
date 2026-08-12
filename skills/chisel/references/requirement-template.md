@@ -1,4 +1,8 @@
-# {idea-name} 需求
+# {idea-name} 需求（初始输入）
+
+> receive-requirement 阶段的临时需求草稿。进入澄清时先冻结为
+> `requirement-original.md`；澄清完成后由用户确认的开发就绪需求覆盖
+> `requirement.md`，本文件中的“初步”内容不得直接作为非 hotfix 的编码基线。
 
 ## 需求目标
 

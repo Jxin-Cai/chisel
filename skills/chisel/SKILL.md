@@ -208,10 +208,10 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 
 | resume_step | 动作 | postcondition |
 |---|---|---|
-| `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建 `{IDEA_DIR}/requirement.md`。若用户输入包含图片路径（.png/.jpg/.jpeg/.webp），用 Read tool 加载图片提取 UI 布局描述，写入 `{IDEA_DIR}/as-is/ui-snapshot.md` 作为需求补充上下文 | `requirement-exists` |
+| `receive-requirement` | Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel/references/requirement-template.md`，按模板创建临时 `{IDEA_DIR}/requirement.md`；澄清阶段会先将它冻结为 `requirement-original.md`，再以用户确认的完整需求覆盖。若用户输入包含图片路径（.png/.jpg/.jpeg/.webp），用 Read tool 加载图片提取 UI 布局描述，写入 `{IDEA_DIR}/as-is/ui-snapshot.md` 作为需求补充上下文 | `requirement-exists` |
 | `understand:explore` | `/chisel-understand <idea-name>`；repo-map 识别 `source_files=0` 时走 greenfield 确定性快路径，不启动侦察 agent | `as-is-complete` |
 | `understand:confirm` | 自动生成并交付 As-Is HTML；未决事项并入 To-Be 方案确认，不单独等待用户 | `as-is-report-confirmed` |
-| `clarify:requirement` | `/chisel-clarify <idea-name>` | `clarification-complete` |
+| `clarify:requirement` | `/chisel-clarify <idea-name>`；模型自主识别实质缺口，持久化追加输入，生成完整 `requirement.md` 并按 hash 获取用户确认 | `clarification-complete` |
 | `classify:requirement` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR}`；展示 difficulty、execution_profile、reasons 和 subagent_budget | `requirement-classified` |
 | `quick-dev:init` | 先执行轻量只读 discovery，写入非空 `quick-dev-scope.json`（`scope_mode=explicit`，含 `allowed_files`、`expected_files`、禁区和 AC）；超过 2 文件/2 模块、含宽泛 glob 或非低风险时写 `scope-escalation.json` 并回到 `classify:requirement`，不得继续实现。随后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}` | `quick-dev-ready` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |

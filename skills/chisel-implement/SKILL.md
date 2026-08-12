@@ -66,7 +66,7 @@ digraph implement_flow {
      - `rework_count 4-5`：**Fresh Agent 重做**——启动一个全新的 `agent-chisel-coder`（不继承前序 repair 上下文），model override: opus，agent prompt 追加：
        ```
        ⚠️ 前任实现者已尝试 {rework_count} 轮修复未通过。
-       你是全新接管者。请从原始需求、实际源码、运行结果和 CR findings 出发独立实现，不要延续前任的修复方向。
+       你是全新接管者。请从用户确认的权威需求、实际源码、运行结果和 CR findings 出发独立实现，不要延续前任的修复方向。
        已知失败路径记录在 debug/{task-id}-debug.json（由 `scripts/debug-workflow.mjs` 契约校验）。
        ```
      - 升级记录写入 `task-metrics.mjs` 的 `escalated_model` 和 `fresh_agent` 字段
@@ -76,7 +76,7 @@ digraph implement_flow {
    - 读取 task 文件 frontmatter 的 `task_complexity` 字段，选择 model override：
      - `trivial` / `standard` 或未指定 → `agent-chisel-coder`（继承主编排器当前模型）
      - `complex` → `agent-chisel-coder`，model override: opus
-   - 预打包 coder 上下文：`node ${CLAUDE_PLUGIN_ROOT}/scripts/coder-prepare.mjs {IDEA_DIR} <task-id> .`
+   - 生成轻量 coder bootstrap：`node ${CLAUDE_PLUGIN_ROOT}/scripts/coder-prepare.mjs {IDEA_DIR} <task-id> .`。stdout 只包含路径、hash/体积指标和文件计数；需求、计划与源码正文保留在文件中，由 Coder 使用 `context-query.mjs` 循环检索，主编排器不得 Read bootstrap 或源文件全文后再转述给 Coder
    - 启动选定的 coder agent，传入 TASK：
    - 启动前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {IDEA_DIR} --agent-call implement:code coder 1`；返修模式将 step 改为 `repair:code`
      ```json
@@ -84,7 +84,10 @@ digraph implement_flow {
      ```
    - 检查 coder 不超过 5 行的返回结果：
      - **DONE / DONE_WITH_CONCERNS** → 主编排器检查实际 diff 非空，然后使用 `--finish-task <task-id> coded --run-id <run-id>` 冻结 provenance
-     - **NEEDS_CONTEXT** → 不调用 `--finish-task`，向用户展示缺失信息，获取后重新派发 coder
+     - **NEEDS_CONTEXT** → 不调用 `--finish-task`。向用户展示缺失信息；收到回答后先按
+       `chisel-clarify` 的追加输入协议写入 `requirement-inputs.json`，重新综合并展示完整 `requirement.md`。
+       当前需求 hash 经用户确认、`clarification-complete` gate 重新通过后，再重新生成 coder-context 并派发 coder。
+       禁止把回答只拼进 agent prompt。
      - **BLOCKED** → 向用户报告阻塞原因，等待用户决策
    - finish 成功后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-metrics.mjs {IDEA_DIR} <task-id>`；脚本从 Git diff 自动生成轻量 task inventory，Coder 不写 report
    - 运行 `scope-check.mjs`：明确 forbidden path/symbol 命中才返修；`starting_points` 外扩展和大范围信号交给 reviewer，不要求 Coder 缩回错误的预测范围

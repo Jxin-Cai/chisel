@@ -130,7 +130,7 @@ describe('post-clarification efficiency routing', () => {
       allowed_files: ['src/a.js', 'src/b.js', 'web/c.js'], expected_files: ['src/a.js', 'src/b.js', 'web/c.js'],
       forbidden_files: [], acceptance_criteria: ['AC-001'],
     }));
-    const run = spawnSync('node', ['scripts/quick-dev-init.mjs', dir, '--current-branch'], { cwd: process.cwd(), encoding: 'utf8' });
+    const run = spawnSync(process.execPath, ['scripts/quick-dev-init.mjs', dir, '--current-branch'], { cwd: process.cwd(), encoding: 'utf8' });
     assert.equal(run.status, 2);
     assert.equal(JSON.parse(readFileSync(join(dir, 'scope-escalation.json'))).required, true);
     assert.equal(existsSync(join(dir, 'task-workflow-state.yaml')), false);

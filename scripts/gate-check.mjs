@@ -12,6 +12,7 @@ import { reportReadyStatus, reportStatus } from './report-confirm.mjs';
 import { checkDocumentJob } from './document-job.mjs';
 import { computeRequirementClassification } from './requirement-classify.mjs';
 import { PROJECT_MODES, projectModeFromRepoMap } from './project-profile.mjs';
+import { requirementConfirmationStatus } from './requirement-context.mjs';
 
 import { checkScope, getTaskScope } from './scope-check.mjs';
 import { validateJsonFile } from './schemas/validate.mjs';
@@ -1351,8 +1352,11 @@ function validateAdversarialReview(ideaDir) {
   if (blocking.length > 0) return 'adversarial review contains unresolved findings';
 
   const requiredSources = [
+    'requirement-original.md',
+    'requirement-inputs.json',
     'requirement.md',
     'requirement-clarification.json',
+    'confirmations/requirement.json',
     'requirement-classification.json',
     'clarifications.json',
     'as-is/evidence-ledger.json',
@@ -1367,6 +1371,11 @@ function validateAdversarialReview(ideaDir) {
     'document-jobs/to-be.json',
   ].filter(rel => existsSync(join(ideaDir, rel)));
   const mandatoryReviewSources = ['requirement.md', 'to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json'];
+  const clarificationContract = existsSync(join(ideaDir, 'requirement-clarification.json'))
+    ? readJsonFile(join(ideaDir, 'requirement-clarification.json')).value : null;
+  if (clarificationContract?.schema_version === 2) mandatoryReviewSources.push(
+    'requirement-original.md', 'requirement-inputs.json', 'confirmations/requirement.json',
+  );
   if (has(ideaDir, 'requirement-classification.json')) mandatoryReviewSources.push(
     'requirement-clarification.json', 'requirement-classification.json', 'to-be/design-notes.json',
     'to-be/impact-risk-report.json', 'document-jobs/to-be.json',
@@ -1792,7 +1801,7 @@ export function checkGate(ideaDir, gateId) {
       const parsed = readJsonFile(file);
       if (parsed.error) return result(gateId, false, `requirement-clarification.json invalid JSON: ${parsed.error}`);
       const doc = parsed.value;
-      if (doc?.schema_version !== 1) return result(gateId, false, 'requirement-clarification.json schema_version must be 1');
+      if (![1, 2].includes(doc?.schema_version)) return result(gateId, false, 'requirement-clarification.json schema_version must be 1 or 2');
       if (doc.source_step !== 'clarify:requirement') return result(gateId, false, 'source_step must be clarify:requirement');
       if (!doc.clarified_at) return result(gateId, false, 'missing clarified_at');
       if (!doc.dimensions || typeof doc.dimensions !== 'object') return result(gateId, false, 'missing dimensions');
@@ -1803,15 +1812,29 @@ export function checkGate(ideaDir, gateId) {
       // additional dimensions instead of guessing "standard" from an unmarked requirement.
       const persisted = readRequirementClassification(ideaDir);
       const complexity = persisted.valid ? persisted.value.routing_complexity : null;
-      const requiredDimensions = !complexity || ['hotfix', 'minor', 'trivial'].includes(complexity)
+      const requiredDimensions = doc.schema_version === 2
         ? ['functional_scope', 'acceptance_criteria']
-        : complexity === 'moderate'
-          ? ['functional_scope', 'acceptance_criteria', 'compatibility_constraints', 'priority']
-          : ['functional_scope', 'impact_analysis', 'compatibility_constraints', 'non_functional', 'priority', 'acceptance_criteria', 'risk_tolerance'];
+        : !complexity || ['hotfix', 'minor', 'trivial'].includes(complexity)
+          ? ['functional_scope', 'acceptance_criteria']
+          : complexity === 'moderate'
+            ? ['functional_scope', 'acceptance_criteria', 'compatibility_constraints', 'priority']
+            : ['functional_scope', 'impact_analysis', 'compatibility_constraints', 'non_functional', 'priority', 'acceptance_criteria', 'risk_tolerance'];
       const missingDimensions = requiredDimensions.filter(d => !doc.dimensions[d]);
       if (missingDimensions.length > 0) return result(gateId, false, `missing dimensions: ${missingDimensions.join(', ')}`);
       if (!Array.isArray(doc.dimensions.acceptance_criteria) || doc.dimensions.acceptance_criteria.length === 0)
         return result(gateId, false, 'acceptance_criteria must be non-empty array');
+      if (doc.schema_version === 2) {
+        if (doc.original_requirement_ref !== 'requirement-original.md') return result(gateId, false, 'schema v2 clarification must reference requirement-original.md');
+        if (doc.input_ledger_ref !== 'requirement-inputs.json') return result(gateId, false, 'schema v2 clarification must reference requirement-inputs.json');
+        if (doc.canonical_requirement_ref !== 'requirement.md') return result(gateId, false, 'schema v2 clarification must reference canonical requirement.md');
+        if (doc.readiness?.status !== 'ready') return result(gateId, false, 'requirement readiness status must be ready');
+        if (!Array.isArray(doc.readiness?.checked_dimensions) || doc.readiness.checked_dimensions.length === 0)
+          return result(gateId, false, 'requirement readiness must record checked_dimensions');
+        if (!Array.isArray(doc.readiness?.remaining_questions) || doc.readiness.remaining_questions.length > 0)
+          return result(gateId, false, 'requirement readiness has remaining questions');
+        const confirmation = requirementConfirmationStatus(ideaDir);
+        if (!confirmation.valid) return result(gateId, false, confirmation.reason);
+      }
       return result(gateId, true);
     }
     case 'requirement-classified': {

@@ -19,7 +19,7 @@ describe('explicit orchestration transitions', () => {
   function transition(step, revision, eventId, env = {}) {
     const args = ['scripts/orchestration-transition.mjs', ideaDir, step, '--expected-revision', String(revision)];
     if (eventId) args.push('--event-id', eventId);
-    return spawnSync('node', args, { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...env } });
+    return spawnSync(process.execPath, args, { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, ...env } });
   }
 
   it('increments revision and appends an event', () => {

@@ -130,15 +130,15 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 
 | # | 步骤 | 说明 |
 |---|---|---|
-| 1 | **接收需求** | 解析用户输入，按模板保存 `requirement.md` |
-| 2 | **澄清并分级** | 先澄清，再持久化带输入指纹的难度、风险、执行档位与 subagent 预算 |
+| 1 | **接收需求** | 解析用户输入为临时 `requirement.md`；进入澄清时冻结为不可变的 `requirement-original.md` |
+| 2 | **澄清并确认** | 模型自主识别实质缺口，持久化每次追加输入，综合生成开发就绪的 `requirement.md` 并由用户按 hash 确认；再进行难度与执行档位分级 |
 | 3 | **理解 as-is（仅 full）** | 有历史源码时由 explorer/analyst 产出证据，再由确定性 renderer 生成人类文档；历史源码为 0 时走 greenfield 基线 |
 | 4 | **确认 as-is（仅 full）** | 人类审查 3 分钟摘要、风险地图、误解点，逐项确认 |
 | 5 | **方案设计** | planner 产出实现计划、task 定义、追溯矩阵 |
 | 6 | **对抗完整性审查** | fresh reviewer 逐项对照 requirement/clarification/as-is/to-be；发现遗漏即生成 findings，修复后重跑，直到 pass |
 | 7 | **确认方案** | 仅在对抗 gate 通过后，人类审查策略方向和 task 拆分 |
 | 8 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
-| 9 | **编码** | coder agent 从原始需求和 starting points 出发，自主追踪源码、调用方、依赖与测试 |
+| 9 | **编码** | coder agent 从用户确认的权威需求和 starting points 出发，自主追踪源码、调用方、依赖与测试 |
 | 10 | **单测与覆盖率** | 首轮和最终封板跑完整单测/覆盖率；返修轮只跑受影响检查，最终报告自动交付 |
 | 11 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
 | 12 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
@@ -293,8 +293,8 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 |---|---|
 | `scripts/document-render.mjs` | 从结构化产物确定性生成人类可读文档，不消耗 agent 调用 |
 | `agent-chisel-analyst` | 深度代码走查，产出结构化 as-is 数据（sonnet） |
-| `agent-chisel-coder` | 直接基于原始需求、实际源码和运行结果实现并验证，不生产流程证明 |
-| `agent-chisel-oracle` | 编码前仅依据原始需求和公开入口冻结 3–8 条可执行黑盒断言 |
+| `agent-chisel-coder` | 直接基于用户确认的权威需求、实际源码和运行结果实现并验证，不生产流程证明 |
+| `agent-chisel-oracle` | 编码前仅依据用户确认的权威需求和公开入口冻结 3–8 条可执行黑盒断言 |
 | `agent-chisel-reviewer` | 多维度 CR，单维度/次深度审查（opus） |
 
 ### Scripts
