@@ -93,7 +93,14 @@ function collectJsonMatches(value, refs, path = '$', matches = []) {
     value.forEach((item, index) => {
       const itemPath = `${path}[${index}]`;
       if (typeof item === 'string' && refs.some(ref => item.includes(ref))) matches.push({ selector: itemPath, value: item });
-      else if (item && typeof item === 'object') collectJsonMatches(item, refs, itemPath, matches);
+      else if (item && typeof item === 'object') {
+        const shallowValues = Object.values(item).filter(candidate =>
+          typeof candidate === 'string' || (Array.isArray(candidate) && candidate.every(entry => typeof entry === 'string'))
+        ).flat();
+        if (shallowValues.some(candidate => refs.some(ref => candidate.includes(ref)))) {
+          matches.push({ selector: itemPath, value: item });
+        } else collectJsonMatches(item, refs, itemPath, matches);
+      }
     });
   } else if (value && typeof value === 'object') {
     for (const [key, item] of Object.entries(value)) {
@@ -103,6 +110,53 @@ function collectJsonMatches(value, refs, path = '$', matches = []) {
     }
   }
   return matches;
+}
+
+function readJsonWithRef(ideaDir, path) {
+  const absolute = safePath(ideaDir, path);
+  if (!existsSync(absolute)) return null;
+  const content = readFileSync(absolute, 'utf8');
+  return { path, sha256: sha256(content), value: JSON.parse(content) };
+}
+
+export function queryDecision(ideaDir, taskId) {
+  const taskResult = queryTask(ideaDir, taskId, ['change_point_refs']);
+  const cpRefs = Array.isArray(taskResult.task.change_point_refs) ? taskResult.task.change_point_refs : [];
+  const notesSource = readJsonWithRef(ideaDir, 'to-be/design-notes.json');
+  const confirmationSource = readJsonWithRef(ideaDir, 'confirmations/to-be.json');
+  const confirmation = confirmationSource?.value;
+  const userConfirmed = (confirmation?.status === 'confirmed' && confirmation?.confirmed_by === 'user')
+    || existsSync(safePath(ideaDir, '.to-be-confirmed'));
+  const notes = notesSource?.value || {};
+  const changePoints = Array.isArray(notes.change_point_details) ? notes.change_point_details : [];
+  const relevantChangePoints = changePoints.filter(point =>
+    cpRefs.includes(point?.cp_id || point?.id) || (point?.corresponding_tasks || []).includes(taskId)
+  );
+  return {
+    task_id: taskId,
+    user_confirmed: userConfirmed,
+    authority: userConfirmed ? 'user-confirmed-plan' : 'unconfirmed-advisory',
+    confirmed_at: userConfirmed ? confirmation?.confirmed_at || null : null,
+    task_change_point_refs: cpRefs,
+    decisions: {
+      goal_behavior: notes.goal_behavior || null,
+      non_goal_behavior: notes.non_goal_behavior || null,
+      strategy_overview: notes.strategy_overview || notes.tl_dr || null,
+      historical_behaviors: Array.isArray(notes.historical_behaviors) ? notes.historical_behaviors : [],
+      verification_surface: Array.isArray(notes.verification_surface) ? notes.verification_surface : [],
+      forbidden_scope: Array.isArray(notes.forbidden_scope) ? notes.forbidden_scope : [],
+      relevant_change_points: relevantChangePoints,
+    },
+    source_refs: {
+      design_notes: notesSource ? { path: notesSource.path, sha256: notesSource.sha256 } : null,
+      confirmation: confirmationSource ? { path: confirmationSource.path, sha256: confirmationSource.sha256 } : null,
+      api_contract: readJsonWithRef(ideaDir, 'to-be/api-change-plan.json')?.path || null,
+      data_contract: readJsonWithRef(ideaDir, 'to-be/data-change-plan.json')?.path || null,
+    },
+    interpretation: userConfirmed
+      ? 'Honor these decisions as user intent. Verify claims about current code, file locations, and implementation mechanics against source and runtime evidence.'
+      : 'This plan is not user-confirmed. Treat it only as navigation and do not elevate it above the requirement.',
+  };
 }
 
 export function queryRefs(ideaDir, refs, limit = DEFAULT_LIMIT) {
@@ -129,10 +183,15 @@ export function queryRefs(ideaDir, refs, limit = DEFAULT_LIMIT) {
   return results;
 }
 
-export function querySource(projectRoot, pattern, limit = DEFAULT_LIMIT) {
+export function querySource(projectRoot, pattern, limit = DEFAULT_LIMIT, excludedDirectory = null) {
   if (!pattern) throw new Error('--query is required');
+  const excluded = excludedDirectory ? relative(projectRoot, resolve(excludedDirectory)).replaceAll('\\', '/') : null;
+  const excludedGlob = excluded && excluded !== '..' && !excluded.startsWith('../') ? `!${excluded.replace(/\/$/, '')}/**` : null;
+  const args = ['-n', '--no-heading', '--color', 'never', '--max-count', '5', '--glob', '!.chisel/**'];
+  if (excludedGlob) args.push('--glob', excludedGlob);
+  args.push(pattern, '.');
   try {
-    const output = execFileSync('rg', ['-n', '--no-heading', '--color', 'never', '--max-count', '5', '--glob', '!.chisel/**', pattern, '.'], {
+    const output = execFileSync('rg', args, {
       cwd: projectRoot, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024,
     });
     return output.split('\n').filter(Boolean).slice(0, limit);
@@ -165,7 +224,7 @@ export function readSlice(root, path, lines = '', offset = 0, maxCharacters = DE
 
 function main(argv) {
   const [ideaArg, command, subject, ...args] = argv;
-  if (!ideaArg || !command) fail('用法: context-query.mjs <idea-dir> <task|refs|source|read> ...');
+  if (!ideaArg || !command) fail('用法: context-query.mjs <idea-dir> <task|decision|refs|source|read> ...');
   const ideaDir = resolve(ideaArg);
   const projectRoot = resolve(option(args, '--project-root', '.'));
   const allArgs = subject === undefined ? args : [subject, ...args];
@@ -178,13 +237,16 @@ function main(argv) {
     if (command === 'task') {
       if (!subject) throw new Error('task id is required');
       result = queryTask(ideaDir, subject, String(option(args, '--fields', '')).split(',').filter(Boolean));
+    } else if (command === 'decision') {
+      if (!subject) throw new Error('task id is required');
+      result = queryDecision(ideaDir, subject);
     } else if (command === 'refs') {
       const refs = String(subject || '').split(',').filter(Boolean);
       if (refs.length === 0) throw new Error('at least one ref is required');
       result = { refs, matches: queryRefs(ideaDir, refs, limit) };
     } else if (command === 'source') {
       const pattern = option(allArgs, '--query', subject && !subject.startsWith('--') ? subject : undefined);
-      result = { query: pattern, matches: querySource(projectRoot, pattern, limit) };
+      result = { query: pattern, matches: querySource(projectRoot, pattern, limit, ideaDir) };
     } else if (command === 'read') {
       if (!subject) throw new Error('path is required');
       const scope = option(args, '--scope', 'project');

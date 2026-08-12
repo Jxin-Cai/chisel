@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initTaskState } from '../scripts/workflow-lib.mjs';
-import { queryRefs, querySource, queryTask, readSlice } from '../scripts/context-query.mjs';
+import { queryDecision, queryRefs, querySource, queryTask, readSlice } from '../scripts/context-query.mjs';
 
 const script = new URL('../scripts/coder-prepare.mjs', import.meta.url).pathname;
 
@@ -91,6 +91,8 @@ Increment the public result.
     assert.equal(raw.includes('ORACLE_SECRET_ASSERTION'), false);
     assert.equal(context.decision_refs.user_confirmed, true);
     assert.equal(context.decision_refs.design_notes_ref.selector, 'change_point_details[cp_id in CP-1]');
+    assert.equal(context.retrieval.suggested_rounds, 6);
+    assert.equal(Object.hasOwn(context.retrieval, 'max_rounds'), false);
     assert.match(context.coder_contract.join('\n'), /not fact or scope boundaries/);
   });
 
@@ -101,10 +103,18 @@ Increment the public result.
     assert.match(task.source_sha256, /^[a-f0-9]{64}$/);
 
     const refs = queryRefs(ideaDir, ['CP-1']);
-    assert.ok(refs.some(match => match.path === 'to-be/design-notes.json' && match.value === 'CP-1'));
+    const cpMatch = refs.find(match => match.path === 'to-be/design-notes.json' && match.value?.cp_id === 'CP-1');
+    assert.equal(cpMatch.value.design_rationale, 'Preserve one source of truth.');
+
+    const decision = queryDecision(ideaDir, 'task-001');
+    assert.equal(decision.authority, 'user-confirmed-plan');
+    assert.equal(decision.decisions.goal_behavior, 'Return the confirmed public value.');
+    assert.equal(decision.decisions.non_goal_behavior, 'Do not change serialization.');
+    assert.deepEqual(decision.decisions.relevant_change_points.map(point => point.cp_id), ['CP-1']);
 
     const source = querySource(root, 'feature\\(', 10);
     assert.ok(source.some(line => line.includes('src/feature.js')));
+    assert.deepEqual(querySource(root, 'ORACLE_SECRET_ASSERTION', 10, ideaDir), []);
 
     const slice = readSlice(root, 'src/feature.js', '1:2', 0, 256);
     assert.match(slice.content, /^1: import/);

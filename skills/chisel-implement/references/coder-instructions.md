@@ -17,7 +17,11 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/context-query.mjs {idea_dir} task {task_id} \
 node ${CLAUDE_PLUGIN_ROOT}/scripts/context-query.mjs {idea_dir} read requirement.md \
   --scope idea --max-chars 24000
 
-# 按当前 task 的 CP/AC 找设计与追溯证据
+# 获取当前 task 对应的用户确认方案决策，不加载其他 task 的 CP
+node ${CLAUDE_PLUGIN_ROOT}/scripts/context-query.mjs {idea_dir} decision {task_id} \
+  --max-chars 24000
+
+# 需要继续追踪契约或 AC 时，按 CP/AC 返回包含命中 ID 的完整结构对象
 node ${CLAUDE_PLUGIN_ROOT}/scripts/context-query.mjs {idea_dir} refs CP-001,AC-001 --limit 20
 
 # 先找源码命中，再局部读取；不要预读整个仓库
@@ -25,15 +29,18 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/context-query.mjs {idea_dir} source --query '
 node ${CLAUDE_PLUGIN_ROOT}/scripts/context-query.mjs {idea_dir} read src/example.ts --project-root . --lines 1:160
 ```
 
-按以下循环推进，最多使用 bootstrap 声明的 `max_rounds`：
+按以下循环推进。bootstrap 的 `suggested_rounds` 与 `suggested_files_per_round` 只是控制注意力的软建议，不是停止条件；只要新证据仍会改变实现判断，就继续检索：
 
-1. 读取 `requirement_ref` 和当前 task 的 goal、AC、invariants；不要读取原始输入重新解释需求。
-2. 记录尚未确认的问题，例如调用方、错误语义或对应测试。
-3. 用 CP/AC、symbol 和 starting points 搜索候选内容，每轮最多展开 `max_files_per_round` 个文件。
-4. 只读取能消除当前未知项的章节或源码区间；新证据产生新未知项时继续下一轮。
-5. 当每个 AC 都有实现/验证落点、每个 invariant 都有源码依据、直接 caller/callee 与相邻测试已检查，且一轮检索没有新增相关文件时停止检索并开始实现。
+1. 读取 `requirement_ref`、当前 task 的 goal/AC/invariants，以及 task-scoped `decision`；不要读取原始输入重新解释需求。
+2. `decision.authority=user-confirmed-plan` 时遵守其中的目标、非目标、契约、不变式和权衡；未确认时仅作导航。
+3. 记录尚未确认的问题，例如调用方、错误语义或对应测试。
+4. 用 CP/AC、symbol 和 starting points 搜索候选内容，优先每轮只展开能消除当前未知项的少量文件。
+5. 只读取能消除当前未知项的章节或源码区间；新证据产生新未知项时继续下一轮。
+6. 当每个 AC 都有实现/验证落点、每个 invariant 都有源码依据、直接 caller/callee 与相邻测试已检查，且一轮检索没有新增相关文件时停止检索并开始实现。
 
-引用文件的 hash 与 bootstrap 不一致时，停止使用旧 bootstrap，返回 `NEEDS_CONTEXT` 请求重新运行 `coder-prepare.mjs`。检索轮次耗尽但仍缺少业务事实时同样返回 `NEEDS_CONTEXT`，不要退化成加载全部产物。
+引用文件的 hash 与 bootstrap 不一致时，停止使用旧 bootstrap，返回 `NEEDS_CONTEXT` 请求重新运行 `coder-prepare.mjs`。只有缺少无法从代码、测试或运行结果获得的业务事实时才返回 `NEEDS_CONTEXT`；不要因为达到建议轮数而停止。
+
+实现完成前不得读取 `{idea_dir}/oracle/`。Oracle 断言必须对 Coder 保持盲测；只有实现后的失败输出可以作为返修信号。
 
 `starting_points` 之外的文件如果是正确实现所必需，直接读取并修改，最终摘要说明扩展理由。只有 `explicit_forbidden_paths` 是硬文件边界；需要触碰时返回 NEEDS_CONTEXT，不要绕过。
 
