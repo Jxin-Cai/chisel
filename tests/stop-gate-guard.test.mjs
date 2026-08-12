@@ -61,6 +61,15 @@ describe('Stop gate guard', () => {
     assert.match(result.blockers[0], /do not yield/);
   });
 
+  it('keeps a recursive Stop retry alive until the fresh adversarial reviewer is collected', () => {
+    workflow(root, 'idea', 'plan:adversarial-review');
+    const result = evaluateStop(join(root, '.chisel'), { projectRoot: root, stopHookActive: true });
+    assert.equal(result.recursive_retry, true);
+    assert.match(result.blockers[0], /fresh adversarial reviewer result has not been collected/);
+    assert.match(result.blockers[0], /TaskOutput\(task_id, block: true\)/);
+    assert.match(result.blockers[0], /adversarial-review\.json\/.md/);
+  });
+
   it('allows a recursive Stop retry when the coding lease has expired', () => {
     const ideaDir = workflow(root, 'idea', 'implement:code');
     initTaskState(ideaDir, 'idea', [{ taskId: 'task-005', status: 'coding' }]);

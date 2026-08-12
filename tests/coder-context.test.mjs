@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initTaskState } from '../scripts/workflow-lib.mjs';
 import { queryDecision, queryRefs, querySource, queryTask, readSlice } from '../scripts/context-query.mjs';
+import { importDependencies } from '../scripts/coder-prepare.mjs';
 
 const script = new URL('../scripts/coder-prepare.mjs', import.meta.url).pathname;
 
@@ -70,30 +71,48 @@ Increment the public result.
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it('writes a compact reference-only bootstrap and discovers related file paths', () => {
+  it('writes a bounded hybrid bootstrap with high-relevance source and discovery paths', () => {
     execFileSync(process.execPath, [script, ideaDir, 'task-001', root]);
     const raw = readFileSync(join(ideaDir, 'coder-context/task-001.json'), 'utf8');
     const context = JSON.parse(raw);
-    assert.equal(context.schema_version, 5);
+    assert.equal(context.schema_version, 6);
     assert.equal(context.requirement_ref.path, 'requirement.md');
     assert.match(context.requirement_ref.sha256, /^[a-f0-9]{64}$/);
     assert.deepEqual(context.starting_points, ['src/feature.js']);
     assert.ok(context.discovery.dependencies.includes('src/helper.js'));
     assert.ok(context.discovery.callers.includes('src/caller.js'));
     assert.ok(context.discovery.tests.includes('tests/feature.test.js'));
-    assert.equal(Object.hasOwn(context, 'canonical_requirement'), false);
-    assert.equal(Object.hasOwn(context, 'original_requirement'), false);
-    assert.equal(Object.hasOwn(context, 'source_context'), false);
-    assert.equal(raw.includes('line89'), false);
-    assert.ok(Buffer.byteLength(raw) < 4096, `bootstrap too large: ${Buffer.byteLength(raw)} bytes`);
+    assert.match(context.essential_context.canonical_requirement, /incremented value/);
+    assert.equal(context.essential_context.original_request, null);
+    assert.ok(context.essential_context.source_files.some(file => file.path === 'src/feature.js' && file.content.includes('line89')));
+    assert.ok(context.essential_context.source_files.some(file => file.path === 'tests/feature.test.js'));
+    assert.ok(Buffer.byteLength(raw) < 100_000, `bootstrap too large: ${Buffer.byteLength(raw)} bytes`);
     assert.equal(Object.hasOwn(context, 'task_content'), false);
     assert.equal(Object.hasOwn(context, 'style_samples'), false);
     assert.equal(raw.includes('ORACLE_SECRET_ASSERTION'), false);
     assert.equal(context.decision_refs.user_confirmed, true);
     assert.equal(context.decision_refs.design_notes_ref.selector, 'change_point_details[cp_id in CP-1]');
     assert.equal(context.retrieval.suggested_rounds, 6);
+    assert.equal(context.retrieval.continue_on_truncation, true);
     assert.equal(Object.hasOwn(context.retrieval, 'max_rounds'), false);
     assert.match(context.coder_contract.join('\n'), /not fact or scope boundaries/);
+  });
+
+  it('resolves local dependencies across TypeScript aliases, Python, Go, and JVM imports', () => {
+    writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } } }));
+    mkdirSync(join(root, 'app'), { recursive: true });
+    mkdirSync(join(root, 'pkg', 'math'), { recursive: true });
+    mkdirSync(join(root, 'src', 'main', 'java', 'com', 'acme'), { recursive: true });
+    writeFileSync(join(root, 'app/helper.py'), 'def helper(): return 1\n');
+    writeFileSync(join(root, 'go.mod'), 'module example.com/demo\n');
+    writeFileSync(join(root, 'pkg/math/math.go'), 'package math\n');
+    writeFileSync(join(root, 'src/main/java/com/acme/Helper.java'), 'package com.acme; public class Helper {}\n');
+    execFileSync('git', ['add', '.'], { cwd: root });
+
+    assert.deepEqual(importDependencies(root, 'src/feature.ts', "import { helper } from '@app/helper.js';"), ['src/helper.js']);
+    assert.deepEqual(importDependencies(root, 'app/main.py', 'from app.helper import helper'), ['app/helper.py']);
+    assert.deepEqual(importDependencies(root, 'main.go', 'package main\nimport "example.com/demo/pkg/math"'), ['pkg/math/math.go']);
+    assert.deepEqual(importDependencies(root, 'Main.java', 'import com.acme.Helper;'), ['src/main/java/com/acme/Helper.java']);
   });
 
   it('supports bounded task, reference, source, and line-range retrieval', () => {

@@ -298,7 +298,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `scripts/document-render.mjs` | Deterministically render human-readable docs from structured artifacts without an agent call |
 | `agent-chisel-analyst` | Deep code walkthrough, produce structured as-is data (sonnet) |
 | `agent-chisel-coder` | Implement directly from the original requirement, source code, and runtime evidence without producing process-proof reports |
-| `agent-chisel-oracle` | Freeze 3–8 executable black-box assertions from only the user-confirmed canonical requirement and public entry points before coding |
+| `agent-chisel-oracle` | Freeze 1–12 independently observable black-box assertions from only the user-confirmed canonical requirement and public entry points, preferring detected project-native runners |
 | `agent-chisel-reviewer` | Multi-dimension CR with single-dimension-per-pass (opus) |
 
 ### Scripts

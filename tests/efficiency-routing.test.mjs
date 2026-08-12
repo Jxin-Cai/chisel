@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { writeRequirementClassification } from '../scripts/requirement-classify.mjs';
 import { checkGate, toBePlanFingerprint } from '../scripts/gate-check.mjs';
 import { checkDocumentJob, completeDocumentJob, prepareDocumentJob } from '../scripts/document-job.mjs';
@@ -56,14 +56,40 @@ describe('post-clarification efficiency routing', () => {
     assert.equal(computeStatus(highHotfix).resume_step, 'clarify:requirement');
   });
 
-  it('counts canonical functional_scope arrays instead of treating the object as one item', () => {
+  it('records document shape without inflating complexity when repository evidence is unavailable', () => {
     const dir = temp(); seedClarified(dir);
     const clarification = JSON.parse(readFileSync(join(dir, 'requirement-clarification.json')));
     clarification.dimensions.functional_scope = { in_scope: ['a', 'b', 'c'], allowed_files: ['d', 'e'], expected_files: ['f', 'g'] };
     writeFileSync(join(dir, 'requirement-clarification.json'), JSON.stringify(clarification));
     const result = writeRequirementClassification(dir);
     assert.equal(result.signals.scope_items, 7);
-    assert.equal(result.routing_complexity, 'complex');
+    assert.equal(result.routing_complexity, 'moderate');
+    assert.match(result.reasons.at(-1), /diagnostic only/);
+  });
+
+  it('routes from verified candidate files and modules, not acceptance-criteria count', () => {
+    const dir = temp();
+    mkdirSync(join(dir, 'src', 'users'), { recursive: true });
+    writeFileSync(join(dir, 'src/users/profile.js'), 'export function profile() { return true; }\n');
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['add', '.'], { cwd: dir });
+    seedClarified(dir, { scope: ['src/users/profile.js'], ac: Array.from({ length: 8 }, (_, index) => `AC-${index + 1} profile works`) });
+    const result = writeRequirementClassification(dir, dir);
+    assert.equal(result.signals.acceptance_criteria, 8);
+    assert.equal(result.signals.candidate_files, 1);
+    assert.equal(result.routing_complexity, 'trivial');
+  });
+
+  it('does not treat a negated security term as an active high-risk change', () => {
+    const dir = temp();
+    mkdirSync(join(dir, 'src'), { recursive: true });
+    writeFileSync(join(dir, 'src/profile.js'), 'export const profile = () => true;\n');
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['add', '.'], { cwd: dir });
+    seedClarified(dir, { scope: ['src/profile.js'], extra: 'Do not change auth token behavior.' });
+    const result = writeRequirementClassification(dir, dir);
+    assert.equal(result.signals.high_risk_domain, false);
+    assert.equal(result.routing_complexity, 'trivial');
   });
 
   it('lets core clarification reach classification before progressively requiring promoted dimensions', () => {

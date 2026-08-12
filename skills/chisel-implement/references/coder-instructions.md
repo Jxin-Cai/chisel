@@ -4,7 +4,7 @@
 
 ## 开始前
 
-读取轻量 bootstrap `{idea_dir}/coder-context/{task_id}.json`。它只包含引用、检索种子和硬边界；不要为了省步骤一次性读取所有引用文件。
+读取混合 bootstrap `{idea_dir}/coder-context/{task_id}.json`。先使用 `essential_context` 中的权威需求、原始输入、当前 task 和 3–8 个高相关源码/测试文件建立整体判断；引用和检索用于补齐未知项，不要重复读取已预载的完整文件。
 
 使用 bootstrap 的 `retrieval.command` 按需检索：
 
@@ -31,12 +31,14 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/context-query.mjs {idea_dir} read src/example
 
 按以下循环推进。bootstrap 的 `suggested_rounds` 与 `suggested_files_per_round` 只是控制注意力的软建议，不是停止条件；只要新证据仍会改变实现判断，就继续检索：
 
-1. 读取 `requirement_ref`、当前 task 的 goal/AC/invariants，以及 task-scoped `decision`；不要读取原始输入重新解释需求。
+1. 读取 `essential_context` 和 task-scoped `decision`。`canonical_requirement` 是规范化契约，`original_request` 用于发现转译丢失；两者冲突时不得静默选择，先从输入账本或用户获取澄清。
 2. `decision.authority=user-confirmed-plan` 时遵守其中的目标、非目标、契约、不变式和权衡；未确认时仅作导航。
 3. 记录尚未确认的问题，例如调用方、错误语义或对应测试。
 4. 用 CP/AC、symbol 和 starting points 搜索候选内容，优先每轮只展开能消除当前未知项的少量文件。
 5. 只读取能消除当前未知项的章节或源码区间；新证据产生新未知项时继续下一轮。
 6. 当每个 AC 都有实现/验证落点、每个 invariant 都有源码依据、直接 caller/callee 与相邻测试已检查，且一轮检索没有新增相关文件时停止检索并开始实现。
+
+任何检索结果出现 `truncated: true` 时，必须使用 `continuation` 继续读取，直到当前所需章节或文件语义完整；不得把字符截断当成文件结束。
 
 引用文件的 hash 与 bootstrap 不一致时，停止使用旧 bootstrap，返回 `NEEDS_CONTEXT` 请求重新运行 `coder-prepare.mjs`。只有缺少无法从代码、测试或运行结果获得的业务事实时才返回 `NEEDS_CONTEXT`；不要因为达到建议轮数而停止。
 

@@ -149,7 +149,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/oracle-run.mjs {IDEA_DIR} .
 - `pass` / `not_applicable` → 继续 review
 - `fail` → 把 `oracle/result.json` 中的失败断言和运行输出作为返修信号交给 Coder；不要补充 plan 对失败的解释
 - Coder 修复后重跑受影响的项目测试和同一份 Oracle，最多 2 轮；禁止重写断言来适配实现
-- Oracle 未生成 manifest、脚本不可执行或断言数不在 3–8 时，视为 Oracle 产物错误，不伪装成代码失败；修正产物后再运行
+- Oracle 未生成 manifest、脚本不可执行、断言数不在 1–12，或 `not_applicable` 缺少规范 reason_code 时，视为 Oracle 产物错误，不伪装成代码失败；修正产物后再运行
 
 验证通过后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} implement:code`（返修阶段用 `repair:code`），将 stdout 原样输出到对话，再继续 review。自动 task inventory 只是机器记录，不要求逐 task 展示或让用户确认。
 

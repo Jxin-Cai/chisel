@@ -4,8 +4,8 @@ import { execFileSync } from 'node:child_process';
 import { basename, extname, join, resolve } from 'node:path';
 import { generateRepoMap } from './repo-map.mjs';
 
-const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go', '.rb', '.php', '.java', '.kt']);
-const ENTRY_NAMES = /^(?:src\/|lib\/)?(?:index|main|cli|server|app|routes?|router)(?:\.[^/]+)?$|(?:^|\/)__init__\.py$/i;
+const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte', '.py', '.go', '.rb', '.php', '.java', '.kt', '.rs', '.cs', '.swift', '.dart']);
+const ENTRY_NAMES = /^(?:src\/|lib\/|cmd\/[^/]+\/)?(?:index|main|cli|server|app|routes?|router)(?:\.[^/]+)?$|(?:^|\/)__init__\.py$|(?:^|\/)Program\.cs$/i;
 const SOFT_BUDGET = 80_000;
 
 function fail(message) {
@@ -47,6 +47,43 @@ function packageEntries(projectRoot, files) {
   return entries;
 }
 
+function configEntryFiles(projectRoot, files) {
+  const entries = [];
+  const pyproject = files.includes('pyproject.toml') ? readFileSync(join(projectRoot, 'pyproject.toml'), 'utf8') : '';
+  for (const match of pyproject.matchAll(/^\s*[\w.-]+\s*=\s*["']([\w.]+):[\w.]+["']/gm)) {
+    const modulePath = match[1].replaceAll('.', '/');
+    entries.push(...files.filter(file => file === `${modulePath}.py` || file === `${modulePath}/__init__.py`));
+  }
+  const cargo = files.includes('Cargo.toml') ? readFileSync(join(projectRoot, 'Cargo.toml'), 'utf8') : '';
+  for (const match of cargo.matchAll(/^\s*path\s*=\s*["']([^"']+\.rs)["']/gm)) entries.push(match[1]);
+  if (/\[\[bin\]\]/.test(cargo) && files.includes('src/main.rs')) entries.push('src/main.rs');
+  const composer = readJson(join(projectRoot, 'composer.json'));
+  entries.push(...flattenStrings(composer?.bin));
+  for (const file of files.filter(file => file.endsWith('.go'))) {
+    try {
+      if (/^package\s+main\b/m.test(readFileSync(join(projectRoot, file), 'utf8'))) entries.push(file);
+    } catch { /* optional */ }
+  }
+  return entries;
+}
+
+function detectRunners(projectRoot, files) {
+  const runners = new Set(['node-test', 'python-unittest']);
+  const packageJson = readJson(join(projectRoot, 'package.json'));
+  const scripts = JSON.stringify(packageJson?.scripts || {});
+  const dependencies = JSON.stringify({ ...packageJson?.dependencies, ...packageJson?.devDependencies });
+  const pyproject = files.includes('pyproject.toml') ? readFileSync(join(projectRoot, 'pyproject.toml'), 'utf8') : '';
+  const composer = readJson(join(projectRoot, 'composer.json'));
+  const gemfile = files.includes('Gemfile') ? readFileSync(join(projectRoot, 'Gemfile'), 'utf8') : '';
+  if (files.some(file => /(?:^|\/)(?:pytest\.ini|conftest\.py)$/.test(file)) || /pytest/i.test(pyproject)) runners.add('pytest');
+  if (/jest/i.test(scripts + dependencies)) runners.add('jest');
+  if (/vitest/i.test(scripts + dependencies)) runners.add('vitest');
+  if (files.includes('go.mod')) runners.add('go-test');
+  if (files.includes('vendor/bin/phpunit') || files.some(file => /phpunit\.xml/i.test(file)) || /phpunit/i.test(JSON.stringify(composer || {}))) runners.add('phpunit');
+  if (/rspec/i.test(gemfile) || files.some(file => /(?:^|\/)\.rspec$/.test(file))) runners.add('rspec');
+  return [...runners];
+}
+
 export function discoverPublicEntries(projectRoot, requirementPath) {
   const files = listFiles(projectRoot);
   const explicit = [];
@@ -64,7 +101,7 @@ export function discoverPublicEntries(projectRoot, requirementPath) {
       ...repoMap.frontend.routes.map(route => route.component_file),
     ];
   } catch { /* public discovery is best effort */ }
-  return packageEntries(projectRoot, [...normalizedExplicit, ...common, ...mapped]);
+  return packageEntries(projectRoot, [...normalizedExplicit, ...configEntryFiles(projectRoot, files), ...common, ...mapped]);
 }
 
 export function prepareOracle(ideaDir, projectRoot) {
@@ -77,8 +114,10 @@ export function prepareOracle(ideaDir, projectRoot) {
   }
   const requirementPath = join(ideaDir, 'requirement.md');
   if (!existsSync(requirementPath)) fail(`requirement not found: ${requirementPath}`);
+  const repositoryFiles = listFiles(projectRoot);
+  const allowedRunners = detectRunners(projectRoot, repositoryFiles);
   const context = {
-    schema_version: 2,
+    schema_version: 3,
     canonical_requirement: readFileSync(requirementPath, 'utf8'),
     requirement: readFileSync(requirementPath, 'utf8'),
     project: {
@@ -86,11 +125,16 @@ export function prepareOracle(ideaDir, projectRoot) {
       name: basename(projectRoot),
       public_entries: discoverPublicEntries(projectRoot, requirementPath),
     },
-    allowed_runners: ['node-test', 'pytest', 'jest'],
+    allowed_runners: allowedRunners,
+    runner_guidance: {
+      portable_black_box: 'node-test and python-unittest may spawn a public CLI or call an HTTP endpoint without modifying project files',
+      project_native: allowedRunners.filter(runner => !['node-test', 'python-unittest'].includes(runner)),
+    },
     output_contract: {
       directory: oracleDir,
       manifest: 'manifest.json',
-      assertion_count: { minimum: 3, maximum: 8 },
+      assertion_count: { minimum: 1, maximum: 12, rule: 'one assertion per independently observable requirement outcome; do not pad the count' },
+      not_applicable_reason_codes: ['no_public_entry', 'unsupported_environment', 'requirement_not_observable'],
     },
   };
   writeFileSync(contextPath, `${JSON.stringify(context, null, 2)}\n`);

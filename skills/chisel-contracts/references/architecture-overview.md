@@ -43,11 +43,11 @@
 - **理解阶段**（`chisel-understand`）仅在 `execution_profile=full` 时使用 Explore + Analyst 产出结构化数据；人类文档由 `document-render.mjs` 确定性生成。
 - **规划阶段**（`chisel-plan`）两条分支均写入 tasks + traceability + impact-risk + design-notes，执行完整性自检，再由确定性 renderer 生成 implementation-plan.md。
 - `document-job.mjs` 继续记录 renderer 的完整 required source、optional source/output 及 hash；receipt stale 时重新渲染，不启动 Writer agent。
-- `requirement-classify.mjs` 在澄清完成后按 AC/VC、文件/模块边界、DB/API/迁移、显式风险与 risk tolerance 生成可重算的难度、执行档位和 subagent 预算；显式 moderate/standard/complex 是保守 floor。
+- `requirement-classify.mjs` 在澄清完成后先生成 `requirement-repository-evidence.json`，再按真实候选文件/模块、DB/API/迁移证据、显式风险与 risk tolerance 生成可重算的难度、执行档位和 subagent 预算；AC/VC 数量仅作诊断，显式 moderate/standard/complex 是保守 floor。
 - `requirement-context.mjs` 在澄清前冻结 `requirement-original.md`，维护追加式 `requirement-inputs.json`，并把用户确认绑定到完整 `requirement.md` 及所有输入证据的指纹。schema v2 澄清流程中，任一后续用户输入都会使确认、分类及依赖它的计划失效。
-- `coder-prepare.mjs` 为当前 task 生成 schema v5 轻量 bootstrap，只保存带 hash 的 requirement/task/decision 引用、检索种子、已发现路径和硬边界，不复制需求或源码正文。`context-query.mjs` 提供有界的 task 字段、CP/AC、源码命中和行区间读取。
+- `coder-prepare.mjs` 为当前 task 生成 schema v6 有界混合 bootstrap，预载规范化需求、原始输入、task 摘要和 3–8 个高相关源码/测试文件，同时保存带 hash 的扩展引用、检索种子和硬边界。`source-discovery.mjs` 处理 JS/TS alias、Python、Go、JVM、Ruby 与 Rust 本地依赖；`context-query.mjs` 继续提供有界检索。
 - `agent-chisel-coder` 只按已确认 task 实现，并在自身上下文内按“未知项 → 搜索 → 局部读取 → 停止条件”循环补齐证据，持续执行验证—修复循环并完成 diff 自检。trivial/standard 默认继承主编排器当前模型，complex 和返修升级通过 model override 使用 opus。
-- `agent-chisel-oracle` 在编码前只读取用户确认的权威 `requirement.md` 与公开入口，冻结 3–8 条可执行黑盒断言；它不读取澄清问答、plan/task/report/diff，不拥有 skill、状态机或 HTML 产物。全量验证后执行同一份断言，失败只作为 Coder 返修信号。
+- `agent-chisel-oracle` 在编码前只读取用户确认的权威 `requirement.md` 与公开入口，按独立可观察结果冻结 1–12 条黑盒断言；支持 Node、Python、Jest/Vitest、Go、PHPUnit 与 RSpec，并从多语言项目配置发现公开入口。`not_applicable` 必须提供规范原因码。
 - `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查，每次加载一个维度定义。维度 batch 严格受 `review-policy.json` 限制；所有维度结束后先由 Opus 全局汇总，只对高风险、矛盾或不确定项执行有界独立 skeptic 核验，再由 Opus 综合证据完成最终真伪裁决、共同根因合并和返修策略，完成前禁止返修。
 
 ## As-Is 分层结构

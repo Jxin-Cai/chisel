@@ -26,7 +26,7 @@
     },
     "signals": {
       "type": "object", "additionalProperties": false,
-      "required": ["acceptance_criteria", "verification_conditions", "scope_items", "broad_scope", "cross_boundary", "data_api_migration", "high_risk_domain", "explicit_risk", "low_risk_tolerance", "architectural", "uncertain"],
+      "required": ["acceptance_criteria", "verification_conditions", "scope_items", "broad_scope", "cross_boundary", "data_api_migration", "high_risk_domain", "explicit_risk", "low_risk_tolerance", "architectural", "uncertain", "repository_evidence", "candidate_files", "candidate_modules"],
       "properties": {
         "acceptance_criteria": { "type": "integer", "minimum": 0 },
         "verification_conditions": { "type": "integer", "minimum": 0 },
@@ -38,7 +38,10 @@
         "explicit_risk": { "type": ["string", "null"], "enum": ["low", "medium", "high", null] },
         "low_risk_tolerance": { "type": "boolean" },
         "architectural": { "type": "boolean" },
-        "uncertain": { "type": "boolean" }
+        "uncertain": { "type": "boolean" },
+        "repository_evidence": { "type": "boolean" },
+        "candidate_files": { "type": "integer", "minimum": 0 },
+        "candidate_modules": { "type": "integer", "minimum": 0 }
       }
     },
     "reasons": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }

@@ -15,8 +15,13 @@ function inside(parent, child) {
 
 export function runnerCommand(runner, script) {
   if (runner === 'node-test') return { command: process.execPath, args: ['--test', script] };
+  if (runner === 'python-unittest') return { command: 'python3', args: ['-m', 'unittest', '-q', script] };
   if (runner === 'pytest') return { command: 'python3', args: ['-m', 'pytest', '-q', script] };
   if (runner === 'jest') return { command: 'npm', args: ['exec', '--', 'jest', '--runInBand', script] };
+  if (runner === 'vitest') return { command: 'npm', args: ['exec', '--', 'vitest', 'run', script] };
+  if (runner === 'go-test') return { command: 'go', args: ['test', script] };
+  if (runner === 'phpunit') return { command: 'php', args: ['vendor/bin/phpunit', script] };
+  if (runner === 'rspec') return { command: 'ruby', args: ['-S', 'rspec', script] };
   throw new Error(`unsupported runner: ${runner}`);
 }
 
@@ -26,13 +31,17 @@ export function runOracle(ideaDir, projectRoot) {
   if (!existsSync(manifestPath)) throw new Error('oracle manifest missing; generate or explicitly mark it not_applicable');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   if (manifest.status === 'not_applicable') {
-    const result = { schema_version: 1, status: 'not_applicable', reason: String(manifest.reason || '') };
+    const reasonCode = String(manifest.reason_code || '');
+    if (!['no_public_entry', 'unsupported_environment', 'requirement_not_observable'].includes(reasonCode)) {
+      throw new Error('not_applicable oracle requires reason_code: no_public_entry, unsupported_environment, or requirement_not_observable');
+    }
+    const result = { schema_version: 1, status: 'not_applicable', reason_code: reasonCode, reason: String(manifest.reason || '') };
     writeFileSync(join(oracleDir, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
     return result;
   }
   if (manifest.status !== 'ready') throw new Error(`invalid oracle status: ${manifest.status}`);
-  if (!Number.isInteger(manifest.assertion_count) || manifest.assertion_count < 3 || manifest.assertion_count > 8) {
-    throw new Error('oracle assertion_count must be an integer from 3 to 8');
+  if (!Number.isInteger(manifest.assertion_count) || manifest.assertion_count < 1 || manifest.assertion_count > 12) {
+    throw new Error('oracle assertion_count must be an integer from 1 to 12');
   }
   const script = resolve(oracleDir, String(manifest.script || ''));
   if (!inside(oracleDir, script) || !existsSync(script)) throw new Error('oracle script must exist inside the oracle directory');

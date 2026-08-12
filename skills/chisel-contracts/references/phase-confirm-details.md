@@ -34,6 +34,10 @@ AC/VC 记录非空 `task_refs`、`change_point_refs`、`file_refs`、`verificati
 `status=pass`。每轮完成后运行
 `node ${CLAUDE_PLUGIN_ROOT}/scripts/adversarial-review.mjs {IDEA_DIR} --check`，不能手工判断通过。
 
+如果 fresh reviewer 以后台 Agent 运行，主编排器必须保存 task id，并在同一 turn 调用
+`TaskOutput(task_id, block: true)` 阻塞等待、收割实际结果。禁止以“reviewer 仍在后台运行”或“等待
+完成通知”为由结束 turn；也禁止主编排器单方面替代独立 reviewer 写入 pass 记录。
+
 `to-be-adversarial-approved` gate 机器校验该记录：缺失、空矩阵、未映射 AC/VC、未知 task ref、
 占位 evidence 或结构化产物不一致均失败。`fail` 必须将 findings 转为可执行的 task/traceability/
 impact/implementation-plan 修复，再运行结构校验和新的 fresh review；失败只能回到

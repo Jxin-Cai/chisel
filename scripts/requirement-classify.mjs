@@ -6,6 +6,7 @@ import {
   requirementClassificationFingerprint,
 } from './workflow-lib.mjs';
 import { requirementConfirmationStatus } from './requirement-context.mjs';
+import { readRepositoryEvidence, writeRepositoryEvidence } from './repository-evidence.mjs';
 
 function listSize(value) {
   if (Array.isArray(value)) return value.length;
@@ -51,6 +52,12 @@ function explicitRisk(requirement, dimensions) {
   return null;
 }
 
+function actionableText(value) {
+  return normalizedText(value).split(/\n|[。.!?；;]/).filter(segment =>
+    !/(?:不要|不得|禁止|无需|不涉及|保持|兼容|do\s+not|don't|without|preserve|no\s+change)/i.test(segment)
+  ).join('\n');
+}
+
 export function computeRequirementClassification(ideaDir) {
 
   const requirement = readFileSync(join(ideaDir, 'requirement.md'), 'utf8');
@@ -59,6 +66,9 @@ export function computeRequirementClassification(ideaDir) {
     ? JSON.parse(readFileSync(join(ideaDir, 'scope-escalation.json'), 'utf8')) : null;
   const dimensions = clarification.dimensions || {};
   const combined = `${requirement}\n${JSON.stringify(dimensions)}`;
+  const actionable = actionableText(combined);
+  const repositoryEvidence = readRepositoryEvidence(ideaDir);
+  const repositorySignals = repositoryEvidence?.signals || {};
   const acceptanceCount = listSize(dimensions.acceptance_criteria);
   const scopeCount = functionalScopeSize(dimensions.functional_scope);
   const verificationCount = (Array.isArray(dimensions.acceptance_criteria) ? dimensions.acceptance_criteria : [])
@@ -66,20 +76,27 @@ export function computeRequirementClassification(ideaDir) {
   const explicitRiskLevel = explicitRisk(requirement, dimensions);
   const tolerance = normalizedText(dimensions.risk_tolerance).toLowerCase();
   const lowRiskTolerance = /(^|\W)(low|zero|none|低|零|不接受)(\W|$)/i.test(tolerance);
-  const highRisk = /(auth|permission|token|payment|billing|migration|ddl|delete|security|privacy|鉴权|权限|支付|迁移|删除|安全|隐私)/i.test(combined);
-  const dataApiMigration = /(new\s+api|new\s+endpoint|新增.{0,4}(接口|表)|schema|database|数据库|migration|迁移|ddl)/i.test(combined);
+  const highRisk = /(auth|permission|token|payment|billing|migration|ddl|delete|security|privacy|鉴权|权限|支付|迁移|删除|安全|隐私)/i.test(actionable);
+  const dataApiMigration = /(new\s+api|new\s+endpoint|新增.{0,4}(接口|表)|schema|database|数据库|migration|迁移|ddl)/i.test(actionable);
   const crossBoundary = /(cross[- ]?(repo|module|service)|跨仓|跨模块|跨服务|多个仓库|multi[- ]?repo)/i.test(combined);
-  const architectural = dataApiMigration || crossBoundary || /(并发|distributed|architecture|架构)/i.test(combined);
-  const broadScope = scopeCount > 4 || /全量|所有模块|entire|all modules|全链路/i.test(normalizedText(dimensions.functional_scope));
+  const repositoryFileCount = Number(repositorySignals.candidate_file_count || 0);
+  const repositoryModuleCount = Number(repositorySignals.candidate_module_count || 0);
+  const repositoryKnown = Number(repositoryEvidence?.source_files || 0) > 0;
+  const architectural = crossBoundary || /(并发|distributed|architecture|架构)/i.test(actionable)
+    || (dataApiMigration && (repositorySignals.has_migration_files || repositorySignals.has_external_boundary_files || !repositoryKnown));
+  const broadScope = repositoryFileCount > 8 || repositoryModuleCount > 2
+    || /全量|所有模块|entire|all modules|全链路/i.test(normalizedText(dimensions.functional_scope));
   const canonicalUnresolved = hasCanonicalUnresolved(clarification);
   const uncertain = canonicalUnresolved || /\b(TBD|unknown|unclear|open question)\b|待定|未知|不明确|待确认/i.test(combined);
   const explicit = requirement.match(/^##\s*复杂度(?:[：:]\s*|\s*\n\s*)(hotfix|minor|trivial|moderate|standard|complex)\s*$/mi)?.[1]?.toLowerCase();
   let delivery = 'moderate';
   const reasons = [];
   if (explicit === 'hotfix') delivery = 'hotfix';
-  else if (explicit === 'complex' || acceptanceCount >= 7 || scopeCount >= 7) delivery = 'complex';
-  else if (highRisk || architectural || acceptanceCount >= 5 || scopeCount >= 5) delivery = 'standard';
-  else if (acceptanceCount <= 2 && scopeCount <= 2) delivery = explicit === 'minor' ? 'minor' : 'trivial';
+  else if (explicit === 'complex' || repositoryFileCount > 20 || repositoryModuleCount > 4) delivery = 'complex';
+  else if (highRisk || architectural || repositoryFileCount > 8 || repositoryModuleCount > 2) delivery = 'standard';
+  else if (repositoryFileCount > 2 || (repositoryKnown && repositoryFileCount === 0)) delivery = 'moderate';
+  else if (repositoryFileCount > 0) delivery = explicit === 'minor' ? 'minor' : 'trivial';
+  else if (!repositoryKnown && acceptanceCount <= 2 && scopeCount <= 2) delivery = explicit === 'minor' ? 'minor' : 'trivial';
   if (explicitRiskLevel) reasons.push(`explicit risk level: ${explicitRiskLevel}`);
   if (highRisk) reasons.push('high-risk domain signal');
   if (architectural) reasons.push('architecture/data/API change signal');
@@ -88,7 +105,9 @@ export function computeRequirementClassification(ideaDir) {
   if (lowRiskTolerance) reasons.push('low risk tolerance requires conservative routing');
   if (uncertain) reasons.push('unresolved requirement signal');
   if (canonicalUnresolved) reasons.push('clarification contains canonical unresolved/open questions');
-  reasons.push(`${acceptanceCount} acceptance criteria, ${verificationCount} verification conditions, and ${scopeCount} scope items after clarification`);
+  if (repositoryEvidence) reasons.push(`${repositoryFileCount} candidate files across ${repositoryModuleCount} modules from bounded repository discovery`);
+  else reasons.push('repository evidence unavailable; using conservative requirement fallback');
+  reasons.push(`${acceptanceCount} acceptance criteria, ${verificationCount} verification conditions, and ${scopeCount} scope items (diagnostic only)`);
 
   let routing = delivery;
   const inferredRisk = explicitRiskLevel || (highRisk ? 'high' : (architectural || broadScope ? 'medium' : 'low'));
@@ -145,6 +164,9 @@ export function computeRequirementClassification(ideaDir) {
       low_risk_tolerance: lowRiskTolerance,
       architectural,
       uncertain,
+      repository_evidence: Boolean(repositoryEvidence),
+      candidate_files: repositoryFileCount,
+      candidate_modules: repositoryModuleCount,
     },
     reasons,
   };
@@ -152,7 +174,7 @@ export function computeRequirementClassification(ideaDir) {
 
 export const buildRequirementClassification = computeRequirementClassification;
 
-export function writeRequirementClassification(ideaDir) {
+export function writeRequirementClassification(ideaDir, projectRoot = ideaDir) {
   if (!existsSync(join(ideaDir, 'requirement.md')) || !existsSync(join(ideaDir, 'requirement-clarification.json'))) {
     throw new Error('requirement.md and requirement-clarification.json are required');
   }
@@ -161,6 +183,7 @@ export function writeRequirementClassification(ideaDir) {
     const confirmation = requirementConfirmationStatus(ideaDir);
     if (!confirmation.valid) throw new Error(`canonical requirement is not confirmed: ${confirmation.reason}`);
   }
+  writeRepositoryEvidence(ideaDir, resolve(projectRoot), readFileSync(join(ideaDir, 'requirement.md'), 'utf8'), clarification.dimensions || {});
   const result = buildRequirementClassification(ideaDir);
   atomicWriteFile(join(ideaDir, 'requirement-classification.json'), `${JSON.stringify(result, null, 2)}\n`);
   return result;
@@ -168,10 +191,11 @@ export function writeRequirementClassification(ideaDir) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const ideaDir = process.argv[2];
+  const projectRoot = process.argv[3] || '.';
   if (!ideaDir) {
     process.stderr.write('Usage: node requirement-classify.mjs <idea-dir>\n');
     process.exit(1);
   }
-  try { console.log(JSON.stringify(writeRequirementClassification(resolve(ideaDir)), null, 2)); }
+  try { console.log(JSON.stringify(writeRequirementClassification(resolve(ideaDir), resolve(projectRoot)), null, 2)); }
   catch (error) { process.stderr.write(`${error.message}\n`); process.exit(2); }
 }

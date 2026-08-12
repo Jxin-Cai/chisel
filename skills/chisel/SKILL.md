@@ -212,10 +212,10 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 | `understand:explore` | `/chisel-understand <idea-name>`；repo-map 识别 `source_files=0` 时走 greenfield 确定性快路径，不启动侦察 agent | `as-is-complete` |
 | `understand:confirm` | 自动生成并交付 As-Is HTML；未决事项并入 To-Be 方案确认，不单独等待用户 | `as-is-report-confirmed` |
 | `clarify:requirement` | `/chisel-clarify <idea-name>`；模型自主识别实质缺口，持久化追加输入，生成完整 `requirement.md` 并按 hash 获取用户确认 | `clarification-complete` |
-| `classify:requirement` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR}`；展示 difficulty、execution_profile、reasons 和 subagent_budget | `requirement-classified` |
+| `classify:requirement` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR} .`，先生成有界仓库证据，再按真实候选文件/模块、风险与不确定性选路；展示 difficulty、execution_profile、reasons 和 subagent_budget | `requirement-classified` |
 | `quick-dev:init` | 先执行轻量只读 discovery，写入非空 `quick-dev-scope.json`（`scope_mode=explicit`，含 `allowed_files`、`expected_files`、禁区和 AC）；超过 2 文件/2 模块、含宽泛 glob 或非低风险时写 `scope-escalation.json` 并回到 `classify:requirement`，不得继续实现。随后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}` | `quick-dev-ready` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
-| `plan:adversarial-review` | 运行 fresh reviewer 对照 requirement/clarification/as-is 与全部 to-be 结构化产物；写入 `to-be/adversarial-review.json`/`.md`。`fail` 必须修复 tasks/traceability/impact/implementation plan 后重跑，达到上限进入 `blocked` | `to-be-adversarial-approved` |
+| `plan:adversarial-review` | 运行 fresh reviewer 对照 requirement/clarification/as-is 与全部 to-be 结构化产物；后台 reviewer 必须在当前 turn 用 `TaskOutput(task_id, block: true)` join，禁止只报告等待后停止；按实际结论写入 `to-be/adversarial-review.json`/`.md`。`fail` 必须修复 tasks/traceability/impact/implementation plan 后重跑，达到上限进入 `blocked` | `to-be-adversarial-approved` |
 | `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-report-confirmed` |
 | `worktree:setup` | 多仓 worktree 设置：先运行 `multi-repo-worktree.mjs --detect <workspace-root>`，由用户确认仓库列表和隔离策略；yes → `--create <idea-name> --workspace <workspace-root> --repos ...`，创建每仓同逻辑分支并写入持久 v3 registry；no → 仍需显式记录 current-branch 决策。恢复时必须先运行 `--locate/--resume`，读取 decision/registry 并用 `git worktree list --porcelain` 验证路径；旧 v1/v2 decision 继续接受 | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |

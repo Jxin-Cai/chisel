@@ -16,6 +16,11 @@ impact-risk、implementation plan 等产物，重新运行 schema/traceability �
 `adversarial-review.json`/`.md`；只有 `status: pass` 的记录才能让用户 review `plan:confirm`。
 审查必须受机器 gate 和最大轮次约束，不能只依赖提示词承诺。
 
+> **Fresh reviewer 不能成为停止点。** 如果 reviewer 在后台运行，主编排器必须保存 task id，并在
+> 当前 turn 内调用 `TaskOutput(task_id, block: true)` 等待和收割结果，再按 reviewer 的实际结论写入
+> `adversarial-review.json`/`.md`、运行 gate 并继续编排。等待期间可以发简短进度，但禁止只回复
+> “reviewer 仍在后台/等待完成通知”后停止，也禁止主编排器自行冒充独立 reviewer 生成 pass 记录。
+
 ## 当前工作流状态
 
 !`node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
@@ -179,6 +184,10 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 证据、findings、attempt 和 status。任何未映射、未知 ref、空/占位 evidence 都是 fail；planner
 必须逐条将 finding 变成 task、file plan、traceability 或验证检查的修复，并再次通过本阶段所有
 schema 校验后才能重审。
+
+如果使用后台 Agent，派发后必须立即以 `TaskOutput(task_id, block: true)` join；收到结果前不得结束
+当前 turn。renderer、schema 或 traceability 校验可以在等待期间执行，但不能代替 reviewer 结论，
+也不能把“已做完可并行工作”解释为允许停止。
 </HARD-GATE>
 
 ---

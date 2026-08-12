@@ -294,7 +294,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `scripts/document-render.mjs` | 从结构化产物确定性生成人类可读文档，不消耗 agent 调用 |
 | `agent-chisel-analyst` | 深度代码走查，产出结构化 as-is 数据（sonnet） |
 | `agent-chisel-coder` | 直接基于用户确认的权威需求、实际源码和运行结果实现并验证，不生产流程证明 |
-| `agent-chisel-oracle` | 编码前仅依据用户确认的权威需求和公开入口冻结 3–8 条可执行黑盒断言 |
+| `agent-chisel-oracle` | 编码前仅依据用户确认的权威需求和公开入口，按独立可观察结果冻结 1–12 条可执行黑盒断言，并优先使用检测到的项目 runner |
 | `agent-chisel-reviewer` | 多维度 CR，单维度/次深度审查（opus） |
 
 ### Scripts

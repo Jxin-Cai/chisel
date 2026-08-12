@@ -1,12 +1,10 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync, statSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { dirname, join, relative, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { requirementConfirmationStatus } from './requirement-context.mjs';
-
-const SOURCE_EXTENSIONS = ['', '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go', '.java', '.kt', '.rb', '.php'];
+import { discoverRelatedFiles, importDependencies, preloadSourceContext, unique } from './source-discovery.mjs';
 
 function fail(msg) {
   process.stderr.write(`${JSON.stringify({ error: msg })}\n`);
@@ -21,8 +19,9 @@ function safeJson(path) {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
 }
 
-function unique(values) {
-  return [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))];
+function boundedText(content, maxCharacters, label) {
+  if (!content || content.length <= maxCharacters) return content || '';
+  return `${content.slice(0, maxCharacters)}\n\n[${label} truncated; continue through the corresponding hashed ref]`;
 }
 
 function sectionText(content, heading) {
@@ -36,86 +35,8 @@ function listItems(content, heading) {
     .filter(line => line && line !== '无');
 }
 
-function listRepositoryFiles(projectRoot, excludedDirectory = null) {
-  try {
-    const excluded = excludedDirectory ? relative(projectRoot, resolve(excludedDirectory)).replaceAll('\\', '/') : null;
-    const excludedPrefix = excluded && excluded !== '..' && !excluded.startsWith('../') ? `${excluded.replace(/\/$/, '')}/` : null;
-    return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {
-      cwd: projectRoot, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024,
-    }).split('\n').filter(file => file && !file.startsWith('.chisel/') && (!excludedPrefix || !file.startsWith(excludedPrefix)));
-  } catch { return []; }
-}
-
 function concreteFiles(values, projectRoot) {
   return unique(values).filter(file => !file.includes('*') && existsSync(join(projectRoot, file)));
-}
-
-function matchesHint(file, hint) {
-  if (file === hint) return true;
-  if (hint.endsWith('/')) return file.startsWith(hint);
-  if (hint.endsWith('/**')) return file.startsWith(hint.slice(0, -2));
-  if (hint.endsWith('/*')) return file.startsWith(hint.slice(0, -1)) && !file.slice(hint.length - 1).includes('/');
-  return false;
-}
-
-function resolveRelativeDependency(projectRoot, sourceFile, specifier) {
-  if (!specifier.startsWith('.')) return null;
-  const base = resolve(projectRoot, dirname(sourceFile), specifier);
-  const candidates = SOURCE_EXTENSIONS.flatMap(extension => [
-    `${base}${extension}`,
-    join(base, `index${extension}`),
-  ]);
-  const match = candidates.find(candidate => {
-    try { return existsSync(candidate) && statSync(candidate).isFile(); } catch { return false; }
-  });
-  return match ? relative(projectRoot, match).replaceAll('\\', '/') : null;
-}
-
-function importDependencies(projectRoot, sourceFile, content) {
-  const specifiers = [];
-  const patterns = [
-    /(?:import|export)\s+(?:[^'";]+?\s+from\s+)?['"]([^'"]+)['"]/g,
-    /require\(\s*['"]([^'"]+)['"]\s*\)/g,
-    /^\s*from\s+([.\w/]+)\s+import\s+/gm,
-  ];
-  for (const pattern of patterns) {
-    for (const match of content.matchAll(pattern)) specifiers.push(match[1]);
-  }
-  return unique(specifiers.map(specifier => resolveRelativeDependency(projectRoot, sourceFile, specifier)).filter(Boolean));
-}
-
-function looksLikeTestFor(file, startingPoints) {
-  const lower = file.toLowerCase();
-  if (!/(?:^|\/)(?:test|tests|spec|specs)(?:\/|$)|\.(?:test|spec)\.[^.]+$/.test(lower)) return false;
-  return startingPoints.some(start => {
-    const stem = start.split('/').pop()?.replace(/\.[^.]+$/, '').toLowerCase();
-    return stem && lower.includes(stem);
-  });
-}
-
-function discoverRelatedFiles(projectRoot, startingPoints, taskContent, startingHints = startingPoints, excludedDirectory = null) {
-  const repositoryFiles = listRepositoryFiles(projectRoot, excludedDirectory);
-  const contents = Object.fromEntries(startingPoints.map(file => [file, safeRead(join(projectRoot, file)) || '']));
-  const hintMatches = repositoryFiles.filter(file => startingHints.some(hint => matchesHint(file, hint)) && !startingPoints.includes(file));
-  const dependencies = unique([...startingPoints.flatMap(file => importDependencies(projectRoot, file, contents[file])), ...hintMatches]);
-  const tests = repositoryFiles.filter(file => looksLikeTestFor(file, startingPoints));
-  const symbols = unique([
-    ...(readFrontmatter(taskContent).allowed_symbols || []),
-    ...startingPoints.map(file => file.split('/').pop()?.replace(/\.[^.]+$/, '')),
-  ]).filter(symbol => symbol && symbol.length >= 3);
-  const callers = [];
-  for (const file of repositoryFiles) {
-    if (startingPoints.includes(file) || dependencies.includes(file) || tests.includes(file)) continue;
-    const path = join(projectRoot, file);
-    let text;
-    try {
-      if (!existsSync(path)) continue;
-      text = readFileSync(path, 'utf8');
-      if (text.length > 300_000) continue;
-    } catch { continue; }
-    if (symbols.some(symbol => text.includes(symbol))) callers.push(file);
-  }
-  return { hint_matches: hintMatches, dependencies, tests: unique(tests), callers: unique(callers) };
 }
 
 function sha256(content) {
@@ -193,13 +114,14 @@ function main() {
   ]);
   const startingFiles = concreteFiles(startingHints, projectRoot);
   const related = discoverRelatedFiles(projectRoot, startingFiles, taskContent, startingHints, ideaDir);
+  const preloadedSource = preloadSourceContext(projectRoot, startingFiles, related);
   const decisionRefs = buildDecisionRefs(ideaDir, task, fm);
   const clarification = safeJson(join(ideaDir, 'requirement-clarification.json'));
   const requirementConfirmation = clarification?.schema_version === 2 ? requirementConfirmationStatus(ideaDir) : null;
   if (requirementConfirmation && !requirementConfirmation.valid) fail(`canonical requirement is not confirmed: ${requirementConfirmation.reason}`);
 
   const context = {
-    schema_version: 5,
+    schema_version: 6,
     generated_at: new Date().toISOString(),
     task_id: taskId,
     task_complexity: fm.task_complexity || 'standard',
@@ -211,6 +133,17 @@ function main() {
     task_source_ref: fileRef(ideaDir, 'to-be/tasks.json', `tasks[task_id=${taskId}]`),
     requirement_ref: fileRef(ideaDir, 'requirement.md'),
     clarification_ref: fileRef(ideaDir, 'requirement-clarification.json'),
+    essential_context: {
+      canonical_requirement: boundedText(safeRead(join(ideaDir, 'requirement.md')), 48_000, 'canonical requirement'),
+      original_request: existsSync(join(ideaDir, 'requirement-original.md'))
+        ? boundedText(safeRead(join(ideaDir, 'requirement-original.md')), 32_000, 'original request') : null,
+      task: {
+        goal: sectionText(taskContent, '目标行为'),
+        acceptance_criteria: sectionText(taskContent, 'Acceptance Criteria'),
+        behavior_invariants: sectionText(taskContent, 'Behavior Invariants'),
+      },
+      source_files: preloadedSource.files,
+    },
     requirement_provenance: requirementConfirmation ? {
       canonical_ref: 'requirement.md',
       original_input_ref: 'requirement-original.md',
@@ -238,11 +171,15 @@ function main() {
       suggested_rounds: 6,
       suggested_files_per_round: 8,
       max_characters_per_read: 24000,
+      continue_on_truncation: true,
+      preloaded_files: preloadedSource.files.map(file => file.path),
+      omitted_candidates: preloadedSource.omitted,
       budget_policy: 'soft: continue while new evidence changes the implementation decision',
     },
     coder_contract: [
-      'Resolve requirement_ref before interpreting the task; it is the sole requirement baseline.',
-      'Use context-query and repository search iteratively; do not load every referenced file up front.',
+      'Start from essential_context, then use context-query and repository search for unresolved evidence.',
+      'Treat canonical_requirement as the normalized contract and original_request as loss-detection context; do not silently discard a conflict.',
+      'Whenever a retrieval result is truncated, follow continuation offsets until the required section is complete.',
       'Retrieval round/file counts are pacing guidance, not stop conditions; continue while evidence is still changing the implementation decision.',
       'The task brief and starting_points are navigation hints, not fact or scope boundaries.',
       'Resolve decision_refs selectively and honor confirmed goals, non-goals, contracts, invariants, and design tradeoffs.',
@@ -262,6 +199,7 @@ function main() {
   console.log(JSON.stringify({
     status: 'ok', path: outPath, starting_points: startingHints.length, concrete_starting_files: startingFiles.length,
     discovered_files: unique([...related.dependencies, ...related.tests, ...related.callers]).length,
+    preloaded_files: preloadedSource.files.length, preloaded_characters: preloadedSource.characters,
     bootstrap_bytes: Buffer.byteLength(JSON.stringify(context)), has_rework: Boolean(context.rework_refs),
   }));
 }

@@ -1062,6 +1062,7 @@ export function detectComplexity(ideaDir) {
 export const REQUIREMENT_CLASSIFICATION_SOURCES = Object.freeze([
   'requirement.md',
   'requirement-clarification.json',
+  'requirement-repository-evidence.json',
 ]);
 
 export function requirementClassificationFingerprint(ideaDir) {

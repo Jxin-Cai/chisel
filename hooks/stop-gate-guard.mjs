@@ -72,18 +72,30 @@ function liveCodingBlocker(workflow, taskIds) {
   return `${workflow.idea}: ${taskIds.join(', ')} still have live coding leases; do not yield or only say that you are waiting. Join every background Agent with TaskOutput(task_id, block: true), then merge/finish its result and continue the workflow`;
 }
 
+function pendingAdversarialReviewBlocker(workflow) {
+  if (workflow.step !== 'plan:adversarial-review') return '';
+  try {
+    if (checkGate(workflow.ideaDir, 'to-be-adversarial-approved').pass) return '';
+  } catch {
+    // Gate errors still mean that the automated review step is unfinished.
+  }
+  return `${workflow.idea}: fresh adversarial reviewer result has not been collected; do not yield or only say that you are waiting. Join the background reviewer with TaskOutput(task_id, block: true), persist its actual findings to adversarial-review.json/.md, validate the gate, and continue the workflow`;
+}
+
 export function evaluateStop(chiselDir, { projectRoot = '.', stopHookActive = false } = {}) {
   const workflows = findActiveWorkflows(chiselDir);
   // Claude sets this on the retry caused by a blocking Stop hook. Normally the
-  // retry is allowed through to avoid an infinite loop. A live coding lease is
-  // different: a background Agent is still owned by this turn, so yielding
-  // would orphan its result. Keep the orchestrator alive until it joins the
-  // Agent. Expired leases are deliberately excluded so crashed work cannot
-  // trap the session forever.
+  // retry is allowed through to avoid an infinite loop. Live coding Agents and
+  // a pending fresh adversarial reviewer are different: background work is
+  // still owned by this turn, so yielding would orphan its result. Keep the
+  // orchestrator alive until it joins the Agent. Expired coding leases are
+  // deliberately excluded so crashed coding work cannot trap the session.
   if (stopHookActive) {
     const liveBlockers = workflows.flatMap(workflow => {
       const taskIds = liveCodingTasks(workflow);
-      return taskIds.length > 0 ? [liveCodingBlocker(workflow, taskIds)] : [];
+      if (taskIds.length > 0) return [liveCodingBlocker(workflow, taskIds)];
+      const reviewerBlocker = pendingAdversarialReviewBlocker(workflow);
+      return reviewerBlocker ? [reviewerBlocker] : [];
     });
     return { blockers: liveBlockers, recursive_retry: true };
   }
@@ -93,6 +105,11 @@ export function evaluateStop(chiselDir, { projectRoot = '.', stopHookActive = fa
     const liveTasks = liveCodingTasks(workflow);
     if (liveTasks.length > 0) {
       blockers.push(liveCodingBlocker(workflow, liveTasks));
+      continue;
+    }
+    const reviewerBlocker = pendingAdversarialReviewBlocker(workflow);
+    if (reviewerBlocker) {
+      blockers.push(reviewerBlocker);
       continue;
     }
     const gateId = STEP_GATE_MAP[workflow.step];
