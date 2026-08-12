@@ -167,7 +167,7 @@ user-invocable: false
 
    报告聚焦当前代码实际实现的功能、多维 CR 问题、汇总裁决与根因合并、返修措施、
    累计返修次数和最终复审结论。
-   输出绝对路径与 SHA-256。CR 报告是非阻塞交付物；source fingerprint 新鲜即可自动进入 final:summary，
+   将 `phase-artifacts.mjs` 的 stdout 原样输出到对话（已包含绝对路径 Markdown 链接，不得修改或重新拼接），并附 `reports.mjs` JSON 输出的 SHA-256。CR 报告是非阻塞交付物；source fingerprint 新鲜即可自动进入 final:summary，
    不创建 `confirmations/cr-report.json`，最终用户决策统一在绑定精确代码快照的 merge review 完成。
 
 ### Integration Review（条件触发）

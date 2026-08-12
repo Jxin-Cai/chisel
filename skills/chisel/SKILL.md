@@ -56,15 +56,15 @@ disable-model-invocation: true
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} <completed-step>
 ```
 
-将 stdout **原样输出到对话**。输出使用绝对路径 Markdown 链接，必须逐文件展示；不得只输出目录、只说“已生成”，也不得把链接留到最终总结才集中展示。
+将 stdout **原样输出到对话**，不得修改、截断或重新拼接路径。脚本输出已使用绝对路径 Markdown 链接，必须逐文件展示；不得只输出目录、只说”已生成”、不得自行用 `{IDEA_DIR}` 等变量拼接路径替代脚本输出，也不得把链接留到最终总结才集中展示。
 
 当 `orchestration-runner.mjs` 返回非空 `completed_step_delivery` 时，优先原样输出其中的 `markdown` 字段。报告分为非阻塞交付物和决策门禁：
 
-- `understand:explore` 完成后运行 `reports.mjs {IDEA_DIR} --reports as-is` 并输出链接与 SHA-256；As-Is 不单独停顿，随 To-Be 一起审阅。
-- `plan:design` 与对抗审查完成后，运行 `reports.mjs {IDEA_DIR} --reports to-be`，输出链接与 SHA-256 后停止等待用户确认；确认后写入哈希凭据，再运行
+- `understand:explore` 完成后运行 `reports.mjs {IDEA_DIR} --reports as-is`，从 JSON stdout 的 `generated[0].path`（绝对路径）构造链接并输出 SHA-256；As-Is 不单独停顿，随 To-Be 一起审阅。
+- `plan:design` 与对抗审查完成后，运行 `reports.mjs {IDEA_DIR} --reports to-be`，从 JSON stdout 的 `generated[0].path`（绝对路径）构造链接并输出 SHA-256 后停止等待用户确认；确认后写入哈希凭据，再运行
   `phase-artifacts.mjs {IDEA_DIR} plan:design`，将 stdout 原样输出；提问
-  `plan:confirm` 前必须交付 `reports/to-be-report.html` 链接。
-- `test:unit`、`review:cr-report`、`final:summary` 必须生成并输出各自 HTML 链接与 SHA-256，但不等待确认；报告新鲜性 gate 通过后自动推进。
+  `plan:confirm` 前必须交付报告绝对路径链接。
+- `test:unit`、`review:cr-report`、`final:summary` 必须生成并输出各自 HTML 的绝对路径链接与 SHA-256（路径取自 `generated[0].path`），但不等待确认；报告新鲜性 gate 通过后自动推进。
 - `review:merge` 必须先生成结构化合并审阅快照，把“当前代码做了什么”、精确 diff/验证/风险/决策
   合并进同一份 `reports/cr-report.html`，再询问 Approve / Request changes / Comment；不得另交付一份 Merge Review 报告。
 
@@ -178,7 +178,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} to-be
 
 阶段规则：
 - `understand:explore` 完成 → 生成 `as-is` 并校验报告源指纹，不单独等待确认。
-- `plan:design` 与对抗审查完成 → 生成 `to-be`，输出 `reports/to-be-report.html`，等待确认；同时完成方案详细确认后，由 `to-be-report-confirmed` gate 校验报告哈希。
+- `plan:design` 与对抗审查完成 → 生成 `to-be`，输出报告绝对路径链接（取自 `generated[0].path`），等待确认；同时完成方案详细确认后，由 `to-be-report-confirmed` gate 校验报告哈希。
 - 首轮 `test:unit` → 运行完整单测与覆盖率；返修轮运行受影响测试；全部 CR 通过后在最终 HEAD 上再运行一次完整测试与覆盖率封板。每轮报告生成后自动推进。
 - `review:cr*` 只执行多维审查和返修闭环；全部 findings 修复并复审通过后进入 `review:cr-report`，生成 `cr` 后自动推进。
 - `final:summary` 完成 → 生成 `task-time` 并自动进入 merge review。

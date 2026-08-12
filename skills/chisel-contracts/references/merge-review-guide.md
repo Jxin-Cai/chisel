@@ -15,8 +15,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} review:merge
 
 命令顺序是硬性协议：先写入供 renderer 使用的内部结构化快照 JSON，再重新生成统一的
 `reports/cr-report.html`，解析并保留生成器返回的 SHA-256。不得生成或交付单独的 Merge Review Markdown 报告。将
-`phase-artifacts.mjs` 输出原样发送到对话（其中必须有绝对路径 Markdown 链接，包含
-`reports/cr-report.html`），再进入 AskUserQuestion 并停止等待用户决定。HTML renderer 使用
+`phase-artifacts.mjs` 输出原样发送到对话（脚本已生成绝对路径 Markdown 链接，不得修改或重新拼接路径），再进入 AskUserQuestion 并停止等待用户决定。HTML renderer 使用
 `cr/current-change-report.json` 作为内部快照数据源；用户在同一份 CR 报告中查看当前代码实现、
 readiness、scope、diff、checks、machine CR、risk 和 decision 选项。
 

@@ -121,7 +121,7 @@ orchestration-status 会再次返回 `test:unit` 且 `verification_mode=full-fin
   - 最多尝试修复 2 次；仍失败则保持在 implement/repair，报告明确阻塞原因，不得进入 CR
 - 未检测到验证命令时结果为 `fail`；先从项目说明、CI 或用户输入补充可重复执行的验证命令，不得以 skip 代替验证
 
-验证通过后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} implement:code`（返修阶段用 `repair:code`），将 stdout 原样输出到对话，再继续 review。Task 多于一个时，每个 task 完成后也必须立即输出该 task report 的绝对路径 Markdown 链接，不等待所有 task 结束。
+验证通过后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} implement:code`（返修阶段用 `repair:code`），将 stdout 原样输出到对话（脚本已生成绝对路径 Markdown 链接，不得修改或重新拼接），再继续 review。Task 多于一个时，每个 task 完成后也必须立即输出该 task report 的绝对路径 Markdown 链接（路径 = `resolve(join(IDEA_DIR, 'task-reports', '<task-id>-report.md'))`），不等待所有 task 结束。
 
 <HARD-GATE principle="P2">
 只有 `--next-tasks` 返回的 task 才能启动。

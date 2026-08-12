@@ -13,7 +13,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports as-is
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} understand:explore
 ```
 
-将第二条命令 stdout 原样输出到对话，确保包含绝对路径和 SHA-256。As-Is 是非阻塞交付物，
+将第二条命令 stdout 原样输出到对话（脚本已生成绝对路径 Markdown 链接，不得修改或重新拼接路径）。As-Is 是非阻塞交付物，
 不创建 `confirmations/as-is.json`，不等待单独确认。overview 中的风险、待澄清事项和 checklist
 合并进 To-Be 报告，用户在 `plan:confirm` 一次决策。`as-is-report-confirmed` 兼容 gate 在新流程中表示
 “As-Is 结构化数据有效且 HTML source fingerprint 新鲜”。
@@ -51,8 +51,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports to-be
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 ```
 
-将第二条命令 stdout 原样输出到对话，确保包含绝对路径
-`{IDEA_DIR}/reports/to-be-report.html` 的 Markdown 链接和 SHA-256。用户明确确认后，才写入
+将第二条命令 stdout 原样输出到对话（脚本已生成绝对路径 Markdown 链接，不得修改或重新拼接路径）。
+`reports.mjs` 返回的 JSON 中 `generated[0].path` 即为报告绝对路径，同时输出 SHA-256。用户明确确认后，才写入
 `confirmations/to-be.json`，通过 gate 后进入下一步；若用户要求调整，回到
 `plan:design` 重新生成方案和 HTML。
 
@@ -122,7 +122,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 ```
 
 写完后先运行 `final-summary-complete` gate；通过后运行 `reports.mjs {IDEA_DIR} --reports task-time`。
-把报告绝对路径与 SHA-256 返回用户，source fingerprint 新鲜后自动进入 `review:merge`，不创建
+从 JSON stdout 的 `generated[0].path`（绝对路径）构造 Markdown 链接并输出 SHA-256 返回用户，source fingerprint 新鲜后自动进入 `review:merge`，不创建
 `confirmations/task-time-report.json`。此时禁止创建 `.done`；最终决策仍由绑定当前代码快照的 merge review 完成。
 
 ---

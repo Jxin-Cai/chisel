@@ -40,12 +40,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --summary
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports <report-type>
    ```
-4. 解析 stdout JSON 的 `generated[0].path` 与 `generated[0].sha256`
-5. 立即输出一个可点击链接、报告哈希，并询问用户是否确认。然后结束当前 turn，不得生成下一份：
+4. 解析 stdout JSON 的 `generated[0].path`（绝对路径）与 `generated[0].sha256`
+5. 立即输出一个可点击链接、报告哈希，并询问用户是否确认。链接目标必须直接使用 `generated[0].path` 的值（已经是绝对路径），不得自行拼接。然后结束当前 turn，不得生成下一份：
    ```
-   HTML 报告待确认：[{idea-name} · As-Is]({IDEA_DIR}/reports/as-is-report.html)
+   HTML 报告待确认：[{idea-name} · <report-type>](generated[0].path 的绝对路径值)
    SHA-256: <sha256>
-   请明确回复“确认”或指出需要修改的内容。
+   请明确回复”确认”或指出需要修改的内容。
    ```
 6. 只有用户明确确认后，才运行：
    ```bash
