@@ -15,7 +15,7 @@
 | `as-is/core-walkthrough.md` | 需求涉及的核心调用链 + 关键分支走查，一个文件讲透主路径 |
 | `as-is/evidence-index.md` | 所有结论的证据路径索引 |
 | `as-is/evidence-ledger.json` | `F-xxx` 事实证据账本，供 gate 和 ai-input 反查 |
-| `as-is/coverage-matrix.json` | 入口、链路、数据、副作用的结构化覆盖矩阵，供 gate 判断 as-is 是否覆盖关键影响面 |
+| `as-is/coverage-matrix.json` | 入口、完整既有逻辑链路、领域模型、数据、副作用的结构化覆盖矩阵，供 gate 判断 as-is 是否覆盖关键影响面并生成 UML |
 | `as-is/context-budget.md` | 探索上下文预算：已读文件清单、未读相关文件、覆盖度自评 |
 
 ### 枝干文件（按需产出，主干引用时才创建）
@@ -89,7 +89,7 @@
 
 ## core-walkthrough.md
 
-以 Mermaid sequenceDiagram 开头，中文业务语义。
+以 Mermaid sequenceDiagram 开头，中文业务语义。时序图必须罗列需求范围内所有预计会被改造的既有代码逻辑，从入口一直追到返回值或副作用终点；不得只画“代表性主链路”，不得省略会影响改造决策的校验、分支、异常、读写和事件链路。
 
 必须包含：核心时序图（Mermaid）、核心流程图（Mermaid flowchart）、状态变化、异常路径、safe-to-change area。复杂细节用 `→ 详见 details/xxx.md` 引出。
 
@@ -137,7 +137,7 @@
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "entrypoints": [
     {
       "id": "E-001",
@@ -165,6 +165,44 @@
       "operation": "write",
       "fields": ["id", "status"],
       "evidence": [{ "file": "src/repository/order.ts", "line_start": 88 }]
+    }
+  ],
+  "domain_models": [
+    {
+      "id": "DM-001",
+      "name": "Order",
+      "kind": "aggregate_root|entity|value_object|domain_service|repository|domain_event|other",
+      "definition": "订单聚合根，维护订单状态与明细一致性",
+      "fields": [
+        { "name": "status", "type": "OrderStatus", "meaning": "订单生命周期状态" }
+      ],
+      "operations": [
+        { "name": "confirm", "meaning": "校验并确认订单" }
+      ],
+      "invariants": ["已取消订单不能再次确认"],
+      "evidence": [{ "file": "src/domain/order.ts", "line_start": 12 }]
+    },
+    {
+      "id": "DM-002",
+      "name": "OrderLine",
+      "kind": "entity",
+      "definition": "订单聚合中的明细实体",
+      "fields": [{ "name": "sku", "type": "Sku", "meaning": "商品标识" }],
+      "operations": [],
+      "invariants": ["数量必须为正数"],
+      "evidence": [{ "file": "src/domain/order-line.ts", "line_start": 8 }]
+    }
+  ],
+  "domain_relationships": [
+    {
+      "id": "DR-001",
+      "from": "DM-001",
+      "to": "DM-002",
+      "kind": "inheritance|composition|aggregation|association|dependency|realization",
+      "label": "contains",
+      "from_cardinality": "1",
+      "to_cardinality": "1..*",
+      "evidence": [{ "file": "src/domain/order.ts", "line_start": 18 }]
     }
   ],
   "side_effects": [
@@ -207,12 +245,15 @@
     "data": "",
     "side_effects": "",
     "ui_entries": "",
-    "field_traces": ""
+    "field_traces": "",
+    "domain_models": ""
   }
 }
 ```
 
-要求：`entrypoints`、`links`、`data`、`side_effects` 四个维度必须存在；每个维度要么有覆盖项，要么在 `not_applicable` 写明不涉及原因。每个覆盖项必须有 `file + line_start` 证据；`covered_by_facts` 只能引用 evidence-ledger 中已有的 `F-xxx`。
+要求：新产物使用 `schema_version: 3`。`entrypoints`、`links`、`data`、`side_effects` 四个运行维度必须存在；每个维度要么有覆盖项，要么在 `not_applicable` 写明不涉及原因。`links` 必须覆盖需求范围内所有预计会被改造的既有代码逻辑，并从入口追踪到返回或副作用终点，不能只采样前 8/12 个节点。每个覆盖项必须有 `file + line_start` 证据；`covered_by_facts` 只能引用 evidence-ledger 中已有的 `F-xxx`。
+
+`domain_models` 与 `domain_relationships` 专门描述领域模型，不得用数据库表调用顺序代替。模型必须包含定义、关键属性/行为/不变量；关系必须引用模型 ID，并写明 UML 关系类型、语义和多重性。确实没有领域模型时，`domain_models` 为空，并在 `not_applicable.domain_models` 说明原因。
 
 `ui_entries`（可选）：当项目有前端且需求涉及页面时产出。记录页面组件→API 调用的映射，供 planner 设计前端改造点。
 

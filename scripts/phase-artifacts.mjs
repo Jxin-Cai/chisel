@@ -27,8 +27,6 @@ const STEP_OUTPUTS = Object.freeze({
   'review:cr-report': ['cr/review-report.md', 'reports/cr-report.html', 'confirmations/cr-report.json'],
   'final:summary': ['final-summary.md', 'reports/task-time-report.html', 'confirmations/task-time-report.json'],
   'review:merge': [
-    'cr/current-change-report.json',
-    'cr/current-change-report.md',
     'confirmations/merge-review.json',
     'reports/cr-report.html',
   ],

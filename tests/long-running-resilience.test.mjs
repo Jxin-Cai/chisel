@@ -91,12 +91,13 @@ describe('long-running resilience', () => {
     });
   });
 
-  it('caps review concurrency and skeptic fan-out', () => {
+  it('caps review concurrency and targeted skeptic fan-out', () => {
     const plan = planReview({ dimensions: ['d2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'], findingCount: 20, riskLevel: 'high' });
     assert.ok(plan.dimension_batches.every(batch => batch.length <= 3));
-    assert.equal(plan.skeptic_votes_per_finding, 3);
-    assert.equal(plan.skeptic_finding_budget, 3);
-    assert.equal(plan.overflow_findings, 17);
+    assert.equal(plan.aggregate_assessment_agents, 2);
+    assert.equal(plan.findings_in_single_assessment, 20);
+    assert.equal(plan.targeted_skeptic_finding_budget, 6);
+    assert.equal(plan.targeted_skeptic_max_concurrency, 3);
   });
 
   it('blocks direct Bash writes to protected machine state', () => {

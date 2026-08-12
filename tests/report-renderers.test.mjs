@@ -64,12 +64,30 @@ describe('report renderers', () => {
   });
 
   it('renders hierarchical As-Is UML and a linked To-Be change journey', () => {
+    const links = Array.from({ length: 14 }, (_, index) => ({
+      id: `L-${String(index + 1).padStart(3, '0')}`,
+      from: index === 0 ? 'Controller' : `Step${index}`,
+      to: index === 13 ? 'Repository' : `Step${index + 1}`,
+      kind: 'sync-call',
+    }));
     const asIs = REPORT_SECTIONS['as-is']({
-      ideaName: 'demo', overview: '# 摘要', coreWalkthrough: '# 走查', evidenceLedger: null, qualityScore: null,
-      coverageMatrix: { links: [{ from: 'Controller', to: 'Service', kind: 'sync-call' }] },
+      ideaName: 'demo', overview: '# 摘要', coreWalkthrough: '# 走查\n```mermaid\nflowchart LR\nA --> B\n```', evidenceLedger: null, qualityScore: null,
+      coverageMatrix: {
+        links,
+        domain_models: [
+          { id: 'DM-1', name: 'Order', kind: 'aggregate_root', fields: [{ name: 'status', type: 'OrderStatus' }], operations: [{ name: 'confirm' }] },
+          { id: 'DM-2', name: 'OrderLine', kind: 'entity', fields: ['sku'], operations: [] },
+        ],
+        domain_relationships: [{ from: 'DM-1', to: 'DM-2', kind: 'composition', from_cardinality: '1', to_cardinality: '1..*', label: 'contains' }],
+      },
     });
     assert.match(asIs, /UML Sequence/);
     assert.match(asIs, /Controller/);
+    assert.match(asIs, /L-014/, 'the full existing logic chain must not be truncated');
+    assert.match(asIs, /classDiagram/);
+    assert.match(asIs, /OrderStatus status/);
+    assert.match(asIs, /\*--/);
+    assert.match(asIs, /<pre class="mermaid">flowchart LR/);
     assert.match(asIs, /<details[^>]+as-is-overview[^>]+open/);
     assert.match(asIs, /阅读路径/);
 
@@ -82,9 +100,22 @@ describe('report renderers', () => {
     });
     assert.match(toBe, /UML Target Model/);
     assert.match(toBe, /改造点全链路/);
+    assert.match(toBe, /diagram-card-bleed/);
+    assert.match(toBe, /flowchart LR/);
     assert.match(toBe, /href="#cp-cp-1"/);
     assert.match(toBe, /id="cp-cp-1"/);
     assert.match(toBe, /完整实施方案/);
+  });
+
+  it('renders Mermaid fenced blocks from To-Be markdown instead of showing them as paragraphs', () => {
+    const html = REPORT_SECTIONS['to-be']({
+      ideaName: 'demo',
+      implementationPlan: '# 方案\n\n```mermaid\nflowchart LR\nA --> B\n```',
+      normalizedTasks: [], traceabilityTree: { percentage: 0, covered: 0, total: 0 },
+      changePoints: [], dataChanges: null, apiChanges: null, taskDetails: {}, impactRisk: null,
+    });
+    assert.match(html, /<pre class="mermaid">flowchart LR/);
+    assert.doesNotMatch(html, /<p>```mermaid<\/p>/);
   });
 
   it('ignores a stale merge confirmation whose report hash does not match', () => {

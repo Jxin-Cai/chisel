@@ -45,6 +45,13 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {IDEA_DIR} <task-id> --re
 
 注意：这里的 worktree 是 Agent 工具的 **临时隔离机制**（task 级，用完即弃），不是用户在 `worktree:setup` 阶段选择的需求级 worktree。Agent 的临时 worktree 在合并回收后自动清理。
 
+#### 后台 Agent 生命周期硬约束
+
+- 优先在同一条消息中并行发出 Agent 调用并等待它们返回；并行不等于允许主编排器结束当前 turn。
+- 如果运行环境使用 `run_in_background: true`，必须保存每个 Agent 返回的 task id，并在派发后对每个任务调用 `TaskOutput(task_id, block: true)` 收割结果。等待期间可以发送简短进度，但不得只回复“后台编码中/等待完成通知”后停止。
+- 只要 task 状态仍为 `coding` / `repairing` 且 lease 未过期，主编排器不得 yield。后台完成通知也不等于 task 完成；必须继续执行下方的合并回收、`--finish-task`、report/scope 校验和后续批次。
+- 只有 Agent 明确返回 `NEEDS_CONTEXT` / `BLOCKED`，或 lease 已过期且无法恢复任务时，才按对应阻塞流程交还用户。
+
 ### 3. 合并回收
 
 每个 Agent 返回后：

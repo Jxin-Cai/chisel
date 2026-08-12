@@ -14,7 +14,7 @@
 
 <br/>
 
-Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件，用文件驱动的工作流帮助你在遗留系统上安全地增加功能：先理解 as-is，再设计 to-be，经过机器强制的对抗完整性审查后才允许用户确认方案，然后拆 task、实现、架构师 CR、返修闭环，最后审阅当前变更报告并批准交付。审查未通过会回到方案修复并循环，不能把不完整方案交给用户 review。
+Chisel 是一个 [Claude Code](https://github.com/anthropics/claude-code) 插件，用文件驱动的工作流帮助你在遗留系统上安全地增加功能：先理解 as-is，再设计 to-be，经过机器强制的对抗完整性审查后才允许用户确认方案，然后拆 task、实现、架构师 CR、返修闭环，最后在统一 CR 报告中审阅当前实现与精确代码快照并批准交付。审查未通过会回到方案修复并循环，不能把不完整方案交给用户 review。
 
 每一步都产出文件化产物，方便中断后恢复，也方便人审查 AI 的每一步判断。
 
@@ -118,10 +118,10 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 
 ```
 接收需求 → 需求澄清 → 难度/执行档位分级
-→ [仅 full：理解 as-is → 后台 Writer → 用户确认] → 方案设计 → 后台 Writer
+→ [仅 full：理解 as-is → 确定性文档渲染] → 方案设计 → 确定性文档渲染
 → 对抗完整性审查（失败则修复循环）→ 用户确认方案 → 初始化 task → 编码
 → 单测/覆盖率与异常集中返修 → 单测报告 → 多维架构师 CR → [返修闭环] → CR 报告
-→ 最终总结 → 当前变更报告 → 用户合并决策 → 交付
+→ 最终总结 → CR 报告内合并审阅 → 用户合并决策 → 交付
 ```
 
 方括号表示可能跳过的步骤（取决于复杂度分级）。
@@ -132,19 +132,19 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 |---|---|---|
 | 1 | **接收需求** | 解析用户输入，按模板保存 `requirement.md` |
 | 2 | **澄清并分级** | 先澄清，再持久化带输入指纹的难度、风险、执行档位与 subagent 预算 |
-| 3 | **理解 as-is（仅 full）** | 有历史源码时由 explorer/analyst 产出证据并由后台 Writer 生成人类文档；历史源码为 0 时走确定性 greenfield 基线，不启动侦察 agent |
+| 3 | **理解 as-is（仅 full）** | 有历史源码时由 explorer/analyst 产出证据，再由确定性 renderer 生成人类文档；历史源码为 0 时走 greenfield 基线 |
 | 4 | **确认 as-is（仅 full）** | 人类审查 3 分钟摘要、风险地图、误解点，逐项确认 |
 | 5 | **方案设计** | planner 产出实现计划、task 定义、追溯矩阵 |
 | 6 | **对抗完整性审查** | fresh reviewer 逐项对照 requirement/clarification/as-is/to-be；发现遗漏即生成 findings，修复后重跑，直到 pass |
 | 7 | **确认方案** | 仅在对抗 gate 通过后，人类审查策略方向和 task 拆分 |
 | 8 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
 | 9 | **编码** | coder agent 在受限文件范围内编码 |
-| 10 | **单测与覆盖率** | 新鲜完整单测、覆盖率采集、异常集中返修并产出单测报告 |
+| 10 | **单测与覆盖率** | 首轮和最终封板跑完整单测/覆盖率；返修轮只跑受影响检查，最终报告自动交付 |
 | 11 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
 | 12 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
 | 13 | **CR 报告** | 多维 CR findings 全部修复并复审通过后，汇总功能、问题与返修 |
 | 14 | **最终总结** | 汇总变更、scope control 和交付回执 |
-| 15 | **合并前 CR** | 生成当前变更报告，要求用户选择批准、要求修改或评论/暂缓 |
+| 15 | **合并前 CR** | 把当前实现与精确快照并入 CR 报告，要求用户选择批准、要求修改或评论/暂缓 |
 | 16 | **交付** | 用户确认后通过隔离 integration worktree 转分支、合并或进入冲突链路 |
 
 ### 复杂度分级
@@ -164,7 +164,7 @@ chisel 根据澄清后的执行路径启用 **最多 3 个人工关卡**：
 
 1. **As-is 确认** — 验证对当前系统行为的理解
 2. **To-be 确认** — 批准实现方向、完整 task 拆分、依赖和风险
-3. **合并前 CR** — 审阅当前变更报告，明确批准精确的 Git/工作区快照
+3. **合并前 CR** — 在统一 CR 报告中审阅当前实现，明确批准精确的 Git/工作区快照
 
 full 路径使用全部三个关卡；moderate 跳过 As-is 确认，保留 To-be 和合并前 CR；direct 的 hotfix/minor/trivial 跳过两次设计确认，通常只保留精确快照的合并前 CR。
 
@@ -227,12 +227,10 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-st
 ```text
 .chisel/<idea-name>/task-reports/    # 实现报告
 .chisel/<idea-name>/cr/              # 代码审查结果
-.chisel/<idea-name>/cr/current-change-report.md   # 人工审阅的合并前变更报告
-.chisel/<idea-name>/cr/current-change-report.json # 绑定代码快照的结构化报告
+.chisel/<idea-name>/cr/current-change-report.json # CR renderer 使用的内部合并审阅快照
 .chisel/<idea-name>/confirmations/merge-review.json # 批准/要求修改/暂缓决定
-.chisel/<idea-name>/confirmations/cr-report.json    # 绑定哈希的 CR 报告确认
-.chisel/<idea-name>/confirmations/task-time-report.json # 绑定哈希的任务与耗时报告确认
-.chisel/<idea-name>/reports/                        # 五份独立 HTML 报告（含单测覆盖率）
+.chisel/<idea-name>/confirmations/to-be.json        # 唯一的阶段方案确认
+.chisel/<idea-name>/reports/                        # 五份 HTML 报告（合并审阅并入 CR 报告）
 .chisel/<idea-name>/final-summary.md # 最终变更总结
 ```
 
@@ -293,7 +291,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 
 | Agent | 说明 |
 |---|---|
-| `agent-chisel-writer` | 从结构化产物生成人类可读文档（sonnet） |
+| `scripts/document-render.mjs` | 从结构化产物确定性生成人类可读文档，不消耗 agent 调用 |
 | `agent-chisel-analyst` | 深度代码走查，产出结构化 as-is 数据（sonnet） |
 | `agent-chisel-coder` | 按 confirmed task 持续实现并验证（默认继承主编排器模型，复杂/升级任务覆盖为 opus） |
 | `agent-chisel-reviewer` | 多维度 CR，单维度/次深度审查（opus） |

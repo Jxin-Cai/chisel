@@ -4,11 +4,11 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, readRequirementClassification, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { validateTasksDocument } from './task-init.mjs';
-import { validateVerificationResult } from './verification-lib.mjs';
+import { validateIncrementalVerificationResult, validateVerificationResult } from './verification-lib.mjs';
 import { validateUnitTestEvidence } from './unit-test-evidence.mjs';
 import { readTaskRun } from './task-provenance.mjs';
 import { validateMergeReviewConfirmation, validateMergeReviewReport } from './merge-review.mjs';
-import { reportStatus } from './report-confirm.mjs';
+import { reportReadyStatus, reportStatus } from './report-confirm.mjs';
 import { checkDocumentJob } from './document-job.mjs';
 import { computeRequirementClassification } from './requirement-classify.mjs';
 import { PROJECT_MODES, projectModeFromRepoMap } from './project-profile.mjs';
@@ -836,7 +836,7 @@ function validateAsIsCoverageMatrix(ideaDir) {
   const parsed = readJsonFile(file);
   if (parsed.error) return `as-is/coverage-matrix.json invalid JSON: ${parsed.error}`;
   const doc = parsed.value;
-  if (doc?.schema_version !== 1 && doc?.schema_version !== 2) return 'coverage-matrix.json schema_version must be 1 or 2';
+  if (![1, 2, 3].includes(doc?.schema_version)) return 'coverage-matrix.json schema_version must be 1, 2, or 3';
   const ledgerIds = evidenceLedgerFactIds(ideaDir);
   for (const section of ['entrypoints', 'links', 'data', 'side_effects']) {
     const items = doc?.[section];
@@ -858,6 +858,41 @@ function validateAsIsCoverageMatrix(ideaDir) {
       if (invalidEvidenceIndex >= 0) return `${label} evidence[${invalidEvidenceIndex}] missing file or positive line_start`;
       const unknownFacts = (item.covered_by_facts || []).filter(id => !ledgerIds.has(id));
       if (unknownFacts.length > 0) return `${label} references unknown facts: ${unknownFacts.join(', ')}`;
+    }
+  }
+  if (doc.schema_version === 3) {
+    if (!Array.isArray(doc.domain_models)) return 'coverage-matrix.json domain_models must be an array for schema_version 3';
+    if (!Array.isArray(doc.domain_relationships)) return 'coverage-matrix.json domain_relationships must be an array for schema_version 3';
+    if (doc.domain_models.length === 0 && !String(doc?.not_applicable?.domain_models || '').trim()) {
+      return 'coverage-matrix.json domain_models must contain models or not_applicable.domain_models reason';
+    }
+    const modelIds = new Set();
+    for (const [index, model] of doc.domain_models.entries()) {
+      const label = `domain_models[${index}]`;
+      if (!model?.id || typeof model.id !== 'string') return `${label} missing id`;
+      if (modelIds.has(model.id)) return `${label} id '${model.id}' is duplicated`;
+      modelIds.add(model.id);
+      if (!String(model.name || '').trim()) return `${label} missing name`;
+      if (!String(model.kind || '').trim()) return `${label} missing kind`;
+      if (!String(model.definition || '').trim()) return `${label} missing definition`;
+      if (!Array.isArray(model.fields)) return `${label} fields must be an array`;
+      if (!Array.isArray(model.operations)) return `${label} operations must be an array`;
+      if (!Array.isArray(model.invariants)) return `${label} invariants must be an array`;
+      const evidence = itemEvidence(model);
+      if (evidence.length === 0) return `${label} missing evidence`;
+      const invalidEvidenceIndex = evidence.findIndex(entry => !evidenceHasFileLine(entry));
+      if (invalidEvidenceIndex >= 0) return `${label} evidence[${invalidEvidenceIndex}] missing file or positive line_start`;
+    }
+    for (const [index, relationship] of doc.domain_relationships.entries()) {
+      const label = `domain_relationships[${index}]`;
+      if (!relationship?.id || typeof relationship.id !== 'string') return `${label} missing id`;
+      if (!modelIds.has(relationship.from)) return `${label} from references unknown model: ${relationship.from}`;
+      if (!modelIds.has(relationship.to)) return `${label} to references unknown model: ${relationship.to}`;
+      if (!String(relationship.kind || '').trim()) return `${label} missing kind`;
+      const evidence = itemEvidence(relationship);
+      if (evidence.length === 0) return `${label} missing evidence`;
+      const invalidEvidenceIndex = evidence.findIndex(entry => !evidenceHasFileLine(entry));
+      if (invalidEvidenceIndex >= 0) return `${label} evidence[${invalidEvidenceIndex}] missing file or positive line_start`;
     }
   }
   return '';
@@ -1516,9 +1551,9 @@ export function checkGate(ideaDir, gateId) {
       return decisionReason ? result(gateId, false, decisionReason) : result(gateId, true, '', { legacy: true });
     }
     case 'as-is-report-confirmed': {
-      const confirmation = checkGate(ideaDir, 'as-is-confirmed');
-      if (!confirmation.pass) return result(gateId, false, confirmation.reason);
-      const report = reportStatus(ideaDir, 'as-is');
+      const asIs = checkGate(ideaDir, 'as-is-complete');
+      if (!asIs.pass) return result(gateId, false, asIs.reason);
+      const report = reportReadyStatus(ideaDir, 'as-is');
       return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'strategy-exists':
@@ -1633,10 +1668,26 @@ export function checkGate(ideaDir, gateId) {
       const reason = validateUnitTestEvidence(ideaDir, '.');
       return reason ? result(gateId, false, reason) : result(gateId, true);
     }
+    case 'incremental-verification-complete': {
+      const reason = validateIncrementalVerificationResult(ideaDir, '.');
+      return reason ? result(gateId, false, reason) : result(gateId, true);
+    }
+    case 'verification-ready-for-review': {
+      const full = checkGate(ideaDir, 'unit-test-report-confirmed');
+      if (full.pass) return result(gateId, true, '', { verification_mode: 'full' });
+      if (!has(ideaDir, 'task-workflow-state.yaml')) return result(gateId, false, full.reason);
+      const state = readTaskState(taskStateFile(ideaDir));
+      const repairRound = Object.values(state.tasks || {}).some(task => Number(task.rework_count || 0) > 0);
+      if (!repairRound || allTasksApproved(ideaDir)) return result(gateId, false, full.reason);
+      const incremental = checkGate(ideaDir, 'incremental-verification-complete');
+      return incremental.pass
+        ? result(gateId, true, '', { verification_mode: 'incremental' })
+        : result(gateId, false, `full verification unavailable: ${full.reason}; incremental verification unavailable: ${incremental.reason}`);
+    }
     case 'unit-test-report-confirmed': {
       const tests = checkGate(ideaDir, 'unit-test-complete');
       if (!tests.pass) return result(gateId, false, tests.reason);
-      const report = reportStatus(ideaDir, 'test');
+      const report = reportReadyStatus(ideaDir, 'test');
       return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'cr-complete': {
@@ -1692,7 +1743,7 @@ export function checkGate(ideaDir, gateId) {
     case 'cr-report-confirmed': {
       const cr = checkGate(ideaDir, 'cr-complete');
       if (!cr.pass) return result(gateId, false, cr.reason);
-      const report = reportStatus(ideaDir, 'cr');
+      const report = reportReadyStatus(ideaDir, 'cr');
       return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'integration-cr-complete': {
@@ -1704,7 +1755,7 @@ export function checkGate(ideaDir, gateId) {
     case 'integration-cr-report-confirmed': {
       const integration = checkGate(ideaDir, 'integration-cr-complete');
       if (!integration.pass) return result(gateId, false, integration.reason);
-      const report = reportStatus(ideaDir, 'cr');
+      const report = reportReadyStatus(ideaDir, 'cr');
       return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'rework-limit': {
@@ -1831,7 +1882,7 @@ export function checkGate(ideaDir, gateId) {
     case 'task-time-report-confirmed': {
       const summary = checkGate(ideaDir, 'final-summary-complete');
       if (!summary.pass) return result(gateId, false, summary.reason);
-      const report = reportStatus(ideaDir, 'task-time');
+      const report = reportReadyStatus(ideaDir, 'task-time');
       return report.valid ? result(gateId, true, '', { report_sha256: report.report_sha256 }) : result(gateId, false, report.reason);
     }
     case 'merge-review-report-exists': {

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { selectReview } from '../scripts/review-selector.mjs';
 
 describe('dynamic review selector', () => {
@@ -25,5 +26,20 @@ describe('dynamic review selector', () => {
     const result = selectReview({ paths: ['src/format.js'], diffText: '+small' });
     assert.equal(result.compatibility_projection.d2.status, 'skipped');
     assert.equal(result.compatibility_projection.d2.result, 'auto-pass');
+  });
+
+  it('uses senior aggregation, targeted skepticism, then final adjudication before repair', () => {
+    const phase = readFileSync(new URL('../workflows/phases/review-aggregate-assessment-phase.js', import.meta.url), 'utf8');
+    const workflow = readFileSync(new URL('../workflows/chisel-review.js', import.meta.url), 'utf8');
+    assert.match(phase, /label: 'reviewer:initial-aggregate-assessment'/);
+    assert.match(phase, /label: 'reviewer:final-aggregate-adjudication'/);
+    assert.equal((phase.match(/model: 'opus'/g) || []).length, 2);
+    assert.match(phase, /targetedCandidates/);
+    assert.match(phase, /skepticVotes/);
+    assert.match(phase, /index \+= maxConcurrency/);
+    assert.match(phase, /assessment_failed: true/);
+    assert.match(workflow, /root_cause_groups: retainedRootCauseGroups/);
+    assert.match(workflow, /status: 'assessment_failed'/);
+    assert.ok(workflow.indexOf('review-aggregate-assessment-phase.js') < workflow.indexOf("status: 'needs_rework'"));
   });
 });

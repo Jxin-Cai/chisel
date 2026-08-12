@@ -88,18 +88,28 @@ function ensureVerificationBeforeReview(ideaDir, reviewTasks, reviewStep, reason
       });
     }
   }
-  const unitTests = checkGate(ideaDir, 'unit-test-report-confirmed');
+  const unitTests = checkGate(ideaDir, 'verification-ready-for-review');
   if (!unitTests.pass) {
+    const stateHasRework = Object.values(state.tasks || {}).some(task => Number(task.rework_count || 0) > 0);
+    const incremental = stateHasRework ? checkGate(ideaDir, 'incremental-verification-complete') : null;
     return buildResult('test:unit', 'unit tests, coverage, anomaly repair, and the test report must complete before CR', ideaDir, {
       ...phaseDetail,
       unit_test_reason: unitTests.reason,
+      verification_mode: stateHasRework ? 'incremental' : 'full',
+      incremental_reason: incremental?.reason,
       verification_tasks: reviewTasks,
     });
   }
-  return buildResult(reviewStep, reason, ideaDir, { ...phaseDetail, next_tasks: reviewTasks });
+  return buildResult(reviewStep, reason, ideaDir, { ...phaseDetail, next_tasks: reviewTasks, verification_mode: unitTests.verification_mode });
 }
 
 function ensureCrReportBeforeFinal(ideaDir, complexity) {
+  const finalVerification = checkGate(ideaDir, 'unit-test-report-confirmed');
+  if (!finalVerification.pass) {
+    return buildResult('test:unit', 'all findings are resolved; run one final full verification on the exact current workspace', ideaDir, {
+      complexity, verification_mode: 'full-final', gate_reason: finalVerification.reason,
+    });
+  }
   const report = checkGate(ideaDir, 'cr-report-confirmed');
   if (!report.pass) return buildResult('review:cr-report', 'multi-dimensional CR and all rework are complete; final CR report is pending or stale', ideaDir, { complexity, gate_reason: report.reason });
   return ensureFinalAndMergeReview(ideaDir, complexity);
@@ -456,6 +466,12 @@ export function computeStatus(ideaDir, { dryRun = false } = {}) {
   }
 
   if (allTasksApproved(ideaDir)) {
+    const finalVerification = checkGate(ideaDir, 'unit-test-report-confirmed');
+    if (!finalVerification.pass) {
+      return buildResult('test:unit', 'all findings are resolved; run one final full verification on the exact current workspace', ideaDir, {
+        complexity, verification_mode: 'full-final', gate_reason: finalVerification.reason,
+      });
+    }
     const state = readTaskState(taskStateFile(ideaDir));
     const taskCount = Object.keys(state.tasks).length;
     if (taskCount > 1 && (complexity === 'standard' || complexity === 'complex')) {

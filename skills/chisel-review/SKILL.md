@@ -7,7 +7,9 @@ user-invocable: false
 
 # chisel-review
 
-多维度独立 CR 阶段。通过 Dynamic Workflow 实现真正并行的维度审查和对抗性验证。
+多维度独立 CR 阶段。先通过 Dynamic Workflow 并行完成各维度审查，再由高级模型全局汇总；
+只对高风险、矛盾或不确定项做有界独立核验，最后由高级模型完成根因合并与最终裁决。
+只有最终裁决完成后才允许进入返修。
 
 ## 当前工作流状态
 
@@ -51,11 +53,12 @@ user-invocable: false
    读取 cr-context-prev.json，对上轮 pass 且 repair 未触及的维度写入 pass-cached。
 
 7. **获取 review budget**
-   选择器已经调用 `review-budget.mjs` 生成有界 batches；若 finding 产生对抗性
-   验证，再用该脚本按 `finding-count` 补充 skeptic 预算。
+   选择器已经调用 `review-budget.mjs` 生成有界的维度 batches 和 targeted skeptic 上限。
+   不对所有 finding 无差别 fan-out；只核验初判为 `UNCERTAIN`、critical/high、
+   高置信度误报候选或同根因组内结论冲突的 finding。最多核验 6 条，并发不超过 3。
 
 8. **调用 Dynamic Workflow**
-   调用前按本轮实际预算记录 Agent 调用：`node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {IDEA_DIR} --agent-call <cr-step> reviewer <1 + activeDimensions.length>`；其中 1 是 spec reviewer。skeptic 实际调用数在 workflow 返回后按 finding vote 数追加记录。
+   调用前记录 spec 与维度 reviewer：`node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {IDEA_DIR} --agent-call <cr-step> reviewer <1 + activeDimensions.length>`。如果产生 fail findings，再记录初步 Opus 汇总、实际 targeted skeptic votes 和最终 Opus 裁决的调用次数。
    ```
    Workflow({
      scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/chisel-review.js",
@@ -69,7 +72,8 @@ user-invocable: false
        taskIds: [<task-ids>],
        reworkCycle: <n>,
        activeDimensions: [<activated-dims>],
-       dimensionBatches: [[<batch1>], [<batch2>], ...]
+       dimensionBatches: [[<batch1>], [<batch2>], ...],
+       reviewPolicy: <review-selector 返回的 review_policy>
      }
    })
    ```
@@ -81,17 +85,38 @@ user-invocable: false
    禁止使用 `--finish-task`、`--approve-task` 或其他命令改变 task CR 状态；
    `--mark-cr-requirement` 是唯一合法手段。
 
-   **9a. 当 `status === "approved"`**：
+   **9a. 汇总裁决（质量维度结束后、返修开始前）**：
+
+   workflow 必须按以下顺序完成，任何一步都不得修改业务代码：
+   1. 把全部 fail findings 一次性交给 `model: opus` 做初步全局判断和根因归并。
+   2. 仅选择 `UNCERTAIN`、critical/high、高置信度误报候选、同根因组内结论冲突项，
+      由独立 sonnet skeptic 从代码语义、运行时行为或独立证据角度核验；skeptic 不得读取初步结论。
+   3. 再由 `model: opus` 综合原始 finding、全局汇总和 skeptic 证据作最终裁决；不得机械按票数决定。
+   4. 最终 Opus 为每条 finding 输出 `TRUE_POSITIVE` / `FALSE_POSITIVE` / `UNCERTAIN`，
+      重建 `root_cause_groups`，给出最小返修策略、涉及 task、原始 finding IDs 和返修顺序，
+      并写入中文 `{IDEA_DIR}/cr/aggregate-assessment.md`。
+
+   `FALSE_POSITIVE` 从返修输入中移除，`UNCERTAIN` 保守保留。最终裁决缺失或未覆盖全部 finding 时，
+   未裁决项必须保留；初步汇总或最终裁决调用失败时返回 `assessment_failed` 并阻断返修，
+   不得用初步判断代替最终裁决。禁止在该阶段完成前开始修改代码。
+
+   **9b. 当 `status === "approved"`**：
 
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement approved
    ```
 
-   **9b. 当 `status === "spec_failed"` 或 `status === "needs_rework"`**：
+   **9c. 当 `status === "assessment_failed"`**：
 
-   向用户展示 findings 摘要：
+   报告 `failure_stage` 和调用失败信息，保持当前 CR 状态，不得标记 `needs_rework`、不得修改代码；
+   重新执行汇总裁决，成功后才能继续。
+
+   **9d. 当 `status === "spec_failed"` 或 `status === "needs_rework"`**：
+
+   向用户展示汇总裁决后的 findings 摘要：
    - 失败维度列表及 finding 数量
    - 每个 finding 的维度、严重度（critical/high/medium/low）、一行描述
+   - 合并后的根因组、覆盖的 finding IDs、建议修复顺序
    - 受影响 task 列表（`affected_tasks`）
 
    然后使用 `AskUserQuestion` 提供三种选择：
@@ -126,8 +151,8 @@ user-invocable: false
      node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --mark-cr-requirement approved
      ```
 
-   不得代替用户做出选择。确认处理范围后立即进入 repair；返修完成必须重新跑
-   单测覆盖率阶段，再从 spec 开始多维复审。
+   不得代替用户做出选择。确认处理范围后立即进入 repair；返修完成先运行受影响测试，
+   再从 spec 开始复审，并复用 repair 未触及维度的 pass-cached 结果。全部 findings 清零后再运行一次完整单测与覆盖率封板。
    </HARD-GATE>
 
 10. **仅在 CR 与返修全部完成后生成最终 CR 报告**
@@ -140,13 +165,10 @@ user-invocable: false
    node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} review:cr-report
    ```
 
-   报告聚焦本次开发功能、多维 CR 问题、返修措施、累计返修次数和最终复审结论。
-   输出绝对路径与 SHA-256 后停止等待用户确认；确认后运行：
-
-   ```bash
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} cr --confirm --expected-sha <sha256>
-   node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} cr
-   ```
+   报告聚焦当前代码实际实现的功能、多维 CR 问题、汇总裁决与根因合并、返修措施、
+   累计返修次数和最终复审结论。
+   输出绝对路径与 SHA-256。CR 报告是非阻塞交付物；source fingerprint 新鲜即可自动进入 final:summary，
+   不创建 `confirmations/cr-report.json`，最终用户决策统一在绑定精确代码快照的 merge review 完成。
 
 ### Integration Review（条件触发）
 
@@ -161,7 +183,7 @@ Integration 结果必须纳入最终 CR 报告，但不得在返修闭环完成�
 
 <HARD-GATE principle="P2,P4">
 spec 是门槛——fail 直接返修，不跑后续质量维度。
-返修后必须从 spec 重新开始，不能跳过。
+返修后必须从 spec 重新开始；未触及的质量维度允许使用绑定 repair diff 的 pass-cached 结果。
 上次通过不等于这次通过。
 同一 task 返修 5 次后会被脚本标记为 blocked（第 4-5 轮由 fresh agent 接管）。
 必须用 cr-parse.mjs 解析 frontmatter，不得根据正文猜测结论。
@@ -175,6 +197,6 @@ workflow 返回后必须通过 workflow-status.mjs 更新 task 状态。
 | "改动很小，用一次调用审查多个维度" | 每个维度独立调用，注意力不稀释 |
 | "CR 报告中说了通过就行" | 必须用 cr-parse.mjs 解析 frontmatter |
 | "只有一个 task，不需要完整流程" | 单 task 也走完整流程 |
-| "验证子阶段太慢，跳过" | 验证是假阳性控制的关键环节，不可跳过 |
+| "问题很多，看到一个先修一个" | 必须先由高级模型汇总全部 findings、判真伪并合并根因，再统一返修 |
 | "workflow 失败了，直接标记 approved" | workflow 失败时报告错误，不改状态 |
 </HARD-GATE>

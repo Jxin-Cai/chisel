@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { atomicWriteFile, allTasksApproved, readTaskState, taskStateFile } from './workflow-lib.mjs';
@@ -10,7 +10,7 @@ import { validateVerificationResult, workspaceIdentity } from './verification-li
 import { reportSourceFingerprint } from './report-confirm.mjs';
 
 const REPORT_JSON = 'cr/current-change-report.json';
-const REPORT_MD = 'cr/current-change-report.md';
+const LEGACY_REPORT_MD = 'cr/current-change-report.md';
 const CONFIRMATION = 'confirmations/merge-review.json';
 const HTML_REPORT = 'reports/cr-report.html';
 
@@ -274,82 +274,6 @@ function collectRisk(ideaDir) {
   };
 }
 
-function markdownCell(value) {
-  return String(value ?? '').replaceAll('|', '\\|').replaceAll('\n', ' ');
-}
-
-function renderMarkdown(report) {
-  const repoTotals = report.repositories.reduce((totals, repo) => ({
-    files: totals.files + Number(repo.totals?.files || 0),
-    additions: totals.additions + Number(repo.totals?.additions || 0),
-    deletions: totals.deletions + Number(repo.totals?.deletions || 0),
-  }), { files: 0, additions: 0, deletions: 0 });
-  const lines = [
-    '# Current Change Report', '',
-    '> Merge decision packet. This report is bound to the exact Git HEAD and working-tree fingerprint shown below.', '',
-    '## Executive Summary', '',
-    '| Item | Result |', '|---|---|',
-    `| Merge readiness | ${report.readiness.status} |`,
-    `| Repositories | ${report.repositories.length} |`,
-    `| Changed files | ${repoTotals.files} |`,
-    `| Diff size | +${repoTotals.additions} / -${repoTotals.deletions} |`,
-    `| Verification | ${report.verification.status} |`,
-    `| Machine CR | ${report.machine_review.verdict} |`,
-    `| Risk | ${report.risk.level} |`, '',
-  ];
-  if (report.readiness.blockers.length > 0) {
-    lines.push('### Blocking Conditions', '', ...report.readiness.blockers.map(item => `- ${item}`), '');
-  }
-  lines.push('## Review Scope', '', '| Repository | Branch | Base | Head | Workspace | Dirty |', '|---|---|---|---|---|---|');
-  for (const repo of report.repositories) {
-    lines.push(`| ${markdownCell(repo.repository)} | ${markdownCell(repo.branch)} | ${repo.base_commit.slice(0, 12)} | ${repo.head_commit.slice(0, 12)} | ${repo.workspace_fingerprint.slice(0, 12)} | ${repo.dirty ? 'yes' : 'no'} |`);
-  }
-  lines.push('', '## Commits in Scope', '');
-  for (const repo of report.repositories) {
-    lines.push(`### ${repo.repository}`, '', '| Commit | Subject |', '|---|---|');
-    for (const commit of repo.commits || []) lines.push(`| ${commit.sha.slice(0, 12)} | ${markdownCell(commit.subject)} |`);
-    if ((repo.commits || []).length === 0) lines.push('| — | No commits after base; report includes staged, unstaged, and untracked changes. |');
-    lines.push('');
-  }
-  lines.push('', '## Changed Files', '');
-  for (const repo of report.repositories) {
-    lines.push(`### ${repo.repository}`, '', '| Status | File | + | - |', '|---|---|---:|---:|');
-    for (const file of repo.files) lines.push(`| ${file.status} | ${markdownCell(file.path)} | ${file.binary ? 'binary' : file.additions} | ${file.binary ? 'binary' : file.deletions} |`);
-    if (repo.files.length === 0) lines.push('| — | No changed files | 0 | 0 |');
-    lines.push('');
-  }
-  lines.push('## Behavioral and Task Coverage', '', '| Task | Status | Rework | Description |', '|---|---|---:|---|');
-  for (const task of report.tasks) lines.push(`| ${task.task_id} | ${task.status} | ${task.rework_count} | ${markdownCell(task.description)} |`);
-  lines.push('', '## Automated Checks', '', '| Repository | Check | Command | Result | Duration |', '|---|---|---|---|---:|');
-  for (const repo of report.verification.repositories) {
-    for (const check of repo.checks) lines.push(`| ${markdownCell(basename(repo.project_root || ''))} | ${markdownCell(check.id)} | \`${markdownCell(check.command)}\` | ${check.status} | ${check.duration_ms ?? 0} ms |`);
-  }
-  lines.push('', '## Machine CR Results', '', '| Dimension | Result | Blocking | Observations |', '|---|---|---:|---:|');
-  for (const dim of report.machine_review.dimensions) lines.push(`| ${dim.dimension.toUpperCase()} · ${markdownCell(dim.name)} | ${dim.result} | ${dim.rework_items} | ${dim.observations} |`);
-  if (report.machine_review.dimensions.length === 0) lines.push('| Requirement-level review | approved by task state | 0 | 0 |');
-  lines.push('', '### Blocking Findings', '', '| Severity | Finding | Task | Description | Recommendation | Confidence |', '|---|---|---|---|---|---:|');
-  for (const finding of report.machine_review.findings || []) {
-    lines.push(`| ${markdownCell(finding.severity)} | ${markdownCell(finding.id)} | ${markdownCell(finding.task_id)} | ${markdownCell(finding.description)} | ${markdownCell(finding.recommendation)} | ${finding.confidence} |`);
-  }
-  if ((report.machine_review.findings || []).length === 0) lines.push('| — | None | — | No blocking findings remain after self-repair. | — | — |');
-  lines.push('', '### Non-blocking Observations', '', '| Observation | Dimension | Task | Description | Confidence |', '|---|---|---|---|---:|');
-  for (const observation of report.machine_review.observations || []) {
-    lines.push(`| ${markdownCell(observation.id)} | ${markdownCell(observation.dimension)} | ${markdownCell(observation.task_id)} | ${markdownCell(observation.description)} | ${observation.confidence} |`);
-  }
-  if ((report.machine_review.observations || []).length === 0) lines.push('| None | — | — | No non-blocking observations were recorded. | — |');
-  lines.push('', '## Reviewer Focus', '');
-  const focus = new Set();
-  for (const repo of report.repositories) {
-    for (const [category, active] of Object.entries(repo.categories || {})) if (active) focus.add(category);
-  }
-  if (focus.size === 0) lines.push('- No sensitive category was inferred; review the complete diff.');
-  else for (const item of [...focus].sort()) lines.push(`- ${item}`);
-  lines.push('', '## Risk and Compatibility', '', `- Risk level: ${report.risk.level}`, `- Highest risk: ${report.risk.highest_risk || 'none recorded'}`);
-  for (const item of report.risk.items) lines.push(`- ${item.id || 'RISK'} [${item.severity || 'unknown'}] ${item.description}${item.mitigation ? ` — mitigation: ${item.mitigation}` : ''}`);
-  lines.push('', '## Human Review Decision', '', '- **Approve**: the exact snapshot above may proceed to merge.', '- **Request changes**: return to repair; a new report and approval are required.', '- **Comment / hold**: record feedback without authorizing merge.', '', `Generated at: ${report.generated_at}`, '');
-  return lines.join('\n');
-}
-
 export function generateMergeReview(ideaDir, projectRoot = '.') {
   const root = resolve(ideaDir);
   const repositories = repositoryRoots(root, projectRoot).map(repo => collectRepository(root, repo));
@@ -372,26 +296,27 @@ export function generateMergeReview(ideaDir, projectRoot = '.') {
     final_summary_sha256: fileSha256(finalSummaryPath),
     repositories,
     tasks,
+    implementation_summary: existsSync(finalSummaryPath) ? readFileSync(finalSummaryPath, 'utf8') : '',
     verification,
     machine_review: machineReview,
     risk: collectRisk(root),
     readiness: { status: blockers.length === 0 ? 'ready_for_human_review' : 'action_required', blockers },
   };
   atomicWriteFile(join(root, REPORT_JSON), `${JSON.stringify(report, null, 2)}\n`);
-  atomicWriteFile(join(root, REPORT_MD), `${renderMarkdown(report)}\n`);
+  rmSync(join(root, LEGACY_REPORT_MD), { force: true });
   return report;
 }
 
 export function validateMergeReviewReport(ideaDir) {
   const jsonPath = join(ideaDir, REPORT_JSON);
-  const mdPath = join(ideaDir, REPORT_MD);
   if (!existsSync(jsonPath)) return `${REPORT_JSON} missing`;
-  if (!existsSync(mdPath)) return `${REPORT_MD} missing`;
   const report = readJson(jsonPath);
   if (!report || report.schema_version !== 1 || report.report_type !== 'current-change') return `${REPORT_JSON} invalid schema`;
-  if (readFileSync(mdPath, 'utf8') !== `${renderMarkdown(report)}\n`) return `${REPORT_MD} does not match the structured report`;
   if (report.readiness?.status !== 'ready_for_human_review') return `merge review is not ready: ${(report.readiness?.blockers || []).join('; ')}`;
   if (report.final_summary_sha256 !== fileSha256(join(ideaDir, 'final-summary.md'))) return 'merge review is stale: final-summary.md changed';
+  const finalSummaryPath = join(ideaDir, 'final-summary.md');
+  if (!existsSync(finalSummaryPath)) return 'merge review is stale: final-summary.md missing';
+  if (report.implementation_summary !== readFileSync(finalSummaryPath, 'utf8')) return 'merge review is stale: implementation summary changed';
   if (!Array.isArray(report.repositories) || report.repositories.length === 0) return 'merge review repositories must be non-empty';
   for (const repo of report.repositories) {
     const current = workspaceIdentity(repo.project_root);
@@ -480,4 +405,4 @@ function main() {
 
 if (fileURLToPath(import.meta.url) === process.argv[1]) main();
 
-export { CONFIRMATION, HTML_REPORT, REPORT_JSON, REPORT_MD, fileSha256, repositoryRoots };
+export { CONFIRMATION, HTML_REPORT, REPORT_JSON, fileSha256, repositoryRoots };

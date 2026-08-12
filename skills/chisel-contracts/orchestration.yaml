@@ -46,7 +46,7 @@ steps:
       check: implementation-verified
   - id: test:unit
     postcondition:
-      check: unit-test-report-confirmed
+      check: verification-ready-for-review
   - id: review:cr
     postcondition:
       check: cr-complete

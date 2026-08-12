@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { evaluateStop, findActiveWorkflows } from '../hooks/stop-gate-guard.mjs';
+import { initTaskState } from '../scripts/workflow-lib.mjs';
 
 function workflow(root, name, step) {
   const dir = join(root, '.chisel', name);
@@ -36,6 +37,38 @@ describe('Stop gate guard', () => {
     workflow(root, 'idea', 'receive-requirement');
     const result = evaluateStop(join(root, '.chisel'), { projectRoot: root, stopHookActive: true });
     assert.equal(result.recursive_retry, true);
+    assert.deepEqual(result.blockers, []);
+  });
+
+  it('prioritizes joining live coding Agents over an incomplete implementation gate', () => {
+    const ideaDir = workflow(root, 'idea', 'implement:code');
+    initTaskState(ideaDir, 'idea', [
+      { taskId: 'task-005', status: 'coding' },
+      { taskId: 'task-006', status: 'coding' },
+    ]);
+    const result = evaluateStop(join(root, '.chisel'), { projectRoot: root });
+    assert.equal(result.blockers.length, 1);
+    assert.match(result.blockers[0], /task-005, task-006 still have live coding leases/);
+    assert.match(result.blockers[0], /TaskOutput\(task_id, block: true\)/);
+    assert.doesNotMatch(result.blockers[0], /implementation-verified/);
+  });
+
+  it('keeps a recursive Stop retry alive while coding Agents still have live leases', () => {
+    const ideaDir = workflow(root, 'idea', 'implement:code');
+    initTaskState(ideaDir, 'idea', [{ taskId: 'task-005', status: 'coding' }]);
+    const result = evaluateStop(join(root, '.chisel'), { projectRoot: root, stopHookActive: true });
+    assert.equal(result.recursive_retry, true);
+    assert.match(result.blockers[0], /do not yield/);
+  });
+
+  it('allows a recursive Stop retry when the coding lease has expired', () => {
+    const ideaDir = workflow(root, 'idea', 'implement:code');
+    initTaskState(ideaDir, 'idea', [{ taskId: 'task-005', status: 'coding' }]);
+    mkdirSync(join(ideaDir, 'task-runs'), { recursive: true });
+    writeFileSync(join(ideaDir, 'task-runs', 'task-005.json'), JSON.stringify({
+      attempts: [{ run_id: 'run-1', lease_until: '2000-01-01T00:00:00.000Z' }],
+    }));
+    const result = evaluateStop(join(root, '.chisel'), { projectRoot: root, stopHookActive: true });
     assert.deepEqual(result.blockers, []);
   });
 

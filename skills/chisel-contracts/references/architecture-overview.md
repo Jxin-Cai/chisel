@@ -22,7 +22,7 @@
 - `scripts/workflow-status.mjs` 和 `scripts/workflow-lib.mjs` 管理 task 状态机；task state 与 provenance 通过 durable file transaction 原子提交。
 - `scripts/task-provenance.mjs` 为每个 task/attempt 记录 `run_id`、owner、lease/heartbeat、执行前基线和执行后结果指纹；过期 lease 会留下 abandoned 审计记录，旧 run 不能提交。
 - `scripts/verify-run.mjs` 将验证结果绑定到显式 `verification-contract.json` 以及当前 Git/workspace 指纹。
-- `scripts/review-budget.mjs` 从 `review-policy.json` 生成有界 review batches 和 skeptic 预算。
+- `scripts/review-budget.mjs` 从 `review-policy.json` 生成有界 review batches、targeted skeptic 数量和并发上限；多维 findings 先全局汇总，再按风险选择性核验。
 - `scripts/gate-check.mjs` 管理每步 postcondition。
 - `plan:adversarial-review` 位于 `plan:design` 与 `plan:confirm` 之间：fresh reviewer 直接对照 requirement、clarification、as-is 和全部 to-be 结构化产物，写入 `to-be/adversarial-review.json`/`.md`；`to-be-adversarial-approved` gate 以机器规则阻断不完整方案，并在 findings 时回到 plan 修复循环。
 - `scripts/scope-check.mjs` 检查变更文件是否越界或触碰禁区。
@@ -36,25 +36,24 @@
 - `scripts/quick-dev-init.mjs` trivial 快速通道自动生成单 task + worktree-decision + traceability-matrix。
 - `scripts/traceability-check.mjs` 需求→task 可追溯性验证，拒绝缺失/空 final matrix，精确检查 AC/VC 与 task refs 双向映射，并在 final 阶段前确认所有 AC 被覆盖实现。
 - `scripts/cr-prepare.mjs` CR 预计算——Spec 通过后一次性收集 diff/scope-check 数据写入 `cr-context.json`，D2-D9 agent 共用。
-- `scripts/merge-review.mjs` 在自动 CR/返修和 final summary 之后生成 Current Change Report，汇总 base/head、逐文件 diff 统计、验证命令、CR finding/observation、风险和 task 覆盖；人工批准绑定 Git HEAD、working-tree fingerprint、final summary 和报告内容，任一变化都会使批准失效。
+- `scripts/merge-review.mjs` 在自动 CR/返修和 final summary 之后生成内部合并审阅快照，renderer 将当前实现、base/head、逐文件 diff 统计、验证命令、CR finding/observation、风险和 task 覆盖并入统一 CR 报告；人工批准绑定 Git HEAD、working-tree fingerprint、final summary 和报告内容，任一变化都会使批准失效。
 - `scripts/reports.mjs` 生成五份自包含 HTML：As-Is、To-Be、单测覆盖率、CR、任务与耗时报告。每份报告独立承载内容。
 - `scripts/session-metrics.mjs` 使用 schema v2 同时记录步骤墙钟时间与可测量 span，将 `human_wait`、`active_workflow`、`verification`、`report_generation`、`control_plane` 和 Agent 调用次数分开归因；任务与耗时报告直接展示该分解。
 - `scripts/checkpoint.mjs` 关键阶段保存 schema v2 快照，同时按数量（8）和总大小（25 MiB）双重上限清理，runner/events/transaction journal 不进入快照 payload。
-- **理解阶段**（`chisel-understand`）仅在 `execution_profile=full` 时使用 Explore + Analyst 产出结构化数据；subagent 数量受分类预算约束，不是固定三 agent。人类文档由后台 `agent-chisel-writer` 根据完整 source manifest 生成，主编排器并行执行结构化 gate/评分，展示前等待 fresh receipt。
-- **规划阶段**（`chisel-plan`）分支执行：lightweight 只读 requirement、clarification、classification 与最多 12 文件/2 模块的 source manifest；full 才读取 as-is 并调用完整 Plan 链。两条分支均写入 tasks + traceability + impact-risk + design-notes，执行 8 步完整性自检，再由后台 Writer 生成 implementation-plan.md。
-- `agent-chisel-writer` 从结构化产物（JSON/md 表格）生成面向人类的图文中文文档（含 Mermaid），不探索代码、不做设计决策。支持 as-is 和 to-be 两种模式。
-- Writer 一律后台运行；`document-job.mjs` 记录 writer 的完整 required source、当时存在的 optional source/output 及 hash。classified 新流程没有 fresh complete receipt 时，as-is/to-be full gate 必须失败。
+- **理解阶段**（`chisel-understand`）仅在 `execution_profile=full` 时使用 Explore + Analyst 产出结构化数据；人类文档由 `document-render.mjs` 确定性生成。
+- **规划阶段**（`chisel-plan`）两条分支均写入 tasks + traceability + impact-risk + design-notes，执行完整性自检，再由确定性 renderer 生成 implementation-plan.md。
+- `document-job.mjs` 继续记录 renderer 的完整 required source、optional source/output 及 hash；receipt stale 时重新渲染，不启动 Writer agent。
 - `requirement-classify.mjs` 在澄清完成后按 AC/VC、文件/模块边界、DB/API/迁移、显式风险与 risk tolerance 生成可重算的难度、执行档位和 subagent 预算；显式 moderate/standard/complex 是保守 floor。
 - `agent-chisel-coder` 只按已确认 task 实现，持续执行验证—修复循环并完成 diff 自检（bug/AC/scope 三项检查）。trivial/standard 默认继承主编排器当前模型，complex 和返修升级通过 model override 使用 opus。
-- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查，每次加载一个维度定义。维度 batch 与 skeptic 验证严格受 `review-policy.json` 限制；高风险 finding 使用 3 角度投票，low/medium 使用单次验证，超出预算时串行 fallback，不再无界 fan-out。
+- `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查，每次加载一个维度定义。维度 batch 严格受 `review-policy.json` 限制；所有维度结束后先由 Opus 全局汇总，只对高风险、矛盾或不确定项执行有界独立 skeptic 核验，再由 Opus 综合证据完成最终真伪裁决、共同根因合并和返修策略，完成前禁止返修。
 
 ## As-Is 分层结构
 
 - **结构化产物**（Analyst Phase 2 产出）：`evidence-ledger.json`、`coverage-matrix.json`、`context-budget.json`、`ai-input/*.md`（facts/call-graph/data-schema/api-surface/constraints/change-surface/field-flow）
 - **脚本产物**：`repo-map.json`（Phase 0）、`quality-score.json`（Phase 4）
-- **人类文档**（Writer 产出）：`overview.md`、`core-walkthrough.md`、`evidence-index.md`、`context-budget.md`
+- **人类文档**（renderer 产出）：`overview.md`、`core-walkthrough.md`、`evidence-index.md`、`context-budget.md`
 - **枝干文件**（Writer 按需产出）：`details/entrypoints.md`、`details/data-model.md`、`details/api-contracts.md`、`details/data-flow.md`
-- 结构化产物是核心数据源（供 Planner 和 gate 使用），人类文档由 Writer 从结构化产物二次生成（供用户阅读和独立 HTML 报告展示）。
+- 结构化产物是核心数据源（供 Planner 和 gate 使用），人类文档由 renderer 二次生成（供用户阅读和独立 HTML 报告展示）。
 
 
 ## 并行开发
@@ -68,7 +67,7 @@
 - 并行调度不再是全有或全无：`planParallelTaskBatches()` 对冲突图做稳定着色，自动生成尽可能早的安全执行波次；`workflow-status.mjs --prepare-task-batch` 在一次原子事务中领取首批所有 task 并返回各自 `run_id`，替代查询、冲突检测和逐 task 启动的多次控制面往返。
 - 路径目录和 glob 交叉会保守判定为冲突；共享资源用 `impact_surface.reads/writes` 建模，read/read 可并行，任一 write 冲突。旧 `shared_state` 等价于 write lock。返修 task 始终串行。
 - `chisel-review` 在所有 task 编码完成后进行动态 CR：spec 永远是门槛；小型低风险 diff 使用 lite，auth/payment/migration/concurrency/external boundary/verification mechanism 信号强制升级，其余维度按实际内容选择，输出理由与 batches。未选的旧 D2-D9 文件投影为 skipped/auto-pass，返修后从 spec 重新开始。
-- 自动 CR 通过后进入独立 `review:merge`：用户可 Approve / Request changes / Comment-hold；只有 Approve 且所有仓库快照未变化时 `merge-review-confirmed` gate 才通过。
+- 自动 CR 通过后进入 `review:merge`，在同一份 CR 报告中完成最终人工审阅：用户可 Approve / Request changes / Comment-hold；只有 Approve 且所有仓库快照未变化时 `merge-review-confirmed` gate 才通过。
 - 需求完成后（`done` 阶段），多仓场景对每个仓库分别创建 PR 或 merge。
 
 ## Quick-dev 快速通道
@@ -91,6 +90,6 @@
 - `scripts/report-model.mjs` 只负责数据采集、归一化和指标计算；`scripts/report-renderers.mjs` 只负责五类报告的内容片段；`scripts/reports.mjs` 将片段装入各自模板。
 - As-Is 报告从 coverage matrix 生成 UML 时序或系统模型；To-Be 报告从 flow graph 同时生成目标 UML 模型和改造点全链路图。报告首屏只保留主干，目录锚点和可展开详情承载证据、CP、Task、风险与完整方案，改造节点可直接跳到对应 CP。
 - `/chisel-report <idea-name> --format html` 按 As-Is、To-Be、CR、任务与耗时的顺序逐份生成；一次只允许一份。
-- 每次生成后立即返回绝对路径和 SHA-256，等待用户明确确认。`report-confirm.mjs` 将确认绑定到文件哈希；重新生成会使旧确认失效。
+- 每次生成后立即返回绝对路径和 SHA-256。As-Is/Test/CR/Task-time 新鲜即可自动推进；只有 To-Be 和最终 merge 快照等待用户明确确认。
 - `as-is-report-confirmed`、`to-be-report-confirmed`、`cr-report-confirmed`、`integration-cr-report-confirmed`、`task-time-report-confirmed` 和 `merge-review-confirmed` 是推进门禁。
 - 报告是自包含、响应式、可打印 HTML；`workflow-state.yaml.step_history` 为任务与耗时报告提供时间线数据。

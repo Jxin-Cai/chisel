@@ -42,13 +42,13 @@ status 严格只读；runner 持久化租约/恢复点并通过 `orchestration-t
 | 返修 | CR 结论为 `needs_rework` 且返修次数 < 5 |
 | 最终总结 | 所有 task 已批准且需求追溯完整 |
 | 合并前 CR | 最终总结完成；验证和自动 CR 均通过且与当前 Git/workspace 快照一致 |
-| done / 合并 | 用户对 Current Change Report 明确 Approve，且批准后的 HEAD、工作区、总结和报告均未变化 |
+| done / 合并 | 用户对 CR 报告中的合并审阅章节明确 Approve，且批准后的 HEAD、工作区、总结和报告均未变化 |
 
 ### 3. 用户确认不可跳过 `[P2, P4]`
 
 `understand:confirm`、`plan:confirm` 和 `review:merge` 必须等用户明确确认后才能创建结构化确认文件；`plan:confirm` 之前必须先通过机器强制的 `plan:adversarial-review`，审查失败不得让用户 review。
 旧 `.as-is-confirmed` / `.to-be-confirmed` marker 仅用于历史运行目录兼容，新流程不得只创建 marker。  
-classified 新流程的 `confirmations/to-be.json` 必须绑定统一 `plan_fingerprint`；tasks、traceability、risk、design-notes、对抗审查、implementation-plan 或 Writer receipt 任一变化都必须重新确认。快速 scope 超限时写 `scope-escalation.json` 并重新分类，禁止继续 coding。
+classified 新流程的 `confirmations/to-be.json` 必须绑定统一 `plan_fingerprint`；tasks、traceability、risk、design-notes、对抗审查、implementation-plan 或 renderer receipt 任一变化都必须重新确认。快速 scope 超限时写 `scope-escalation.json` 并重新分类，禁止继续 coding。
 不要因"需求描述很清楚"而绕过确认。
 
 ### 4. 每轮循环必须调用恢复点脚本 `[P2]`
@@ -117,7 +117,7 @@ gate 不通过时不能继续。
 | "这太简单了不需要走完整流程" | 跳步 → 违反规则 2 |
 | "用户应该不在意这个确认步骤" | 替用户决策 → 违反规则 3 |
 | "顺便把旁边的问题也修了吧" | scope 越界 → coder 最常见返修原因 |
-| "CR 的这个发现不太对，应该是误报" | 需要走 skeptic 验证，不是你单方面否决 |
+| "CR 的这个发现不太对，应该是误报" | 需要由高级模型在全量 findings 汇总裁决中核对证据，不是你单方面否决 |
 | "文件已经存在了，不用再读模板" | 违反模板优先 → 违反 agent-protocol 规则 4 |
 | "差不多了，可以声称完成了" | 无证据完成 → 违反规则 11 |
 | "这轮返修应该能过，不用那么仔细" | 惰性修复 → 导致第 N+1 轮返修 |

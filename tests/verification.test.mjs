@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { validateVerificationResult, workspaceIdentity } from '../scripts/verification-lib.mjs';
+import { validateIncrementalVerificationResult, validateVerificationResult, verificationPlanFingerprint, workspaceIdentity } from '../scripts/verification-lib.mjs';
 import { contractFingerprint, createVerificationContract, verificationRoots } from '../scripts/verify-run.mjs';
 
 describe('verification evidence', () => {
@@ -116,5 +116,37 @@ describe('verification evidence', () => {
       ],
     }));
     assert.deepEqual(verificationRoots(ideaDir, root), [root, secondRoot]);
+  });
+
+  it('accepts targeted repair verification but invalidates it when plan or workspace changes', () => {
+    const plan = {
+      schema_version: 1,
+      affected_files: ['app.js'],
+      affected_dimensions: ['spec'],
+      repositories: [{ project_root: root, checks: [{ id: 'targeted', command: 'node', args: ['--test'] }] }],
+    };
+    writeFileSync(join(ideaDir, 'repair-verification-plan.json'), JSON.stringify(plan));
+    const identity = workspaceIdentity(root);
+    writeFileSync(join(ideaDir, 'incremental-verify-result.json'), JSON.stringify({
+      schema_version: 1, mode: 'incremental', status: 'pass', affected_files: ['app.js'],
+      plan_fingerprint: verificationPlanFingerprint(plan),
+      repositories: [{ project_root: root, git_head: identity.head, workspace_fingerprint: identity.fingerprint, checks: [{ id: 'targeted', status: 'pass', exit_code: 0 }] }],
+    }));
+    assert.equal(validateIncrementalVerificationResult(ideaDir, root), '');
+    plan.affected_files.push('other.js');
+    writeFileSync(join(ideaDir, 'repair-verification-plan.json'), JSON.stringify(plan));
+    assert.match(validateIncrementalVerificationResult(ideaDir, root), /plan changed/);
+  });
+
+  it('executes an incremental plan relative to the supplied project root and binds the unmodified plan', () => {
+    const plan = {
+      schema_version: 1, affected_files: ['app.js'], affected_dimensions: ['spec'],
+      repositories: [{ project_root: '.', checks: [{ id: 'targeted', command: process.execPath, args: ['-e', 'process.exit(0)'] }] }],
+    };
+    writeFileSync(join(ideaDir, 'repair-verification-plan.json'), JSON.stringify(plan));
+    execFileSync(process.execPath, ['scripts/verify-run.mjs', ideaDir, root, '--incremental'], { cwd: process.cwd() });
+    assert.equal(existsSync(join(ideaDir, 'incremental-verify-result.json')), true);
+    assert.equal(JSON.parse(readFileSync(join(ideaDir, 'incremental-verify-result.json'))).repositories[0].project_root, root);
+    assert.equal(validateIncrementalVerificationResult(ideaDir, root), '');
   });
 });

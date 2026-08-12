@@ -53,7 +53,8 @@ export function selectReview({ projectRoot = '.', baseRef = null, diffText = nul
     forced_signals: matches.map(match => match.name),
     diff,
     dimension_batches: budget.dimension_batches,
-    skeptic_votes_per_finding: budget.skeptic_votes_per_finding,
+    aggregate_assessment_agents: budget.aggregate_assessment_agents,
+    review_policy: budget.policy,
     compatibility_projection: Object.fromEntries(skipped.filter(d => d !== 'spec').map(d => [d, { status: 'skipped', result: 'auto-pass', reason: 'not selected by dynamic risk policy' }])),
   };
 }

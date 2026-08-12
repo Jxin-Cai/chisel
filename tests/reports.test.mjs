@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { generateReports, REPORTS } from '../scripts/reports.mjs';
-import { recordReportConfirmation, reportStatus } from '../scripts/report-confirm.mjs';
+import { recordReportConfirmation, reportReadyStatus, reportStatus } from '../scripts/report-confirm.mjs';
 
 describe('standalone HTML reports', () => {
   it('defines exactly five focused report deliverables', () => {
@@ -35,11 +35,14 @@ describe('standalone HTML reports', () => {
       for (const generated of generatedReports) {
         const { path } = generated;
         assert.ok(existsSync(path));
-        assert.equal(generated.confirmation_required, true);
-        assert.equal(generated.confirmed, false);
+        assert.equal(generated.confirmation_required, generated.report_type === 'to-be');
+        assert.equal(generated.ready, true);
+        assert.equal(generated.confirmed, generated.report_type === 'to-be' ? false : null);
         const html = readFileSync(path, 'utf8');
         assert.match(html, /^<!doctype html>/);
         assert.match(html, /<style>[^]*:root/);
+        assert.match(html, /mermaid@11\/dist\/mermaid\.esm\.min\.mjs/);
+        assert.match(html, /mermaid\.run\(\{ nodes: diagrams/);
         assert.doesNotMatch(html, /工作流总览.*As-Is.*To-Be.*CR/s);
       }
       assert.match(readFileSync(join(ideaDir, 'reports/as-is-report.html'), 'utf8'), /AS-IS-MARKER/);
@@ -59,11 +62,15 @@ describe('standalone HTML reports', () => {
     }
   });
 
-  it('refuses batch generation so every report can be confirmed before continuing', () => {
+  it('supports batch generation while keeping only to-be decision-blocking', () => {
     const ideaDir = mkdtempSync(join(tmpdir(), 'chisel-report-sequence-'));
     try {
-      assert.throws(() => generateReports(ideaDir, ['as-is', 'to-be']), /只能生成一份报告/);
-      assert.throws(() => generateReports(ideaDir), /只能生成一份报告/);
+      writeFileSync(join(ideaDir, 'requirement.md'), '# Requirement\n## Scope\n- reports\n');
+      const generated = generateReports(ideaDir, ['as-is', 'to-be']).generated;
+      assert.deepEqual(generated.map(item => item.confirmation_required), [false, true]);
+      assert.equal(reportReadyStatus(ideaDir, 'as-is').valid, true);
+      assert.equal(reportStatus(ideaDir, 'to-be').valid, false);
+      assert.throws(() => generateReports(ideaDir), /至少指定一份报告/);
     } finally {
       rmSync(ideaDir, { recursive: true, force: true });
     }

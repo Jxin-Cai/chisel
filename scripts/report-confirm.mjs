@@ -43,16 +43,13 @@ export function reportSourceFingerprint(ideaDir, reportType) {
 }
 
 export function reportStatus(ideaDir, reportType) {
+  const ready = reportReadyStatus(ideaDir, reportType);
+  if (!ready.valid) return ready;
   const config = REPORT_CONFIRMATIONS[reportType];
-  if (!config) return { valid: false, reason: `unknown report type: ${reportType}` };
   const reportPath = join(ideaDir, config.report);
   const confirmationPath = join(ideaDir, config.confirmation);
-  if (!existsSync(reportPath)) return { valid: false, reason: `${config.report} missing`, report_type: reportType };
-  const reportSha256 = fileSha256(reportPath);
-  const reportHtml = readFileSync(reportPath, 'utf8');
-  const embeddedSource = reportHtml.match(/<!-- report-source:([a-f0-9]{64}) -->/)?.[1] || '';
-  const currentSource = reportSourceFingerprint(ideaDir, reportType);
-  if (!embeddedSource || embeddedSource !== currentSource) return { valid: false, reason: `${config.report} is stale: source artifacts changed`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
+  const reportSha256 = ready.report_sha256;
+  const currentSource = ready.source_fingerprint;
   const confirmation = readJson(confirmationPath);
   if (!confirmation) return {
     valid: false, reason: `${config.confirmation} missing or invalid`, report_type: reportType,
@@ -67,6 +64,24 @@ export function reportStatus(ideaDir, reportType) {
   if (confirmation.report_sha256 !== reportSha256) return { valid: false, reason: `${config.confirmation} is stale: report changed`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
   if (confirmation.source_fingerprint !== currentSource) return { valid: false, reason: `${config.confirmation} is stale: source artifacts changed`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
   return { valid: true, report_type: reportType, report_file: config.report, report_sha256: reportSha256, confirmation_file: config.confirmation };
+}
+
+// Non-decision reports are delivery artifacts, not workflow decisions.  This
+// validates that the rendered HTML exists and is bound to the current source
+// artifacts without requiring a user-authored confirmation record.
+export function reportReadyStatus(ideaDir, reportType) {
+  const config = REPORT_CONFIRMATIONS[reportType];
+  if (!config) return { valid: false, reason: `unknown report type: ${reportType}` };
+  const reportPath = join(ideaDir, config.report);
+  if (!existsSync(reportPath)) return { valid: false, reason: `${config.report} missing`, report_type: reportType };
+  const reportSha256 = fileSha256(reportPath);
+  const reportHtml = readFileSync(reportPath, 'utf8');
+  const embeddedSource = reportHtml.match(/<!-- report-source:([a-f0-9]{64}) -->/)?.[1] || '';
+  const currentSource = reportSourceFingerprint(ideaDir, reportType);
+  if (!embeddedSource || embeddedSource !== currentSource) {
+    return { valid: false, reason: `${config.report} is stale: source artifacts changed`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
+  }
+  return { valid: true, report_type: reportType, report_file: config.report, report_sha256: reportSha256, source_fingerprint: currentSource };
 }
 
 export function recordReportConfirmation(ideaDir, reportType, expectedSha256, comment = '') {

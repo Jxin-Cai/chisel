@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { isAbsolute, join, resolve } from 'node:path';
-import { workspaceIdentity } from './verification-lib.mjs';
+import { verificationPlanFingerprint, workspaceIdentity } from './verification-lib.mjs';
 import { durableAtomicWrite } from './file-transaction.mjs';
 import { recordDuration } from './session-metrics.mjs';
 import { appendUnitTestRun } from './unit-test-evidence.mjs';
@@ -95,6 +95,27 @@ function readVerificationContract(ideaDir) {
   return contract;
 }
 
+function readRepairVerificationPlan(ideaDir, fallbackRoot) {
+  const path = join(ideaDir, 'repair-verification-plan.json');
+  if (!existsSync(path)) throw new Error('repair-verification-plan.json missing; repair rounds require explicit affected files and targeted checks');
+  const plan = JSON.parse(readFileSync(path, 'utf8'));
+  if (plan.schema_version !== 1 || !Array.isArray(plan.affected_files) || plan.affected_files.length === 0) {
+    throw new Error('repair-verification-plan.json requires schema_version 1 and non-empty affected_files');
+  }
+  if (!Array.isArray(plan.repositories) || plan.repositories.length === 0) throw new Error('repair-verification-plan.json repositories must be non-empty');
+  for (const repo of plan.repositories) {
+    const repositoryRoot = repairRepositoryRoot(repo.project_root, fallbackRoot);
+    if (!Array.isArray(repo.checks) || repo.checks.length === 0) throw new Error(`repair verification checks must be non-empty for ${repositoryRoot}`);
+    for (const check of repo.checks) if (!check.id || !check.command || !Array.isArray(check.args)) throw new Error('repair verification checks require id, command and args[]');
+  }
+  return plan;
+}
+
+function repairRepositoryRoot(value, fallbackRoot) {
+  if (!value) return resolve(fallbackRoot);
+  return isAbsolute(value) ? resolve(value) : resolve(fallbackRoot, value);
+}
+
 function verificationRoots(ideaDir, fallbackRoot) {
   const decisionPath = join(ideaDir, 'worktree-decision.json');
   if (!existsSync(decisionPath)) return [resolve(fallbackRoot)];
@@ -122,6 +143,7 @@ function main() {
     process.exit(1);
   }
 
+  const incremental = process.argv.includes('--incremental');
   const roots = verificationRoots(ideaDir, projectRoot);
   if (process.argv.includes('--init-contract')) {
     let existing;
@@ -132,6 +154,34 @@ function main() {
     }
     const contract = existing && !process.argv.includes('--force-contract') ? existing : createVerificationContract(ideaDir, roots);
     console.log(JSON.stringify({ initialized: !existing || process.argv.includes('--force-contract'), existing: Boolean(existing), contract: contractPath(ideaDir), repositories: contract.repositories }));
+    return;
+  }
+  if (incremental) {
+    let plan;
+    try { plan = readRepairVerificationPlan(ideaDir, projectRoot); }
+    catch (error) { process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exit(1); }
+    const repositories = plan.repositories.map(repo => {
+      const repositoryRoot = repairRepositoryRoot(repo.project_root, projectRoot);
+      const checks = repo.checks.map(check => runCheck(check, repositoryRoot));
+      const identity = workspaceIdentity(repositoryRoot);
+      return {
+        project_root: repositoryRoot,
+        status: checks.every(check => check.status === 'pass') && !identity.error ? 'pass' : 'fail',
+        git_head: identity.head || '', workspace_fingerprint: identity.fingerprint || '', checks,
+        ...(identity.error ? { reason: identity.error } : {}),
+      };
+    });
+    const status = repositories.every(repo => repo.status === 'pass') ? 'pass' : 'fail';
+    const result = {
+      schema_version: 1, mode: 'incremental', status, generated_at: new Date().toISOString(),
+      affected_files: [...new Set(plan.affected_files)].sort(),
+      affected_dimensions: [...new Set(plan.affected_dimensions || [])].sort(),
+      plan_fingerprint: verificationPlanFingerprint(plan), repositories,
+    };
+    durableAtomicWrite(join(ideaDir, 'incremental-verify-result.json'), `${JSON.stringify(result, null, 2)}\n`);
+    try { appendUnitTestRun(ideaDir, result); } catch { /* history is non-critical */ }
+    console.log(JSON.stringify({ status, mode: 'incremental', affected_files: result.affected_files, repositories: repositories.map(repo => ({ project_root: repo.project_root, status: repo.status })) }));
+    if (status !== 'pass') process.exit(1);
     return;
   }
   let contract;
@@ -159,6 +209,7 @@ function main() {
   const status = repositories.length > 0 && repositories.every(repo => repo.status === 'pass') ? 'pass' : 'fail';
   const result = {
     schema_version: 2,
+    mode: 'full',
     status,
     generated_at: new Date().toISOString(),
     verification_contract: contract ? { source: 'explicit', fingerprint: contractFingerprint(contract) } : { source: 'legacy-auto-detected', fingerprint: '' },

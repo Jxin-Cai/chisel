@@ -12,7 +12,7 @@ import {
   countCrFindings, countTasksByStatus, normalizeApiChangePlan,
   normalizeCoverageMatrixRefs, normalizeDataChangePlan, normalizeStepTimings,
   normalizeTasksJson, normalizeTraceabilityTree, oneSentence,
-  formatDuration, formatEvidence, parseTableSection
+  formatDuration, formatEvidence, mdToHtml, parseTableSection
 } from './report-model.mjs';
 import { summary as collectSessionMetrics } from './session-metrics.mjs';
 
@@ -100,7 +100,7 @@ function collectStepOutputs(ideaDir, steps, currentStep, stepHistory) {
     'review:cr-report': [{ label: 'CR 汇总报告', file: 'reports/cr-report.html' }],
     'final:summary': [{ label: '最终摘要', file: 'final-summary.md' }],
     'review:merge': [
-      { label: '当前变更报告', file: 'cr/current-change-report.md' },
+      { label: 'CR 报告（含合并审阅）', file: 'reports/cr-report.html' },
       { label: '合并审阅确认', file: 'confirmations/merge-review.json' },
     ],
   };
@@ -148,50 +148,123 @@ function detailPanel(id, title, body, open = false) {
   return `<details class="detail-panel" id="${esc(id)}"${open ? ' open' : ''}><summary><span>${esc(title)}</span><span class="detail-hint">展开详情</span></summary><div class="detail-body">${body}</div></details>`;
 }
 
+function mermaidText(value, fallback = '') {
+  return String(value || fallback).replace(/[\r\n]+/g, ' ').replace(/["<>]/g, '').trim();
+}
+
+function mermaidId(value, prefix = 'N') {
+  const normalized = String(value || '').replace(/[^a-zA-Z0-9_]/g, '_').replace(/^([^a-zA-Z_])/, '_$1');
+  return `${prefix}_${normalized || 'item'}`;
+}
+
+function mermaidDiagram(source, label, { wide = false } = {}) {
+  return `<div class="diagram-stage${wide ? ' diagram-stage-wide' : ''}" role="region" aria-label="${esc(label)}" tabindex="0"><pre class="mermaid">${esc(source)}</pre></div>`;
+}
+
+function renderSequenceSource(links) {
+  const names = [...new Set(links.flatMap(link => [link.from || link.source || link.caller, link.to || link.target || link.callee]).filter(Boolean))];
+  const aliases = new Map(names.map((name, index) => [name, `P${index + 1}`]));
+  const lines = ['sequenceDiagram', ...names.map(name => `  participant ${aliases.get(name)} as ${mermaidText(name, '未知节点')}`)];
+  for (const link of links) {
+    const from = link.from || link.source || link.caller;
+    const to = link.to || link.target || link.callee;
+    if (!aliases.has(from) || !aliases.has(to)) continue;
+    const asyncKind = /async|event|message|queue/i.test(String(link.kind || link.type || ''));
+    const arrow = asyncKind ? '-)' : '->>';
+    const description = [link.id, link.kind || link.type, link.description].filter(Boolean).join(' · ');
+    lines.push(`  ${aliases.get(from)}${arrow}${aliases.get(to)}: ${mermaidText(description, '调用')}`);
+  }
+  return lines.join('\n');
+}
+
+function normalizeDomainModels(coverageMatrix) {
+  const explicit = Array.isArray(coverageMatrix.domain_models) ? coverageMatrix.domain_models : [];
+  if (explicit.length > 0) return explicit;
+  return (Array.isArray(coverageMatrix.data) ? coverageMatrix.data : []).map(item => ({
+    id: item.id,
+    name: item.model || item.entity || item.table || item.name || item.id,
+    kind: item.kind || (item.table || item.entity ? 'entity' : 'domain model'),
+    fields: item.fields || [],
+    operations: item.operations || (item.operation ? [item.operation] : []),
+  }));
+}
+
+function renderClassSource(coverageMatrix) {
+  const models = normalizeDomainModels(coverageMatrix);
+  const aliases = new Map(models.map((model, index) => [model.id || model.name, mermaidId(model.id || model.name || index, 'M')]));
+  const lines = ['classDiagram'];
+  for (const model of models) {
+    const key = model.id || model.name;
+    const id = aliases.get(key);
+    lines.push(`  class ${id}["${mermaidText(model.name || model.entity || model.table || model.id, '领域模型')}"]`);
+    if (model.kind) lines.push(`  <<${mermaidText(model.kind)}>> ${id}`);
+    for (const field of (model.fields || [])) {
+      const value = typeof field === 'string' ? field : `${field.type || 'any'} ${field.name || field.field || ''}`;
+      lines.push(`  ${id} : +${mermaidText(value, 'field')}`);
+    }
+    for (const operation of (model.operations || [])) {
+      const value = typeof operation === 'string' ? operation : operation.name || operation.operation;
+      lines.push(`  ${id} : +${mermaidText(value, 'operation')}()`);
+    }
+  }
+  const relationships = Array.isArray(coverageMatrix.domain_relationships)
+    ? coverageMatrix.domain_relationships
+    : (Array.isArray(coverageMatrix.relationships) ? coverageMatrix.relationships : []);
+  const relationArrows = { inheritance: '<|--', composition: '*--', aggregation: 'o--', dependency: '..>', realization: '..|>', association: '-->' };
+  for (const relation of relationships) {
+    const from = aliases.get(relation.from || relation.source || relation.owner);
+    const to = aliases.get(relation.to || relation.target || relation.member);
+    if (!from || !to) continue;
+    const arrow = relationArrows[String(relation.kind || relation.type || '').toLowerCase()] || '-->';
+    const left = mermaidText(relation.from_cardinality || relation.source_cardinality);
+    const right = mermaidText(relation.to_cardinality || relation.target_cardinality);
+    const cardinality = `${left ? ` "${left}"` : ''} ${arrow}${right ? ` "${right}"` : ''}`;
+    lines.push(`  ${from}${cardinality} ${to}${relation.label || relation.name || relation.kind ? ` : ${mermaidText(relation.label || relation.name || relation.kind)}` : ''}`);
+  }
+  return lines.join('\n');
+}
+
 function renderAsIsUml(coverageMatrix = {}) {
   const links = Array.isArray(coverageMatrix.links) ? coverageMatrix.links : [];
-  if (links.length > 0) {
-    const participants = [...new Set(links.flatMap(link => [link.from || link.source || link.caller, link.to || link.target || link.callee]).filter(Boolean))].slice(0, 8);
-    const data = Array.isArray(coverageMatrix.data) ? coverageMatrix.data : [];
-    const relationships = Array.isArray(coverageMatrix.relationships) ? coverageMatrix.relationships : [];
-    const modelCard = `<section class="card diagram-card" id="as-is-models"><div class="card-heading"><div><p class="eyebrow">Key Models</p><h2>关键模型与模型关系</h2></div><span class="diagram-legend">${data.length} 个模型</span></div><div class="model-flow">${data.slice(0, 8).map((item, index) => `${index ? '<span class="model-arrow">→</span>' : ''}<div class="model-column"><strong>${esc(item.entity || item.table || item.name || item.id || '模型')}</strong><span>${esc(item.relationship || item.role || relationships[index]?.kind || '参与主链路')}</span></div>`).join('') || '<div class="model-column"><strong>未识别结构化模型</strong><span>详见数据模型证据</span></div>'}</div></section>`;
-    return `<section class="card diagram-card" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">UML Sequence</p><h2>当前核心时序</h2></div><span class="diagram-legend">${links.length} 次交互</span></div><div class="sequence-participants">${participants.map(name => `<span>${esc(name)}</span>`).join('')}</div><ol class="sequence-list">${links.slice(0, 12).map((link, index) => `<li><span class="sequence-index">${index + 1}</span><span class="sequence-node">${esc(link.from || link.source || link.caller || '上游')}</span><span class="sequence-arrow" aria-hidden="true">→</span><span class="sequence-node">${esc(link.to || link.target || link.callee || '下游')}</span><span class="sequence-kind">${esc(link.kind || link.depth || 'call')}</span></li>`).join('')}</ol></section>${modelCard}`;
-  }
-  const entrypoints = Array.isArray(coverageMatrix.entrypoints) ? coverageMatrix.entrypoints : [];
-  const data = Array.isArray(coverageMatrix.data) ? coverageMatrix.data : [];
-  const effects = Array.isArray(coverageMatrix.side_effects) ? coverageMatrix.side_effects : [];
-  return `<section class="card diagram-card" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">UML Model</p><h2>当前系统模型</h2></div><span class="diagram-legend">结构视图</span></div><div class="model-flow"><div class="model-column"><strong>入口</strong>${entrypoints.slice(0, 5).map(item => `<span>${esc(item.name || item.entrypoint || item.id)}</span>`).join('') || '<span>未识别入口</span>'}</div><span class="model-arrow">→</span><div class="model-column"><strong>数据模型</strong>${data.slice(0, 5).map(item => `<span>${esc(item.entity || item.table || item.name || item.id)}</span>`).join('') || '<span>无数据实体</span>'}</div><span class="model-arrow">→</span><div class="model-column"><strong>副作用</strong>${effects.slice(0, 5).map(item => `<span>${esc(item.description || item.kind || item.id)}</span>`).join('') || '<span>无外部副作用</span>'}</div></div></section>`;
+  const models = normalizeDomainModels(coverageMatrix);
+  const sequence = links.length > 0
+    ? mermaidDiagram(renderSequenceSource(links), '需求范围内全部既有代码逻辑时序', { wide: true })
+    : '<p class="diagram-empty">未识别到既有代码调用链；请检查 coverage-matrix.links。</p>';
+  const modelDiagram = models.length > 0
+    ? mermaidDiagram(renderClassSource(coverageMatrix), '领域模型 UML 类图', { wide: true })
+    : '<p class="diagram-empty">当前需求不涉及领域模型，或 coverage-matrix.domain_models 尚未补充。</p>';
+  return `<section class="card diagram-card diagram-card-full" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">UML Sequence</p><h2>待改已有代码逻辑全链路</h2><p class="muted compact">完整罗列需求范围内从入口到副作用终点的既有调用，不截断节点或分支。</p></div><span class="diagram-legend">${links.length} 次交互</span></div>${sequence}</section><section class="card diagram-card diagram-card-full" id="as-is-models"><div class="card-heading"><div><p class="eyebrow">UML Class Diagram</p><h2>领域模型定义与关系</h2><p class="muted compact">展示领域模型的属性、行为、关系类型与多重性；它不是数据库表调用顺序图。</p></div><span class="diagram-legend">${models.length} 个模型</span></div>${modelDiagram}</section>`;
 }
 
 function renderChangeFlow(impactRisk = {}, changePoints = []) {
   const graph = impactRisk?.flow_graph || {};
   const nodes = Array.isArray(graph.nodes) && graph.nodes.length ? graph.nodes : changePoints.map(cp => ({ id: cp.id, label: cp.node || cp.summary || cp.id, decision: cp.decision, cp_ref: cp.id }));
   const edges = Array.isArray(graph.edges) ? graph.edges : [];
-  const byId = new Map(nodes.map(node => [node.id, node]));
-  const ordered = [];
-  const indegree = new Map(nodes.map(node => [node.id, 0]));
-  for (const edge of edges) if (indegree.has(edge.to)) indegree.set(edge.to, indegree.get(edge.to) + 1);
-  const queue = nodes.filter(node => indegree.get(node.id) === 0);
-  while (queue.length) {
-    const node = queue.shift();
-    if (ordered.some(item => item.id === node.id)) continue;
-    ordered.push(node);
-    for (const edge of edges.filter(item => item.from === node.id)) {
-      if (!indegree.has(edge.to)) continue;
-      indegree.set(edge.to, indegree.get(edge.to) - 1);
-      if (indegree.get(edge.to) <= 0) queue.push(byId.get(edge.to));
-    }
-  }
-  for (const node of nodes) if (!ordered.some(item => item.id === node.id)) ordered.push(node);
   const unchanged = value => ['保留', 'keep', 'unchanged'].includes(String(value || '').toLowerCase());
-  const changed = ordered.filter(node => !unchanged(node.decision)).length;
-  return `<section class="card diagram-card" id="change-flow"><div class="card-heading"><div><p class="eyebrow">Change Journey</p><h2>改造点全链路</h2><p class="muted compact">高亮节点是本次新增、修改或删除的位置；点击节点跳到对应 CP 详情。</p></div><span class="diagram-legend">${changed}/${ordered.length} 节点变化</span></div><div class="change-chain" role="img" aria-label="To-Be 改造点全链路">${ordered.map((node, index) => {
+  const changed = nodes.filter(node => !unchanged(node.decision)).length;
+  const aliases = new Map(nodes.map((node, index) => [node.id, mermaidId(node.id || index, 'F')]));
+  const source = ['flowchart LR'];
+  for (const node of nodes) {
     const decision = node.decision || '改造';
     const tone = decision === '新增' ? 'add' : decision === '删除' ? 'remove' : unchanged(decision) ? 'keep' : 'modify';
     const cpRef = node.cp_ref || node.change_point_ref || (String(node.id || '').startsWith('CP-') ? node.id : '');
-    const content = `<span class="change-decision">${esc(decision)}</span><strong>${esc(node.label || node.name || node.id)}</strong>${cpRef ? `<small>${esc(cpRef)}</small>` : ''}`;
-    return `${index ? '<span class="chain-arrow" aria-hidden="true">→</span>' : ''}${cpRef ? `<a class="change-node ${tone}" href="#cp-${domId(cpRef)}">${content}</a>` : `<div class="change-node ${tone}">${content}</div>`}`;
-  }).join('')}</div><div class="change-legend"><span class="keep">保留</span><span class="modify">改造</span><span class="add">新增</span><span class="remove">删除</span></div></section>`;
+    const label = [node.label || node.name || node.id, decision, cpRef].filter(Boolean).map(value => mermaidText(value)).join('<br/>');
+    source.push(`  ${aliases.get(node.id)}["${label}"]:::${tone}`);
+  }
+  for (const edge of edges) {
+    if (!aliases.has(edge.from) || !aliases.has(edge.to)) continue;
+    const label = mermaidText(edge.label || edge.kind || edge.type);
+    source.push(`  ${aliases.get(edge.from)} -->${label ? `|${label}|` : ''} ${aliases.get(edge.to)}`);
+  }
+  if (edges.length === 0) {
+    for (let index = 1; index < nodes.length; index++) source.push(`  ${aliases.get(nodes[index - 1].id)} --> ${aliases.get(nodes[index].id)}`);
+  }
+  source.push('  classDef keep fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-width:1px');
+  source.push('  classDef modify fill:#fffbeb,stroke:#f59e0b,color:#92400e,stroke-width:3px');
+  source.push('  classDef add fill:#f0fdf4,stroke:#16a34a,color:#166534,stroke-width:3px');
+  source.push('  classDef remove fill:#fef2f2,stroke:#dc2626,color:#991b1b,stroke-width:3px,stroke-dasharray:5 3');
+  const cpLinks = nodes.map(node => node.cp_ref || node.change_point_ref || (String(node.id || '').startsWith('CP-') ? node.id : '')).filter(Boolean);
+  return `<section class="card diagram-card diagram-card-bleed" id="change-flow"><div class="card-heading"><div><p class="eyebrow">Change Journey</p><h2>改造点全链路</h2><p class="muted compact">一张图保留入口、分支与终点的完整拓扑；画布使用原始尺寸，可横向滚动查看，不会缩成缩略图。</p></div><span class="diagram-legend">${changed}/${nodes.length} 节点变化</span></div>${nodes.length ? mermaidDiagram(source.join('\n'), 'To-Be 改造点全链路大图', { wide: true }) : '<p class="diagram-empty">暂无 flow_graph 节点。</p>'}<div class="change-legend"><span class="keep">保留</span><span class="modify">改造</span><span class="add">新增</span><span class="remove">删除</span></div>${cpLinks.length ? `<nav class="diagram-links" aria-label="跳转到改造点详情">${[...new Set(cpLinks)].map(cp => `<a href="#cp-${domId(cp)}">${esc(cp)}</a>`).join('')}</nav>` : ''}</section>`;
 }
 
 function renderToBeUml(impactRisk = {}) {
@@ -200,25 +273,10 @@ function renderToBeUml(impactRisk = {}) {
   const edges = Array.isArray(graph.edges) ? graph.edges : [];
   const byId = new Map(nodes.map(node => [node.id, node]));
   if (edges.length > 0) {
-    return `<section class="card diagram-card" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">UML Target Model</p><h2>目标交互模型</h2><p class="muted compact">先理解目标系统怎样协作，再查看下一张图中的具体改造位置。</p></div><span class="diagram-legend">${nodes.length} 个参与节点</span></div><ol class="sequence-list">${edges.slice(0, 16).map((edge, index) => {
-      const from = byId.get(edge.from);
-      const to = byId.get(edge.to);
-      return `<li><span class="sequence-index">${index + 1}</span><span class="sequence-node">${esc(from?.label || from?.name || edge.from)}</span><span class="sequence-arrow" aria-hidden="true">→</span><span class="sequence-node">${esc(to?.label || to?.name || edge.to)}</span><span class="sequence-kind">${esc(edge.label || edge.kind || 'interaction')}</span></li>`;
-    }).join('')}</ol></section>`;
+    const sequenceLinks = edges.map(edge => ({ ...edge, from: byId.get(edge.from)?.label || byId.get(edge.from)?.name || edge.from, to: byId.get(edge.to)?.label || byId.get(edge.to)?.name || edge.to, kind: edge.label || edge.kind || 'interaction' }));
+    return `<section class="card diagram-card diagram-card-full" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">UML Target Model · Sequence</p><h2>目标核心时序</h2><p class="muted compact">以真实 UML 时序展示目标系统的参与者与交互顺序。</p></div><span class="diagram-legend">${nodes.length} 个参与节点</span></div>${mermaidDiagram(renderSequenceSource(sequenceLinks), '目标核心时序', { wide: true })}</section>`;
   }
-  return `<section class="card diagram-card" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">UML Target Model</p><h2>目标系统模型</h2></div><span class="diagram-legend">${nodes.length} 个节点</span></div><div class="model-flow">${nodes.slice(0, 10).map((node, index) => `${index ? '<span class="model-arrow">→</span>' : ''}<div class="model-column"><strong>${esc(node.label || node.name || node.id)}</strong><span>${esc(node.decision || '目标节点')}</span></div>`).join('') || '<div class="model-column"><strong>目标模型待补充</strong><span>flow_graph 暂无节点</span></div>'}</div></section>`;
-}
-
-function mdToSimpleHtml(md) {
-  if (!md) return '';
-  return md.split('\n').map(line => {
-    if (/^###\s/.test(line)) return `<h3>${esc(line.replace(/^###\s*/, ''))}</h3>`;
-    if (/^##\s/.test(line)) return `<h2>${esc(line.replace(/^##\s*/, ''))}</h2>`;
-    if (/^#\s/.test(line)) return `<h1>${esc(line.replace(/^#\s*/, ''))}</h1>`;
-    if (/^[-*]\s/.test(line)) return `<li>${esc(line.replace(/^[-*]\s*/, ''))}</li>`;
-    if (line.trim() === '') return '';
-    return `<p>${esc(line)}</p>`;
-  }).join('\n');
+  return `<section class="card diagram-card" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">UML Target Model</p><h2>目标系统模型</h2></div><span class="diagram-legend">${nodes.length} 个节点</span></div><p class="diagram-empty">flow_graph 暂无边，无法生成目标时序；请补充节点间交互。</p></section>`;
 }
 
 // --- Block renderers ---
@@ -285,11 +343,14 @@ function renderAsIsSection(data) {
   }
 
   body += sectionNav([
-    { id: 'as-is-sequence', label: '现状执行链路 / 关键模型' },
+    { id: 'as-is-sequence', label: '待改已有逻辑全链路' },
+    { id: 'as-is-models', label: '领域模型 UML' },
+    { id: 'as-is-walkthrough', label: '完整逻辑走查' },
     { id: 'as-is-overview', label: '一句话现状总结' },
     { id: 'as-is-evidence', label: '证据与质量（按需）' },
   ]);
   body += renderAsIsUml(coverageMatrix || {});
+  if (coreWalkthrough) body += detailPanel('as-is-walkthrough', '所有待变更既有代码逻辑（完整走查）', `<div class="section-md">${mdToHtml(coreWalkthrough)}</div>`, true);
   if (overview) body += detailPanel('as-is-overview', '现状总结（一段话）', `<p>${esc(oneSentence(overview))}</p>`, true);
   body += `<section id="as-is-evidence" class="detail-stack">`;
   if (qualityScore) {
@@ -336,13 +397,13 @@ function renderToBeSection(data) {
 
   body += sectionNav([
     { id: 'implementation-plan', label: '完整 To-Be 方案' },
-    { id: 'to-be-model', label: '目标模型' },
+    { id: 'to-be-model', label: '目标核心时序' },
     { id: 'change-flow', label: '变更点在 As-Is 节点上的呈现' },
     { id: 'change-points', label: '全部变更点' },
     { id: 'risk-plan', label: '风险点与风险评估' },
   ]);
   if (implementationPlan) {
-    body += detailPanel('implementation-plan', '完整 To-Be 方案（完整实施方案）', `<div class="section-md">${mdToSimpleHtml(implementationPlan)}</div>`, true);
+    body += detailPanel('implementation-plan', '完整 To-Be 方案（完整实施方案）', `<div class="section-md">${mdToHtml(implementationPlan)}</div>`, true);
   }
   body += renderToBeUml(impactRisk || {});
   body += renderChangeFlow(impactRisk || {}, changePoints);
@@ -440,7 +501,7 @@ function renderProgressSection(data) {
 }
 
 function renderCrSection(data) {
-  const { crResults, taskDetails, reviewReportMd, normalizedTasks, tasks } = data;
+  const { crResults, taskDetails, reviewReportMd, aggregateAssessmentMd, normalizedTasks, tasks } = data;
   let body = blockHero('🔍', 'CR 审查结果', data.ideaName);
 
   if (crResults.length === 0) {
@@ -483,7 +544,10 @@ function renderCrSection(data) {
   }
 
   if (reviewReportMd) {
-    body += `<div class="card animate-in"><h2>总报告</h2><div class="section-md">${mdToSimpleHtml(reviewReportMd)}</div></div>\n`;
+    body += `<div class="card animate-in"><h2>总报告</h2><div class="section-md">${mdToHtml(reviewReportMd)}</div></div>\n`;
+  }
+  if (aggregateAssessmentMd) {
+    body += `<div class="card animate-in card-accent-purple"><h2>多维问题汇总裁决与根因合并</h2><div class="section-md">${mdToHtml(aggregateAssessmentMd)}</div></div>\n`;
   }
 
   return wrapHtml(`CR — ${data.ideaName}`, body);
@@ -491,17 +555,16 @@ function renderCrSection(data) {
 
 /**
  * Render the structured merge-review packet.  This deliberately reads the
- * JSON report (and the optional confirmation) instead of parsing the markdown
- * companion so that every value shown is bound to the exact snapshot that was
- * reviewed.
+ * internal JSON snapshot (and the optional confirmation), so every value in
+ * the CR report is bound to the exact source snapshot that was reviewed.
  */
 function renderCurrentChangeSection(data) {
   const report = data.currentChangeReport;
-  let body = blockHero('🧭', '当前变更', data.ideaName);
+  let body = blockHero('🧭', '合并审阅', data.ideaName);
 
   if (!report) {
-    body += `<div class="card animate-in"><p class="muted">暂无当前变更报告。</p><p class="muted">完成 review:merge 后生成 cr/current-change-report.json。</p></div>`;
-    return wrapHtml(`当前变更 — ${data.ideaName}`, body);
+    body += `<div class="card animate-in"><p class="muted">合并审阅数据尚未生成。</p><p class="muted">完成 review:merge 后，本章节会直接更新到同一份 CR 报告中。</p></div>`;
+    return wrapHtml(`合并审阅 — ${data.ideaName}`, body);
   }
 
   const readiness = report.readiness || {};
@@ -533,6 +596,20 @@ function renderCurrentChangeSection(data) {
   body += metric('Verification', verification.status || 'missing', '', verification.status === 'passed' || verification.status === 'pass' ? 'success' : 'warn');
   body += metric('Machine CR', machine.verdict || 'unknown', `${machine.blocking_findings || 0} blocking`, machine.verdict === 'approved' ? 'success' : 'danger');
   body += metric('Risk', risk.level || 'not_assessed', '', ['low', 'none', 'not_assessed'].includes(risk.level) ? 'success' : 'warn');
+  body += `</div>\n`;
+
+  body += `<div class="card animate-in card-accent-purple"><h2>当前代码已实现的内容</h2>`;
+  if (report.implementation_summary) {
+    body += `<div class="section-md">${mdToHtml(report.implementation_summary)}</div>`;
+  } else {
+    body += `<p class="muted">未找到 final-summary.md，无法说明当前实现。</p>`;
+  }
+  const tasks = Array.isArray(report.tasks) ? report.tasks : [];
+  if (tasks.length > 0) {
+    body += `<h3 class="subheading">Task 与落地文件</h3><div class="table-scroll"><table><tr><th>Task</th><th>做了什么</th><th>涉及文件</th><th>返修</th></tr>`;
+    for (const task of tasks) body += `<tr><td>${esc(task.task_id || '—')}</td><td class="desc">${esc(task.description || '未记录')}</td><td class="desc mono">${esc((task.changed_files || []).join(', ') || '—')}</td><td>${esc(task.rework_count || 0)}</td></tr>`;
+    body += `</table></div>`;
+  }
   body += `</div>\n`;
 
   body += `<div class="card animate-in card-accent-${readiness.status === 'ready_for_human_review' ? 'green' : 'orange'}"><h2>Readiness</h2>`;
@@ -637,7 +714,7 @@ function renderCurrentChangeSection(data) {
   }
   body += `</div>\n`;
 
-  return wrapHtml(`当前变更 — ${data.ideaName}`, body);
+  return wrapHtml(`合并审阅 — ${data.ideaName}`, body);
 }
 
 function renderTimelineSection(data) {
@@ -683,6 +760,7 @@ function loadData(ideaDir) {
   const taskState = readTaskState(taskStateFile(ideaDir));
   const crResults = collectCrResults(ideaDir);
   const reviewReportMd = readMd(ideaDir, 'cr/review-report.md');
+  const aggregateAssessmentMd = readMd(ideaDir, 'cr/aggregate-assessment.md');
   const currentChangeReport = readJson(ideaDir, 'cr/current-change-report.json');
   const currentChangeReportSha256 = fileSha256(join(ideaDir, 'cr/current-change-report.json'));
   const rawMergeConfirmation = readJson(ideaDir, 'confirmations/merge-review.json');
@@ -758,7 +836,7 @@ function loadData(ideaDir) {
     summary, timingSummary, stepOutputs,
     tasks: taskState.tasks, taskDetails,
     normalizedTasks, traceabilityTree, changePoints,
-    crResults, reviewReportMd, currentChangeReport, currentChangeReportSha256, mergeConfirmation, impactRisk,
+    crResults, reviewReportMd, aggregateAssessmentMd, currentChangeReport, currentChangeReportSha256, mergeConfirmation, impactRisk,
     overview, coreWalkthrough, evidenceLedger, qualityScore, coverageMatrix,
     implementationPlan, dataChanges, apiChanges, unitTestResult, performanceMetrics,
     stepHistory: workflowState?.step_history || [],

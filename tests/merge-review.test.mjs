@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { checkGate } from '../scripts/gate-check.mjs';
@@ -90,6 +90,8 @@ describe('pre-merge current change report', () => {
   }
 
   it('generates a reviewable report and requires explicit approval', () => {
+    mkdirSync(join(ideaDir, 'cr'), { recursive: true });
+    writeFileSync(join(ideaDir, 'cr/current-change-report.md'), '# legacy standalone report\n');
     const report = generateMergeReview(ideaDir, root);
 
     assert.equal(report.readiness.status, 'ready_for_human_review');
@@ -98,9 +100,12 @@ describe('pre-merge current change report', () => {
     assert.equal(report.verification.repositories[0].checks[0].id, 'unit');
     assert.equal(validateMergeReviewReport(ideaDir), '');
     assert.match(checkGate(ideaDir, 'merge-review-confirmed').reason, /missing/);
-    assert.match(readFileSync(join(ideaDir, 'cr/current-change-report.md'), 'utf8'), /## Human Review Decision/);
+    assert.equal(report.implementation_summary, readFileSync(join(ideaDir, 'final-summary.md'), 'utf8'));
+    assert.equal(existsSync(join(ideaDir, 'cr/current-change-report.md')), false);
 
-    generateCrHtml();
+    const html = generateCrHtml();
+    assert.match(readFileSync(html.path, 'utf8'), /当前代码已实现的内容/);
+    assert.match(readFileSync(html.path, 'utf8'), /Changed the exported value/);
     recordMergeReviewDecision(ideaDir, 'approve', 'reviewed exact snapshot');
     assert.equal(validateMergeReviewConfirmation(ideaDir), '');
     confirmTaskTimeReport();
@@ -121,8 +126,8 @@ describe('pre-merge current change report', () => {
     generateMergeReview(ideaDir, root);
     generateCrHtml();
     recordMergeReviewDecision(ideaDir, 'approve');
-    appendFileSync(join(ideaDir, 'cr/current-change-report.md'), '\nchanged after approval\n');
-    assert.match(validateMergeReviewConfirmation(ideaDir), /does not match/);
+    appendFileSync(join(ideaDir, 'final-summary.md'), '\nchanged after approval\n');
+    assert.match(validateMergeReviewConfirmation(ideaDir), /final-summary\.md changed/);
 
     generateMergeReview(ideaDir, root);
     generateCrHtml();

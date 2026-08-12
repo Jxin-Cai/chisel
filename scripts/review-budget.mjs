@@ -10,15 +10,15 @@ export function planReview({ dimensions = [], findingCount = 0, riskLevel = 'low
   for (let index = 0; index < unique.length; index += policy.max_concurrency) {
     batches.push(unique.slice(index, index + policy.max_concurrency));
   }
-  const requestedVotes = policy.skeptic_votes[riskLevel] || 1;
-  const skepticGroups = Math.min(Number(findingCount) || 0, Math.floor(policy.max_skeptic_agents / requestedVotes));
   return {
     policy,
     dimension_batches: batches,
     dimension_agent_count: unique.length,
-    skeptic_votes_per_finding: requestedVotes,
-    skeptic_finding_budget: skepticGroups,
-    overflow_findings: Math.max(0, (Number(findingCount) || 0) - skepticGroups),
+    aggregate_assessment_agents: Number(findingCount) > 0 ? policy.max_aggregate_assessment_agents : 0,
+    findings_in_single_assessment: Math.max(0, Number(findingCount) || 0),
+    targeted_skeptic_finding_budget: Math.min(Math.max(0, Number(findingCount) || 0), policy.targeted_skeptic.max_findings),
+    targeted_skeptic_max_concurrency: policy.max_concurrency,
+    risk_level: riskLevel,
   };
 }
 

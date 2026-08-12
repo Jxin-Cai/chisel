@@ -7,6 +7,10 @@ function contractFingerprint(contract) {
   return createHash('sha256').update(JSON.stringify(contract)).digest('hex');
 }
 
+export function verificationPlanFingerprint(plan) {
+  return createHash('sha256').update(JSON.stringify(plan)).digest('hex');
+}
+
 function gitOutput(projectRoot, args) {
   return execFileSync('git', args, {
     cwd: projectRoot,
@@ -77,6 +81,33 @@ export function validateVerificationResult(ideaDir, projectRoot = '.') {
     const recordedFingerprint = repo.workspace_fingerprint || repo.fingerprint;
     if (recordedHead !== current.head) return `verification is stale: git HEAD changed for ${repositoryRoot}`;
     if (recordedFingerprint !== current.fingerprint) return `verification is stale: working tree changed for ${repositoryRoot}`;
+  }
+  return '';
+}
+
+export function validateIncrementalVerificationResult(ideaDir, projectRoot = '.') {
+  const path = join(ideaDir, 'incremental-verify-result.json');
+  const planPath = join(ideaDir, 'repair-verification-plan.json');
+  if (!existsSync(path)) return 'incremental-verify-result.json missing';
+  if (!existsSync(planPath)) return 'repair-verification-plan.json missing';
+  let result;
+  let plan;
+  try { result = JSON.parse(readFileSync(path, 'utf8')); } catch (error) { return `incremental-verify-result.json invalid JSON: ${error.message}`; }
+  try { plan = JSON.parse(readFileSync(planPath, 'utf8')); } catch (error) { return `repair-verification-plan.json invalid JSON: ${error.message}`; }
+  if (result.schema_version !== 1 || result.mode !== 'incremental') return 'incremental verification result must use schema_version 1 and mode incremental';
+  if (result.status !== 'pass') return `incremental verification status must be pass but is ${result.status || 'missing'}`;
+  if (result.plan_fingerprint !== verificationPlanFingerprint(plan)) return 'incremental verification is stale: repair verification plan changed';
+  if (!Array.isArray(result.affected_files) || result.affected_files.length === 0) return 'incremental verification affected_files must be non-empty';
+  const repositories = Array.isArray(result.repositories) ? result.repositories : [];
+  if (repositories.length === 0) return 'incremental verification repositories must be non-empty';
+  for (const repo of repositories) {
+    const root = repo.project_root || projectRoot;
+    if (!Array.isArray(repo.checks) || repo.checks.length === 0) return `incremental verification checks must be non-empty for ${root}`;
+    if (repo.checks.some(check => check.status !== 'pass' || check.exit_code !== 0)) return `incremental verification contains failed checks for ${root}`;
+    const current = workspaceIdentity(root);
+    if (current.error) return current.error;
+    if (repo.git_head !== current.head) return `incremental verification is stale: git HEAD changed for ${root}`;
+    if (repo.workspace_fingerprint !== current.fingerprint) return `incremental verification is stale: working tree changed for ${root}`;
   }
   return '';
 }

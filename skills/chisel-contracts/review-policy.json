@@ -2,10 +2,14 @@
   "schema_version": 1,
   "max_concurrency": 3,
   "max_dimension_agents": 9,
-  "max_skeptic_agents": 9,
-  "skeptic_votes": {
-    "low": 1,
-    "medium": 1,
-    "high": 3
+  "max_aggregate_assessment_agents": 2,
+  "targeted_skeptic": {
+    "max_findings": 6,
+    "votes_by_severity": {
+      "critical": 2,
+      "high": 2,
+      "medium": 1,
+      "low": 1
+    }
   }
 }

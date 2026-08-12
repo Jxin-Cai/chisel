@@ -47,7 +47,6 @@ describe('phase artifact delivery', () => {
     writeFileSync(join(ideaDir, 'to-be', 'implementation-plan.md'), '# Plan\n');
     writeFileSync(join(ideaDir, 'cr', 'dim-d1-cr.md'), '# CR\n');
     writeFileSync(join(ideaDir, 'cr', 'current-change-report.json'), '{}\n');
-    writeFileSync(join(ideaDir, 'cr', 'current-change-report.md'), '# Current\n');
     writeFileSync(join(ideaDir, 'confirmations', 'merge-review.json'), '{}\n');
     writeFileSync(join(ideaDir, 'confirmations', 'cr-report.json'), '{}\n');
     writeFileSync(join(ideaDir, 'confirmations', 'test-report.json'), '{}\n');
@@ -72,6 +71,8 @@ describe('phase artifact delivery', () => {
       assert.ok(!labels.includes('reports/other.html'), `${step} must not expand reports/`);
       if (step === 'review:cr-report') assert.ok(labels.includes('confirmations/cr-report.json'));
     }
+    const mergeLabels = collectPhaseArtifacts(ideaDir, 'review:merge').map(item => item.label);
+    assert.deepEqual(mergeLabels, ['confirmations/merge-review.json', 'reports/cr-report.html']);
     assert.ok(collectPhaseArtifacts(ideaDir, 'final:summary').some(item => item.label === 'confirmations/task-time-report.json'));
   });
 

@@ -6,6 +6,7 @@ describe('chisel-debug contract', () => {
   it('is reproduce-first and returns a handoff in repair-diagnosis mode', () => {
     const report = createDebugReport({ taskId: 'task-1' });
     assert.deepEqual(report.phases.map(phase => phase.name), DEBUG_PHASES);
+    assert.deepEqual(report.phases.map(phase => phase.label_zh), ['初步研判', '复现', '环境核验', '链路追踪', '根因确认', '修复策略']);
     assert.equal(validateDebugReport(report).valid, true);
     const triaged = updateDebugReport(report, { phase: 'triage', status: 'completed', evidence: ['CR-001'] });
     const reproduced = updateDebugReport(triaged, { phase: 'reproduce', status: 'completed', evidence: ['repro command'] });

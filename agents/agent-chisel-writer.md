@@ -42,7 +42,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`。
 | `as-is/ai-input/change-surface.md` | 安全变更区域 |
 | `as-is/ai-input/field-flow.md`（如有） | 字段全链路流转 |
 | `as-is/evidence-ledger.json` | F-xxx 证据账本 |
-| `as-is/coverage-matrix.json` | 四维覆盖矩阵 |
+| `as-is/coverage-matrix.json` | 完整逻辑链路、领域模型定义与 UML 关系、四维覆盖矩阵 |
 | `as-is/context-budget.json` | 上下文预算数据 |
 | `as-is/repo-map.json` | 代码地图 |
 | `as-is/debt-signals/**/*`（如有） | 技术债、禁区与证据补充；必须全部读取并由 receipt 绑定 |
@@ -63,7 +63,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/SKILL.md`。
 
 ### 写作原则
 
-1. **图先行**：每个主干文件至少一个 Mermaid 图，图在前文字在后
+1. **图先行**：每个主干文件至少一个 Mermaid 图，图在前文字在后；core-walkthrough 的 sequenceDiagram 必须覆盖全部待改既有代码逻辑，details/data-model.md 必须用 classDiagram 表达领域模型定义与关系
 2. **中文业务语义**：用业务术语而非纯技术名词描述行为
 3. **先主路径再分支**：叙事按 happy path → exception path 顺序
 4. **证据标注**：关键结论引用 `[F-xxx]` 编号

@@ -1,6 +1,6 @@
 # Merge Review（合并前人工 CR）
 
-本阶段与自动 CR / 自修复循环分离。自动 CR 负责发现问题并驱动返修；本阶段负责把最终代码快照整理成可审阅的合并决策包，并获得用户对该精确快照的明确批准。
+本阶段是 CR 报告的最终合并审阅章节，不再生成一份独立的 Merge Review 报告。自动 CR 负责发现问题并驱动返修；本阶段把最终代码快照、当前实现说明和合并决策信息补充进同一份 `reports/cr-report.html`，并获得用户对该精确快照的明确批准。
 
 ## 生成报告
 
@@ -13,15 +13,16 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} merge-review-report
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} review:merge
 ```
 
-命令顺序是硬性协议：先写入结构化 JSON/Markdown 报告，再生成独立的
-`reports/cr-report.html`，解析并保留生成器返回的 SHA-256。将
+命令顺序是硬性协议：先写入供 renderer 使用的内部结构化快照 JSON，再重新生成统一的
+`reports/cr-report.html`，解析并保留生成器返回的 SHA-256。不得生成或交付单独的 Merge Review Markdown 报告。将
 `phase-artifacts.mjs` 输出原样发送到对话（其中必须有绝对路径 Markdown 链接，包含
-`reports/cr-report.html`），再进入 AskUserQuestion 并停止等待用户决定。HTML renderer 直接读取
-`cr/current-change-report.json`，不得用截断 Markdown 代替结构化字段；用户应可在单独页面
-查看完整的 readiness、scope、diff、checks、machine CR、risk 和 decision 选项。
+`reports/cr-report.html`），再进入 AskUserQuestion 并停止等待用户决定。HTML renderer 使用
+`cr/current-change-report.json` 作为内部快照数据源；用户在同一份 CR 报告中查看当前代码实现、
+readiness、scope、diff、checks、machine CR、risk 和 decision 选项。
 
-重点展示 `cr/current-change-report.md` 与对应 HTML，并摘要说明：
+重点展示统一的 `reports/cr-report.html`，并摘要说明：
 
+- 当前代码具体实现了哪些功能、每个 task 的落地内容和涉及文件
 - 审查范围：每个仓库的 base、HEAD、branch、working-tree fingerprint
 - 变更概览：文件、增删行、commit、未提交状态
 - 行为与 task 覆盖
@@ -51,7 +52,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/merge-review.mjs {IDEA_DIR} --confirm approve
 node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {IDEA_DIR} merge-review-confirmed
 ```
 
-用户明确决定后才能运行 `merge-review.mjs --confirm ...`；该命令会把决定同时绑定到 Current Change JSON 和刚展示的 CR HTML 哈希。输出 `confirmations/merge-review.json` 的文件链接。随后重新运行 runner；只有 gate 通过才能进入 `done` 和合并菜单。
+用户明确决定后才能运行 `merge-review.mjs --confirm ...`；该命令会把决定同时绑定到内部快照 JSON 和刚展示的统一 CR HTML 哈希。输出 `confirmations/merge-review.json` 的文件链接。随后重新运行 runner；只有 gate 通过才能进入 `done` 和合并菜单。
 
 ### Request changes
 

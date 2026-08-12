@@ -12,13 +12,23 @@ export const DEBUG_PHASES = Object.freeze([
 ]);
 export const EXECUTION_PHASES = Object.freeze(['repair', 'verify']);
 export const DEBUG_MODES = Object.freeze(['standalone', 'return-diagnosis']);
+export const DEBUG_PHASE_LABELS_ZH = Object.freeze({
+  triage: '初步研判',
+  reproduce: '复现',
+  environment_sanity: '环境核验',
+  trace: '链路追踪',
+  root_cause: '根因确认',
+  fix_strategy: '修复策略',
+  repair: '返修',
+  verify: '验证',
+});
 
 function now() {
   return new Date().toISOString();
 }
 
 function emptyPhase(name) {
-  return { name, status: 'pending', evidence: [] };
+  return { name, label_zh: DEBUG_PHASE_LABELS_ZH[name], status: 'pending', evidence: [] };
 }
 
 export function createDebugReport({ taskId, ideaDir = '', mode = 'return-diagnosis', createdAt = now() } = {}) {

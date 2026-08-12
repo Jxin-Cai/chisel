@@ -14,7 +14,7 @@
     "tasks:init": { "phase": "tasks", "gate": "task-workflow-exists" },
     "implement:code": { "phase": "implement", "gate": "implementation-verified" },
     "repair:code": { "phase": "implement", "gate": "implementation-verified" },
-    "test:unit": { "phase": "test", "gate": "unit-test-report-confirmed" },
+    "test:unit": { "phase": "test", "gate": "verification-ready-for-review" },
     "review:cr": { "phase": "review", "gate": "cr-complete" },
     "review:cr-light": { "phase": "review", "gate": "cr-complete" },
     "review:cr-moderate": { "phase": "review", "gate": "cr-complete" },

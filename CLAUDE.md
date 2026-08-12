@@ -8,7 +8,7 @@ This repository contains the `chisel` Claude Code plugin.
 
 ## 关键约束
 
-- 不要跳过 as-is 和 to-be 确认。
+- 不要跳过 To-Be 方案确认和最终 merge 快照确认。As-Is、测试、CR、耗时报告必须生成并保持新鲜，但它们是非阻塞交付物，不要求用户逐份确认。
 - 不要凭上下文记忆决定下一步，始终调用 `orchestration-status.mjs`。
 - 同一 task 最多返修 5 次，超过后进入 blocked。第 4-5 轮由 fresh agent 接管。
 - 每次提交代码到主干（push to main）前，必须先更新 `.claude-plugin/plugin.json` 中的 `version` 字段。版本号遵循 semver：bug fix 升 patch，新功能/行为变更升 minor，破坏性变更升 major。版本更新应包含在同一次提交中。

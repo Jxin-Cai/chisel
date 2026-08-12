@@ -121,7 +121,7 @@ function collectTraceability(ideaDir) {
 
 // --- Markdown to HTML ---
 
-function mdToHtml(md) {
+export function mdToHtml(md) {
   if (!md) return '';
   let html = '';
   const lines = md.split('\n');

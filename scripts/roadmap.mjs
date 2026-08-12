@@ -25,7 +25,7 @@ const STEP_DESCRIPTIONS = {
   'review:integration': '跨 task 集成一致性审查',
   'review:cr-report': '全部 CR 返修闭环后生成并确认最终 CR 报告',
   'final:summary': '生成最终变更摘要 + 验证证据汇总',
-  'review:merge': '生成当前变更报告，等待用户批准合并',
+  'review:merge': '把当前实现与精确快照并入 CR 报告，等待用户批准合并',
 };
 
 function resolveStepStatus(ideaDir, step, gateId) {

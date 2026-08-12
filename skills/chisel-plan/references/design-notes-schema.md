@@ -1,6 +1,6 @@
 # design-notes.json Schema
 
-松散结构 + 关键字段必填。由主编排器在 Phase 2 写入，供 Writer 生成 `implementation-plan.md`。
+松散结构 + 关键字段必填。由主编排器在 Phase 2 写入，供确定性 renderer 生成 `implementation-plan.md`。
 
 ## Schema
 
@@ -9,6 +9,7 @@
   "schema_version": 1,
   "generated_at": "ISO timestamp",
 
+  "tl_dr": "一两句话概括方案核心思路和影响规模",
   "goal_behavior": "目标行为的一段叙事描述",
   "non_goal_behavior": "非目标行为（本次明确不做的事）",
   "strategy_overview": "方案总览——一段概括性描述",
@@ -76,6 +77,7 @@
 以下字段不能省略（可以为空字符串/空数组，但键必须存在）：
 
 - `schema_version`
+- `tl_dr`
 - `goal_behavior`
 - `non_goal_behavior`
 - `strategy_overview`
@@ -94,8 +96,9 @@
 
 ## 自由文本字段
 
-以下字段允许自由格式文本，Writer 会据此生成叙事段落：
+以下字段允许自由格式文本，renderer 会据此生成叙事段落：
 
+- `tl_dr`
 - `strategy_overview`
 - `change_point_details[].design_rationale`
 - `change_point_details[].modification_approach`

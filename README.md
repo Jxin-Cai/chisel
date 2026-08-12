@@ -118,11 +118,11 @@ Chisel stores runtime artifacts under the Git common root at `.chisel/<idea-name
 
 ```
 Receive requirement → Clarify requirement → Classify difficulty/profile
-→ [Full only: Understand as-is → async Writer → User confirm]
-→ Strategy design → async Writer → Adversarial completeness review (repair loop) → User confirm strategy
+→ [Full only: Understand as-is → deterministic document rendering]
+→ Strategy design → deterministic document rendering → Adversarial completeness review (repair loop) → User confirm strategy
 → Init tasks → Code → Unit tests/coverage and consolidated anomaly repair → Unit-test report
 → Multi-dimensional Architect CR → [Rework loop] → Final CR report
-→ Final summary → Current Change Report → User merge decision → Delivery
+→ Final summary → Merge-review section in CR report → User merge decision → Delivery
 ```
 
 Bracketed steps may be skipped depending on complexity classification.
@@ -133,7 +133,7 @@ Bracketed steps may be skipped depending on complexity classification.
 |---|---|---|
 | 1 | **Receive requirement** | Parse user input, save as `requirement.md` |
 | 2 | **Clarify and classify** | Clarify first, then persist a fingerprinted difficulty, risk, execution profile, and subagent budget |
-| 3 | **Understand as-is (full only)** | Existing codebases use Explorer/analyst plus a background Writer. Repositories with zero historical source files use a deterministic greenfield baseline and launch no discovery agents. |
+| 3 | **Understand as-is (full only)** | Existing codebases use Explorer/analyst plus deterministic rendering. Repositories with zero historical source files use a greenfield baseline and launch no discovery agents. |
 | 4 | **Confirm as-is (full only)** | Human reviews 3-minute summary, risk map, misconceptions, signs off |
 | 5 | **Design strategy** | Planner produces implementation plan, tasks, traceability matrix |
 | 6 | **Adversarial completeness review** | A fresh reviewer checks every requirement/AC/VC against the complete to-be artifacts; findings force a planner repair and another review |
@@ -231,11 +231,9 @@ Rollback only cleans whitelisted runtime artifacts — never deletes business so
 ```text
 .chisel/<idea-name>/task-reports/    # Implementation reports
 .chisel/<idea-name>/cr/              # Code review results
-.chisel/<idea-name>/cr/current-change-report.md   # Human pre-merge report
-.chisel/<idea-name>/cr/current-change-report.json # Snapshot-bound report data
+.chisel/<idea-name>/cr/current-change-report.json # Internal snapshot data rendered into the CR report
 .chisel/<idea-name>/confirmations/merge-review.json # Approve / request changes / hold decision
-.chisel/<idea-name>/confirmations/cr-report.json    # Hash-bound CR report confirmation
-.chisel/<idea-name>/confirmations/task-time-report.json # Hash-bound task/time report confirmation
+.chisel/<idea-name>/confirmations/to-be.json        # The only phase-level plan decision
 .chisel/<idea-name>/reports/                        # Five standalone HTML reports, including unit-test coverage
 .chisel/<idea-name>/final-summary.md # Final change summary
 ```
@@ -297,7 +295,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 
 | Agent | Description |
 |---|---|
-| `agent-chisel-writer` | Generate human-readable docs from structured artifacts (sonnet) |
+| `scripts/document-render.mjs` | Deterministically render human-readable docs from structured artifacts without an agent call |
 | `agent-chisel-analyst` | Deep code walkthrough, produce structured as-is data (sonnet) |
 | `agent-chisel-coder` | Implement and verify confirmed tasks (inherits the orchestrator model; opus override for complex/escalated work) |
 | `agent-chisel-reviewer` | Multi-dimension CR with single-dimension-per-pass (opus) |

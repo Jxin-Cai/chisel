@@ -4,7 +4,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkGate } from '../scripts/gate-check.mjs';
-import { readTaskState, STEP_GATE_MAP, taskStateFile } from '../scripts/workflow-lib.mjs';
+import { getStaleCodingTasks, readTaskState, STEP_GATE_MAP, taskStateFile } from '../scripts/workflow-lib.mjs';
 import { changedFilesForProject } from '../scripts/task-provenance.mjs';
 import { controlRoot } from '../scripts/control-plane.mjs';
 
@@ -53,13 +53,48 @@ function emptyCodingTaskReason(workflow, projectRoot) {
   return '';
 }
 
+function liveCodingTasks(workflow) {
+  if (!['implement:code', 'repair:code'].includes(workflow.step)) return [];
+  const file = taskStateFile(workflow.ideaDir);
+  if (!existsSync(file)) return [];
+  try {
+    const state = readTaskState(file);
+    const stale = new Set(getStaleCodingTasks(workflow.ideaDir).map(task => task.taskId));
+    return Object.entries(state.tasks || {})
+      .filter(([taskId, task]) => ['coding', 'repairing'].includes(task.status) && !stale.has(taskId))
+      .map(([taskId]) => taskId);
+  } catch {
+    return [];
+  }
+}
+
+function liveCodingBlocker(workflow, taskIds) {
+  return `${workflow.idea}: ${taskIds.join(', ')} still have live coding leases; do not yield or only say that you are waiting. Join every background Agent with TaskOutput(task_id, block: true), then merge/finish its result and continue the workflow`;
+}
+
 export function evaluateStop(chiselDir, { projectRoot = '.', stopHookActive = false } = {}) {
-  // Claude sets this on the retry caused by a blocking Stop hook. Never create
-  // an infinite loop; the next regular turn/session will enforce the gate again.
-  if (stopHookActive) return { blockers: [], recursive_retry: true };
+  const workflows = findActiveWorkflows(chiselDir);
+  // Claude sets this on the retry caused by a blocking Stop hook. Normally the
+  // retry is allowed through to avoid an infinite loop. A live coding lease is
+  // different: a background Agent is still owned by this turn, so yielding
+  // would orphan its result. Keep the orchestrator alive until it joins the
+  // Agent. Expired leases are deliberately excluded so crashed work cannot
+  // trap the session forever.
+  if (stopHookActive) {
+    const liveBlockers = workflows.flatMap(workflow => {
+      const taskIds = liveCodingTasks(workflow);
+      return taskIds.length > 0 ? [liveCodingBlocker(workflow, taskIds)] : [];
+    });
+    return { blockers: liveBlockers, recursive_retry: true };
+  }
   const blockers = [];
-  for (const workflow of findActiveWorkflows(chiselDir)) {
+  for (const workflow of workflows) {
     if (HUMAN_WAIT_STEPS.has(workflow.step) || workflow.step === 'done') continue;
+    const liveTasks = liveCodingTasks(workflow);
+    if (liveTasks.length > 0) {
+      blockers.push(liveCodingBlocker(workflow, liveTasks));
+      continue;
+    }
     const gateId = STEP_GATE_MAP[workflow.step];
     if (!gateId) {
       blockers.push(`${workflow.idea}: automated step "${workflow.step}" has no canonical gate mapping`);

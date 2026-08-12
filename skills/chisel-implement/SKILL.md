@@ -75,17 +75,43 @@ digraph implement_flow {
      - **BLOCKED** → 向用户报告阻塞原因，等待用户决策
 4. **多 task** → Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/phase-parallel-coding.md`，按其流程并行执行
 
+> **并行 Agent 不能成为停止点。** 如使用后台 Agent，主编排器必须用 `TaskOutput(task_id, block: true)` 等待并收割全部结果，再完成 merge、finish、report/scope 校验和后续调度；禁止以“仍在后台运行，等待完成通知”为由结束当前 turn。
+
 ### Post-coding Build Verification
 
 长耗时编码或验证前，运行 `workflow-status.mjs {IDEA_DIR} --heartbeat <task-id> --run-id <run-id>` 续租。coder 完成后使用 `--finish-task <task-id> coded --run-id <run-id>`；旧 run 不得提交。
 
-当所有 task 完成（进入 review 前），先生成并检查显式验证契约，再执行验证：
+首次实现完成时，先生成并检查显式验证契约，再执行全量验证：
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --init-contract
 # 检查 verification-contract.json 中每个 repo 的 required checks，必要时补充 CI/项目特有命令
-node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} .
+node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --full
 ```
+
+返修完成时不要重复执行完整测试矩阵。根据本轮 CR findings、`affected_tasks`、实际 repair diff 和 task Verification Plan 写入
+`repair-verification-plan.json`：
+
+```json
+{
+  "schema_version": 1,
+  "affected_files": ["src/example.js"],
+  "affected_dimensions": ["spec", "d4"],
+  "repositories": [{
+    "project_root": ".",
+    "checks": [{ "id": "targeted-unit", "command": "npm", "args": ["test", "--", "tests/example.test.js"] }]
+  }]
+}
+```
+
+`affected_files` 和 checks 必须非空，checks 必须覆盖本轮修改直接影响的测试。随后运行：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --incremental
+```
+
+增量结果绑定当前 Git HEAD、工作区指纹和 plan fingerprint，只允许进入返修复审。全部 findings 清零后，
+orchestration-status 会再次返回 `test:unit` 且 `verification_mode=full-final`；此时必须运行 `--full`、更新覆盖率证据和 Test HTML，作为最终封板。
 
 读取 `{IDEA_DIR}/verify-result.json`：
 - `status: "pass"` → 正常流转，等待 orchestration-status 派发 review。结果绑定当前 Git HEAD 和工作区指纹；验证后代码再变化会使 gate 失效，必须重跑

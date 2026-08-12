@@ -6,25 +6,17 @@
 
 ## understand:confirm 详细行为
 
-进入本步骤后，先准备可独立打开的现状审阅页，再向用户提问。不得先提问、写入
-`clarifications.json` 或创建确认凭据：
+进入本步骤后生成可独立打开的现状审阅页：
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/reports.mjs {IDEA_DIR} --reports as-is
 node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} understand:explore
 ```
 
-将第二条命令 stdout 原样输出到对话，确保包含绝对路径
-`{IDEA_DIR}/reports/as-is-report.html` 的 Markdown 链接和生成器返回的 SHA-256。用户打开并明确确认后，才写入
-下方的澄清记录和 `confirmations/as-is.json`，通过 gate 后进入下一步。
-
-读取并展示 `{IDEA_DIR}/as-is/overview.md` 中的 `3分钟摘要`、`风险地图`、`用户确认清单` 和 `待澄清问题`，等用户逐项确认或补充。
-
-将结果写入 `{IDEA_DIR}/clarifications.json`（权威机器可读记录）和 `{IDEA_DIR}/clarifications.md`（人类可读镜像）。`clarifications.json` 必须包含每个 `C-xxx` 的 `id/question/decision/rationale/status/source`，状态只能是 `confirmed/defaulted/deferred`。
-
-同时写入 `{IDEA_DIR}/confirmations/as-is.json`，至少包含：`schema_version: 1`、`phase: "as-is"`、`status: "confirmed"`、`confirmed_at`、`confirmed_by: "user"`、`source_files`、`checklist`。随后运行 `report-confirm.mjs {IDEA_DIR} as-is --confirm --expected-sha <已展示哈希>`，把 `report_file` 与 `report_sha256` 合并进同一凭据。旧哈希不得复用。
-
-新流程不得只创建 `.as-is-confirmed` marker；该 marker 仅用于历史运行目录兼容。
+将第二条命令 stdout 原样输出到对话，确保包含绝对路径和 SHA-256。As-Is 是非阻塞交付物，
+不创建 `confirmations/as-is.json`，不等待单独确认。overview 中的风险、待澄清事项和 checklist
+合并进 To-Be 报告，用户在 `plan:confirm` 一次决策。`as-is-report-confirmed` 兼容 gate 在新流程中表示
+“As-Is 结构化数据有效且 HTML source fingerprint 新鲜”。
 
 ---
 
@@ -129,7 +121,9 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 | task-001 | ... | ... | PASS |
 ```
 
-写完后先运行 `final-summary-complete` gate；通过后运行 `reports.mjs {IDEA_DIR} --reports task-time`。把 `reports/task-time-report.html` 的绝对路径与 SHA-256 返回用户，然后停止等待明确确认。确认后运行 `report-confirm.mjs {IDEA_DIR} task-time --confirm --expected-sha <已展示哈希>`，再运行 `task-time-report-confirmed` gate。该 gate 通过前不得进入 `review:merge`。此时禁止创建 `.done`；随后仍必须完成 merge review 并获得用户对当前代码快照的明确批准。
+写完后先运行 `final-summary-complete` gate；通过后运行 `reports.mjs {IDEA_DIR} --reports task-time`。
+把报告绝对路径与 SHA-256 返回用户，source fingerprint 新鲜后自动进入 `review:merge`，不创建
+`confirmations/task-time-report.json`。此时禁止创建 `.done`；最终决策仍由绑定当前代码快照的 merge review 完成。
 
 ---
 
@@ -137,7 +131,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 
 当 `resume_step` = `done` 时：
 
-先运行 `gate-check.mjs {IDEA_DIR} merge-review-confirmed`。通过后才允许 `touch {IDEA_DIR}/.done` 并展示合并选项。若 HEAD 或工作区在批准后发生变化，gate 会失效，必须重新生成 Current Change Report 并重新批准。
+先运行 `gate-check.mjs {IDEA_DIR} merge-review-confirmed`。通过后才允许 `touch {IDEA_DIR}/.done` 并展示合并选项。若 HEAD 或工作区在批准后发生变化，gate 会失效，必须重新生成 CR 报告中的合并审阅章节并重新批准。
 
 ### 1. 环境检测
 

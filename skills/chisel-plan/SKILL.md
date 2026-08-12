@@ -26,7 +26,7 @@ impact-risk、implementation plan 等产物，重新运行 schema/traceability �
 
 ## 执行
 
-主编排器读取 `requirement-classification.json` 并遵守 `subagent_budget`。moderate/lightweight 最多启动 1 个 Plan agent，不再启动 Explore/Analyst；full 才允许完整规划链。自身精化写入 JSON 并执行完整性自检，最后由后台 Writer 产出 implementation-plan.md。
+主编排器读取 `requirement-classification.json` 并遵守 `subagent_budget`。moderate/lightweight 最多启动 1 个 Plan agent，不再启动 Explore/Analyst；full 才允许完整规划链。自身精化写入 JSON 并执行完整性自检，最后由确定性 renderer 从结构化产物生成 implementation-plan.md。
 
 ---
 
@@ -101,7 +101,7 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 | `impact-risk-report.json` | 改造点 + 风险矩阵 + 复用节点 + flow_graph |
 | `data-change-plan.json`（条件） | 涉及 DB 变更时必须产出 |
 | `api-change-plan.json`（条件） | 涉及 API 变更时必须产出 |
-| `design-notes.json` | 松散结构中间产物（CP 详情/设计理由/自检结果，供 Writer 消费） |
+| `design-notes.json` | 松散结构中间产物（CP 详情/设计理由/自检结果，供 renderer 消费） |
 
 ---
 
@@ -183,39 +183,16 @@ schema 校验后才能重审。
 
 ---
 
-### Phase 4: 异步人类文档生成
+### Phase 4: 确定性人类文档生成
 
-<HARD-GATE principle="P5">
-Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/writer-to-be-task.md`，按其 TASK 结构启动 writer。
-</HARD-GATE>
+结构化计划通过 tasks/traceability/schema 自检后运行：
 
-先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs prepare {idea_dir} to-be`，再启动 `agent-chisel-writer`，设置 `run_in_background: true`，传入 TASK：
-
-派发前运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {idea_dir} --agent-call plan:design writer 1`。
-
-```json
-{
-  "idea_dir": "{idea_dir}",
-  "mode": "to-be",
-  "source_files": [
-    "to-be/design-notes.json",
-    "to-be/tasks.json",
-    "to-be/traceability-matrix.json",
-    "to-be/impact-risk-report.json"
-  ],
-  "optional_sources": [
-    "to-be/data-change-plan.json",
-    "to-be/api-change-plan.json"
-  ],
-  "context_files": [
-    "as-is/ai-input/call-graph.md"
-  ]
-}
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/document-render.mjs {idea_dir} to-be
 ```
 
-Writer 产出 `to-be/implementation-plan.md`。
-
-Writer 最后必须运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs complete {idea_dir} to-be`。主编排器在后台写作期间继续执行 tasks/traceability/schema 和对抗审查输入的独立校验；进入 `plan:adversarial-review` 或向用户展示前必须 `document-job.mjs check` 为 complete。pending/stale 绝不能进入用户 review。
+脚本从 design-notes、tasks、traceability 和 impact-risk 直接生成
+`to-be/implementation-plan.md`，并写入绑定源文件 hash 的 receipt。不得启动 Writer agent；结构化源变化后重新运行即可。
 
 ---
 
@@ -227,7 +204,7 @@ Writer 最后必须运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/document-job.mjs c
 - `to-be/traceability-matrix.json` — 需求到 task 追溯
 - `to-be/impact-risk-report.json` — 影响范围 + 风险 + flow_graph
 - `to-be/design-notes.json` — 设计笔记（含自检结果）
-- `to-be/implementation-plan.md` — 人类可读方案（Writer 产出）
+- `to-be/implementation-plan.md` — 人类可读方案（确定性 renderer 产出）
 
 不要创建 `confirmations/strategy.json`。
 不要创建 `confirmations/to-be.json`；to-be 确认凭据只能由主编排器在用户确认后写入。
