@@ -160,7 +160,7 @@ function markdownCell(value) {
 }
 
 function renderFilePlanRows(filePlan = []) {
-  if (filePlan.length === 0) return '| 无 | review_only | 未声明 file_plan；请按 expected_files 和 implementation_notes 执行，并在 report 中列出 changed_files。 | 无 | 无 | 无 | false |';
+  if (filePlan.length === 0) return '| 无 | review_only | 未声明 file_plan；从 starting_points 出发自主探索调用方、依赖和测试。 | 无 | 无 | 无 | false |';
   return filePlan.map(item => [
     item.path,
     item.change_type,
@@ -188,7 +188,7 @@ task_id: ${task.task_id}
 status: confirmed
 depends_on: ${yamlList(task.depends_on || [])}
 description: ${JSON.stringify(task.title)}
-expected_files: ${yamlList(task.expected_files || [])}
+starting_points: ${yamlList(task.expected_files || [])}
 trace_refs: ${yamlList(task.trace_refs || [])}
 change_point_refs: ${yamlList(task.change_point_refs || [])}
 allowed_files: ${yamlList(task.allowed_files || [])}
@@ -214,6 +214,8 @@ ${task.goal}
 ## Scope
 
 ### Allowed Files / Areas
+
+以下路径仅用于导航，不构成修改边界：
 
 ${bulletList(task.allowed_files)}
 
@@ -266,7 +268,7 @@ ${contextLines(task.context_to_load)}
 
 ## 实现要求
 
-${task.implementation_notes || '按 to-be 方案实现本 task，保持现有风格，不做范围外重构。'}
+${task.implementation_notes || '从 starting_points 出发核对源码、调用方、依赖和相邻测试；按实际证据实现需求。'}
 
 ## Traceability
 
@@ -290,7 +292,9 @@ ${task.risk_level}
 
 ## Notes for Coder Agent
 
-${task.notes_for_coder || '无'}
+task brief 是起点建议，不是事实边界。必须自己 grep caller、读测试、追依赖。发现需要修改 starting_points 之外的文件时直接修改，最终摘要记录理由即可。只有 Forbidden Files / Areas 是硬边界。
+
+${task.notes_for_coder || ''}
 ${task.modification_hints && task.modification_hints.length > 0 ? `
 ## Modification Hints
 
@@ -307,9 +311,9 @@ function checkExistingTaskFiles(ideaDir, tasks) {
     const taskFile = join(ideaDir, 'tasks', `${task.task_id}.md`);
     if (!existsSync(taskFile)) continue;
     const fm = readFrontmatter(readFileSync(taskFile, 'utf8'));
-    const existing = fm.expected_files || [];
+    const existing = fm.starting_points || fm.expected_files || [];
     if (existing.length !== task.expected_files.length || existing.some((value, index) => value !== task.expected_files[index])) {
-      throw new Error(`${task.task_id} expected_files mismatch with existing task file`);
+      throw new Error(`${task.task_id} starting_points mismatch with existing task file`);
     }
   }
 }

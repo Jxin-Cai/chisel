@@ -52,7 +52,7 @@
 每个 Task 必须：
 - 关联 CP（change_point_refs）
 - 关联需求追踪项（trace_refs → AC/VC）
-- 声明文件边界（expected_files / forbidden_files）
+- 声明初始文件候选与明确禁区（`expected_files` 仅供调度并在 Coder 边界转换为 `starting_points`；`forbidden_files` 才是边界）
 - 含文件级计划（file_plan：path/change_type/purpose/change_point_refs/trace_refs）
 - 声明依赖关系（depends_on）
 - 估计复杂度（task_complexity: trivial/standard/complex）
@@ -96,7 +96,7 @@
 
 4. **File Plan 完备**：
    - 每个 CP 至少有一个 file_plan 条目覆盖
-   - 伴生变更推断出的文件必须进入 expected_files 和 file_plan
+   - 已知伴生变更应进入 expected_files 和 file_plan，作为 Coder 探索起点；不得暗示列表已经穷尽
    - file_plan 的 path 不能落入 forbidden_files
 
 ## 返回格式

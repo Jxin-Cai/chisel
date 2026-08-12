@@ -60,19 +60,20 @@ export function detectDrift(ideaDir, baseRef) {
 
   const driftItems = [];
 
-  // Missing: planned but not actually changed
+  // Planned files are navigation hints. Not changing one is informational, not
+  // implementation failure: source exploration may find a better change point.
   for (const [file, taskId] of planned.entries()) {
     if (!actualFiles.includes(file)) {
-      driftItems.push({ type: 'missing', file, task_id: taskId, severity: 'medium' });
+      driftItems.push({ type: 'unmodified_starting_point', file, task_id: taskId, severity: 'low' });
     }
   }
 
-  // Unexpected: actually changed but not in any plan
+  // Expansion is reviewed for requirement relevance instead of rejected.
   const chiselPattern = /^\.chisel\//;
   for (const file of actualFiles) {
     if (chiselPattern.test(file)) continue;
     if (!planned.has(file)) {
-      driftItems.push({ type: 'unexpected', file, task_id: null, severity: 'low' });
+      driftItems.push({ type: 'expanded_from_starting_points', file, task_id: null, severity: 'low' });
     }
   }
 

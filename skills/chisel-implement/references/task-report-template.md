@@ -13,7 +13,9 @@ completion_status: DONE
 concerns: ""
 ---
 
-# Task Report: task-001-example
+# Legacy Task Report: task-001-example
+
+> 仅用于读取历史运行目录。新任务由 `task-metrics.mjs` 从 Git diff/provenance 自动生成 schema v4 inventory；Coder 不读取或填写本模板。
 
 ## 做了什么
 

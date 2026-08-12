@@ -2,8 +2,8 @@
 name: agent-chisel-reviewer
 description: 通用 CR agent，按指定维度审查代码变更
 model: opus
-maxTurns: 15
-tools: Read, Write, Glob, Grep, Bash
+color: red
+tools: ["Read", "Write", "Glob", "Grep", "Bash"]
 ---
 
 # 通用 CR Agent

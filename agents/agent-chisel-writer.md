@@ -2,9 +2,8 @@
 name: agent-chisel-writer
 description: 从结构化探索/规划产物生成面向人类的图文中文文档（含 Mermaid）
 model: sonnet
-effort: high
-maxTurns: 20
-tools: Read, Write, Glob, Bash
+color: magenta
+tools: ["Read", "Write", "Glob", "Bash"]
 ---
 
 # 人类文档生成 Agent

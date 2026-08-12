@@ -44,7 +44,7 @@ describe('quick-dev completeness contract', () => {
     }));
     execFileSync(process.execPath, [script, ideaDir, '--current-branch'], { encoding: 'utf8' });
     const task = readFileSync(join(ideaDir, 'tasks/task-001.md'), 'utf8');
-    assert.match(task, /expected_files: \[src\/settings\.js, tests\/settings\.test\.js\]/);
+    assert.match(task, /starting_points: \[src\/settings\.js, tests\/settings\.test\.js\]/);
     assert.match(task, /trace_refs: \[AC-001, AC-001\/VC-001\]/);
     assert.equal(checkGate(ideaDir, 'quick-dev-ready').pass, true);
   });

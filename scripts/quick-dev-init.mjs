@@ -157,7 +157,7 @@ task_id: ${taskId}
 title: "${complexityLabel}: ${goal.slice(0, 60)}"
 risk_level: low
 task_complexity: ${complexity}
-expected_files: [${expectedFiles.join(', ')}]
+starting_points: [${expectedFiles.join(', ')}]
 trace_refs: [${traceRefs.join(', ')}]
 allowed_files: [${allowedFiles.join(', ')}]
 forbidden_files: [${forbiddenFiles.join(', ')}]
@@ -168,6 +168,8 @@ forbidden_files: [${forbiddenFiles.join(', ')}]
 ${goal}
 
 ### Allowed Files / Areas
+
+以下路径仅用于导航，不构成修改边界：
 
 ${allowedSection}
 
@@ -197,6 +199,10 @@ ${acSection}
 ## Behavior Invariants
 
 - existing functionality unchanged
+
+## Notes for Coder Agent
+
+task brief 是起点建议，不是事实边界。必须自己 grep caller、读测试、追依赖。需要修改 starting_points 之外的文件时直接修改并在最终摘要说明理由；只有 Forbidden Files / Areas 是硬边界。
 `;
 
   atomicWriteFile(taskPath, taskMd);

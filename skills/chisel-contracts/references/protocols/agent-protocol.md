@@ -1,6 +1,6 @@
 # Chisel Agent 公共协议
 
-所有 Chisel agent 在开始工作前必须通过 `skills/chisel-contracts/SKILL.md` 的角色加载协议 Read 本文件。
+所有负责分析、写作或审查的 Chisel agent 在开始工作前必须通过 `skills/chisel-contracts/SKILL.md` 的角色加载协议 Read 本文件。Coder 不加载本协议；其唯一契约位于 `chisel-implement/references/coder-instructions.md`。
 
 ## 1. Scope Proof 格式
 
@@ -19,19 +19,16 @@ Invariant Proofs 必须逐项覆盖 task `Behavior Invariants`；`Proof` 必须�
 
 写产物前先 Read 对应模板文件，按模板结构填充。不凭记忆写格式。
 
-## 3. 上下文隔离纪律
+## 3. 非 Coder 上下文隔离纪律
 
 ### 禁止累积摘要注入
 
-编排器向 coder agent 传递上下文时，严格只传：
-1. 当前 task brief（`coder-context/{task-id}.json`）
-2. 邻接 task 的 exports 接口定义（仅签名，不传实现代码）
-3. 全局约束（constraints.md + change-surface.md + invariants）
+编排器向分析、写作和审查 agent 传递最小的当前阶段上下文。Coder 的上下文由 `coder-prepare.mjs` 直接从原始需求与仓库源码构建，不受本节限制。
 
 绝不传递：
-- 前序 task 的实现报告或代码摘要
+- 无关阶段的累积摘要
 - 其他 task 的 coder-context
-- 累积的"到目前为止已完成的 task 列表"叙述
+- 累积的“到目前为止已完成的 task 列表”叙述
 
 ### 理由
 

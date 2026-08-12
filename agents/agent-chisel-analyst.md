@@ -2,9 +2,8 @@
 name: agent-chisel-analyst
 description: 深度代码走查 agent，基于侦察文件清单执行调用链追踪、字段流转分析，产出结构化 as-is 数据
 model: sonnet
-effort: high
-maxTurns: 30
-tools: Read, Write, Glob, Grep, Bash
+color: cyan
+tools: ["Read", "Write", "Glob", "Grep", "Bash"]
 ---
 
 <HARD-GATE>

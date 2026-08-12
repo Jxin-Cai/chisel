@@ -44,16 +44,17 @@ function getTaskScope(ideaDir, taskId) {
   if (existsSync(taskFilePath)) {
     const content = readFileSync(taskFilePath, 'utf8');
     const fm = readFrontmatter(content);
-    if (Array.isArray(fm.expected_files) && fm.expected_files.length > 0) {
-      expectedFromFile = fm.expected_files;
+    const taskStartingPoints = fm.starting_points || fm.expected_files;
+    if (Array.isArray(taskStartingPoints) && taskStartingPoints.length > 0) {
+      expectedFromFile = taskStartingPoints;
     }
-    forbidden = parseListSection(content, 'Forbidden Files / Areas');
+    forbidden = [...normalizeList(fm.forbidden_files), ...parseListSection(content, 'Forbidden Files / Areas')];
     allowedSymbols = [...normalizeList(fm.allowed_symbols), ...parseListSection(content, 'Allowed Symbols')];
     forbiddenSymbols = [...normalizeList(fm.forbidden_symbols), ...parseListSection(content, 'Forbidden Symbols')];
     behaviorInvariants = parseListSection(content, 'Behavior Invariants');
   }
 
-  const expectedSource = expectedFromFile.length > 0 ? 'task.frontmatter.expected_files' : 'task-state.expected_files';
+  const expectedSource = expectedFromFile.length > 0 ? 'task.frontmatter.starting_points' : 'task-state.expected_files-compat';
   const expected = expectedFromFile.length > 0 ? expectedFromFile : expectedFromState;
   return {
     expected,
@@ -181,11 +182,11 @@ function matchScopeProofs(file, patterns) {
 function proofStatus(expectedProofs, forbiddenProofs, hasExpectedScope) {
   const forbidden = forbiddenProofs.length > 0;
   const unexpected = hasExpectedScope && expectedProofs.length === 0;
-  if (forbidden && unexpected) return 'forbidden_and_unexpected';
+  if (forbidden && unexpected) return 'forbidden_outside_starting_points';
   if (forbidden) return 'forbidden';
-  if (unexpected) return 'unexpected';
-  if (!hasExpectedScope) return 'unchecked_no_expected_scope';
-  return 'within_expected';
+  if (unexpected) return 'outside_starting_points';
+  if (!hasExpectedScope) return 'no_starting_points';
+  return 'at_starting_point';
 }
 
 function symbolHits(text, symbols = []) {
@@ -202,7 +203,8 @@ function getOtherTasksExpectedPatterns(ideaDir, currentTaskId) {
     let fromFile = [];
     if (existsSync(taskFilePath)) {
       const fm = readFrontmatter(readFileSync(taskFilePath, 'utf8'));
-      if (Array.isArray(fm.expected_files) && fm.expected_files.length > 0) fromFile = fm.expected_files;
+      const startingPoints = fm.starting_points || fm.expected_files;
+      if (Array.isArray(startingPoints) && startingPoints.length > 0) fromFile = startingPoints;
     }
     const src = fromFile.length > 0 ? fromFile : files;
     for (const p of src) patterns.push(patternSource(p, `other-task:${id}`));
@@ -247,7 +249,11 @@ function check(ideaDir, taskId, projectRoot = '.') {
       if (otherProofs.length > 0) {
         scopeWarnings.push({ file, type: 'belongs_to_other_task', reason: `file is in scope of ${otherProofs[0].source}`, proof: otherProofs[0] });
       } else {
-        violations.push({ file, type: 'unexpected', reason: 'file is outside expected scope' });
+        scopeWarnings.push({
+          file,
+          type: 'expanded_from_starting_points',
+          reason: 'file is outside the initial navigation hints; reviewer should check requirement relevance',
+        });
       }
     }
     if (undeclaredSymbolChange) {
@@ -283,13 +289,23 @@ function check(ideaDir, taskId, projectRoot = '.') {
     }
   }
 
+  const startingModules = new Set(expected.map(file => file.replace(/^\.\//, '').split('/')[0]).filter(Boolean));
+  const changedModules = new Set(changedFiles.map(file => file.replace(/^\.\//, '').split('/')[0]).filter(Boolean));
+  const expansionFiles = hitProofs.filter(proof => proof.status === 'outside_starting_points' || proof.status === 'forbidden_outside_starting_points').length;
+  const expansionLimit = Math.max(12, Math.max(expected.length, 1) * 4);
+  const riskSignals = [];
+  if (changedFiles.length > expansionLimit) riskSignals.push({ type: 'large_diff_surface', changed_files: changedFiles.length, threshold: expansionLimit });
+  if (changedModules.size > startingModules.size + 3) riskSignals.push({ type: 'module_expansion', changed_modules: [...changedModules], starting_modules: [...startingModules] });
+
   return {
-    schema_version: 3,
+    schema_version: 4,
     task_id: taskId,
     project_root: projectRoot,
     change_source: provenanceFiles === null ? 'working-tree-fallback' : 'task-provenance',
     changed_files: changedFiles,
+    starting_points: expected,
     expected_scope: expected,
+    expected_scope_deprecated: true,
     forbidden_scope: allForbidden,
     symbol_scope: {
       allowed_symbols: allowedSymbols,
@@ -301,6 +317,8 @@ function check(ideaDir, taskId, projectRoot = '.') {
       proof_required: behaviorInvariants.length > 0
     },
     scope_warnings: scopeWarnings,
+    risk_signals: riskSignals,
+    review_required: riskSignals.length > 0 || scopeWarnings.some(warning => warning.type === 'belongs_to_other_task'),
     hit_proofs: hitProofs,
     violations,
     summary: {
@@ -308,7 +326,9 @@ function check(ideaDir, taskId, projectRoot = '.') {
       expected_hits_count: hitProofs.reduce((sum, proof) => sum + proof.expected.length, 0),
       forbidden_hits_count: hitProofs.reduce((sum, proof) => sum + proof.forbidden.length, 0),
       forbidden_symbol_hits_count: symbolHitsByFile.reduce((sum, proof) => sum + proof.forbidden.length, 0),
-      unexpected_files_count: hitProofs.filter(proof => proof.status === 'unexpected' || proof.status === 'forbidden_and_unexpected').length,
+      files_outside_starting_points_count: expansionFiles,
+      unexpected_files_count: expansionFiles,
+      risk_signals_count: riskSignals.length,
       violations_count: violations.length
     },
     pass: violations.length === 0

@@ -16,9 +16,10 @@
 
 ### 2. Expected Files 覆盖
 
-- Read task 文件 frontmatter 的 `expected_files`
+- Read task 文件 frontmatter 的 `starting_points`（旧任务兼容 `expected_files`）
 - Read task report frontmatter 的 `changed_files`
-- 检查 expected_files 是否全部出现在 changed_files 中
+- 检查实际 changed_files 是否共同实现原始需求；starting_points 未修改或出现范围外文件都不能单独判错
+- 对 `expanded_from_starting_points` 逐项核对 caller、依赖、测试或伴生变更理由
 
 ### 3. Scope Check
 
@@ -115,18 +116,18 @@ pass | fail
 |----|----------|-------------|------|
 | AC-1 | ... | ... | pass / fail |
 
-## Expected Files 覆盖
+## Starting Points 与实际扩展
 
-- expected_files：
+- starting_points：
 - changed_files：
-- 未覆盖：（无 / 列出缺失文件）
-- 结果：pass / fail
+- starting_points 外扩展及源码理由：
+- 需求相关性结果：pass / fail
 
 ## Scope Check Proof
 
 - Command：`node ${CLAUDE_PLUGIN_ROOT}/scripts/scope-check.mjs {idea_dir} {task_id}`
 - Result：pass | fail
-- schema_version：3
+- schema_version：4
 - changed_files_count：
 - violations_count：
 - forbidden_symbol_hits_count：

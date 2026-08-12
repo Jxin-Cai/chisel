@@ -14,7 +14,7 @@
 
 当 `worktree-decision.json` schema_version=2 且 `repos` 数组非空时，表示工作空间包含多个独立 Git 仓库。
 
-- 每个 task 的 `expected_files` 和 `allowed_files` 中的路径可能跨多个仓库
+- Plan 的 `expected_files` 仅用于判断初始仓库与调度冲突，传给 Coder 时转换为 `starting_points`
 - 在派发 Agent 编码时，需要根据 task 涉及的文件路径确定其应在哪个仓库的 worktree 中工作
 - Agent 的 cwd 应设置为对应仓库的 worktree 路径（从 `repos[].worktree_path` 读取）
 - 如果一个 task 跨多个仓库，必须串行执行（在各仓库中依次完成）
@@ -41,7 +41,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs {IDEA_DIR} --prepare-task
 node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {IDEA_DIR} <task-id> --rebase-baseline --project-root . --run-id <run-id>
 ```
 
-写完 report 和 scope proof 后、返回前必须运行 `task-provenance.mjs ... --finish --run-id <run-id>`，冻结该 agent worktree 中的真实 changed files；不要调用 `workflow-status --finish-task`。
+代码和测试完成后、返回前运行 `task-provenance.mjs ... --finish --run-id <run-id>`，冻结该 agent worktree 中的真实 changed files；Coder 不写 report/scope proof，也不调用 `workflow-status --finish-task`。
 
 注意：这里的 worktree 是 Agent 工具的 **临时隔离机制**（task 级，用完即弃），不是用户在 `worktree:setup` 阶段选择的需求级 worktree。Agent 的临时 worktree 在合并回收后自动清理。
 
@@ -49,7 +49,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/task-provenance.mjs {IDEA_DIR} <task-id> --re
 
 - 优先在同一条消息中并行发出 Agent 调用并等待它们返回；并行不等于允许主编排器结束当前 turn。
 - 如果运行环境使用 `run_in_background: true`，必须保存每个 Agent 返回的 task id，并在派发后对每个任务调用 `TaskOutput(task_id, block: true)` 收割结果。等待期间可以发送简短进度，但不得只回复“后台编码中/等待完成通知”后停止。
-- 只要 task 状态仍为 `coding` / `repairing` 且 lease 未过期，主编排器不得 yield。后台完成通知也不等于 task 完成；必须继续执行下方的合并回收、`--finish-task`、report/scope 校验和后续批次。
+- 只要 task 状态仍为 `coding` / `repairing` 且 lease 未过期，主编排器不得 yield。后台完成通知也不等于 task 完成；必须继续执行下方的合并回收、`--finish-task`、自动 inventory/forbidden 检查和后续批次。
 - 只有 Agent 明确返回 `NEEDS_CONTEXT` / `BLOCKED`，或 lease 已过期且无法恢复任务时，才按对应阻塞流程交还用户。
 
 ### 3. 合并回收

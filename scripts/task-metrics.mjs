@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { readTaskExpectedFiles, readTaskState, taskStateFile, writeTaskState } from './workflow-lib.mjs';
 import { changedFilesForProject } from './task-provenance.mjs';
+import { checkScope } from './scope-check.mjs';
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -59,7 +60,10 @@ function collectRows(scopedFiles = [], exactFiles = null) {
     ...untrackedFiles.filter(file => !trackedFiles.has(file)).map(file => ({ file, added: lineCount(file), deleted: 0 }))
   ];
   const exact = exactFiles === null ? null : new Set(exactFiles);
-  const filtered = rows.filter(row => row.file && !row.file.startsWith('.chisel/') && matchesScope(row.file, scopedFiles) && (!exact || exact.has(row.file)));
+  const filtered = rows.filter(row => row.file
+    && !row.file.startsWith('.chisel/')
+    && (!exact || exact.has(row.file))
+    && (exact || matchesScope(row.file, scopedFiles)));
   if (!exact) return filtered;
   const present = new Set(filtered.map(row => row.file));
   return [...filtered, ...exactFiles.filter(file => !present.has(file)).map(file => ({ file, added: 0, deleted: 0 }))];
@@ -86,7 +90,6 @@ function updateTaskMetrics(ideaDir, taskId = '', { escalatedModel } = {}) {
   writeFileSync(join(metricsDir, 'loc-delta.json'), `${JSON.stringify({ added: locAdded, deleted: locDeleted }, null, 2)}\n`);
 
   if (taskId && state.tasks[taskId]) {
-    state.tasks[taskId].expected_files = scopedFiles;
     state.tasks[taskId].changed_files = changedFiles;
     state.tasks[taskId].loc_added = locAdded;
     state.tasks[taskId].loc_deleted = locDeleted;
@@ -96,14 +99,65 @@ function updateTaskMetrics(ideaDir, taskId = '', { escalatedModel } = {}) {
   const summary = {
     task_id: taskId || null,
     change_source: provenanceFiles === null ? 'working-tree-fallback' : 'task-provenance',
-    expected_files: scopedFiles,
+    starting_points: scopedFiles,
     changed_files: changedFiles,
     loc_added: locAdded,
     loc_deleted: locDeleted,
     ...(escalatedModel ? { escalated_model: escalatedModel } : {})
   };
   writeFileSync(join(metricsDir, 'task-summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+  if (taskId) writeAutomatedTaskReport(ideaDir, taskId, summary);
   return summary;
+}
+
+function yamlList(values = []) {
+  return `[${values.join(', ')}]`;
+}
+
+function writeAutomatedTaskReport(ideaDir, taskId, summary, projectRoot = '.') {
+  const scope = checkScope(ideaDir, taskId, projectRoot);
+  const startingSet = new Set(summary.starting_points || []);
+  const rows = (summary.changed_files || []).map(file => {
+    const relationship = startingSet.has(file) ? 'starting-point' : 'discovered';
+    return `| ${file} | ${relationship} | ${relationship === 'discovered' ? '由实际实现扩展；交由 reviewer 检查需求相关性' : '初始导航文件'} |`;
+  });
+  const report = `---
+task_id: ${taskId}
+status: candidate
+report_schema_version: 4
+generated_by: task-metrics.mjs
+starting_points: ${yamlList(summary.starting_points || [])}
+changed_files: ${yamlList(summary.changed_files || [])}
+---
+
+# Automated Task Inventory: ${taskId}
+
+该文件由 Git diff 和 task provenance 自动生成，不是 Coder 的流程证明。
+
+## Diff Inventory
+
+| File | Relationship | Review Note |
+|---|---|---|
+${rows.join('\n') || '| 无 | none | 未检测到实际变更 |'}
+
+## Risk Signals
+
+${scope.risk_signals?.length ? scope.risk_signals.map(signal => `- ${signal.type}: ${JSON.stringify(signal)}`).join('\n') : '- 无'}
+
+## Forbidden Boundary Check
+
+- result: ${scope.pass ? 'pass' : 'fail'}
+- violations: ${scope.violations.length}
+- warnings: ${scope.scope_warnings.length}
+
+## Verification
+
+由统一 verification contract 和独立 review 阶段记录；Coder 无需在此复制证据。
+`;
+  const reportsDir = join(ideaDir, 'task-reports');
+  mkdirSync(reportsDir, { recursive: true });
+  writeFileSync(join(reportsDir, `${taskId}-report.md`), report);
+  return report;
 }
 
 function main(argv) {
@@ -119,7 +173,7 @@ function main(argv) {
   }
 }
 
-export { collectRows, parseNumstat, updateTaskMetrics };
+export { collectRows, parseNumstat, updateTaskMetrics, writeAutomatedTaskReport };
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main(process.argv.slice(2));

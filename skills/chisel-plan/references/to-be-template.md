@@ -181,8 +181,8 @@
 可选字段：`allowed_symbols`、`forbidden_symbols`、`exports`、`imports`、`modification_hints`、`task_complexity`。旧任务可不含 `file_plan`；当 `plan_with_file=true` 或 `schema_version>=2` 时，`file_plan` 变为必填。
 
 - `change_point_refs`：本 task 对应的改造点 CP 编号列表。
-- `expected_files`：scope 边界，用于 scope-check 判断是否越界。
-- `file_plan`：文件级实现计划和报告契约；每项说明一个文件/目录为什么要改、对应哪些 CP 和 Trace Ref。`file_plan[].change_point_refs` 必须是本 task `change_point_refs` 子集，`file_plan[].trace_refs` 必须是本 task `trace_refs` 子集。无法提前确定具体文件时可写目录/glob，但必须在 `purpose` 中说明探索原因，并明确 `report_required`。
+- `expected_files`：Plan 对初始相关文件的预测，用于调度冲突检查；task-init 会将其转换为 Coder 可扩展的 `starting_points`，不作为 scope 失败条件。
+- `file_plan`：文件级导航计划；每项说明已知文件/目录为什么可能要改、对应哪些 CP 和 Trace Ref。`file_plan[].change_point_refs` 必须是本 task `change_point_refs` 子集，`file_plan[].trace_refs` 必须是本 task `trace_refs` 子集。无法提前确定具体文件时可写目录/glob，Coder 必须继续探索真实依赖。
 - `exports`：本 task 产出的、可被其他 task 引用的符号或文件（如新增的函数、类型、配置）。
 - `imports`：本 task 依赖的、由其他 task 产出的符号或文件（引用 `exports` 的 task_id）。
 - `modification_hints`：string[] — 给 coder 的修改提示（如"在 X 函数后添加 Y 调用"），降低上手成本。

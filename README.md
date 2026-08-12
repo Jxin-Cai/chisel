@@ -139,7 +139,7 @@ Bracketed steps may be skipped depending on complexity classification.
 | 6 | **Adversarial completeness review** | A fresh reviewer checks every requirement/AC/VC against the complete to-be artifacts; findings force a planner repair and another review |
 | 7 | **Confirm plan** | Human reviews only after the adversarial gate passes |
 | 8 | **Init tasks** | Generate task files and state machine from `tasks.json` |
-| 9 | **Code** | Coder agent implements within scoped file boundaries |
+| 9 | **Code** | Coder starts from the original requirement and navigation hints, then independently traces source, callers, dependencies, and tests |
 | 10 | **Unit tests and coverage** | Fresh complete tests, coverage collection, consolidated anomaly repair, and a test report |
 | 11 | **Architect CR** | Reviewer agent checks acceptance criteria and behavior invariants |
 | 12 | **Rework loop** | Up to 5 rounds per task; later rounds use a fresh agent and then become blocked |
@@ -260,16 +260,16 @@ Standalone HTML report links supplement these file links; they do not replace th
 
 ### Scope Check
 
-After coding, `scope-check.mjs` verifies:
-- Changed files stay within declared boundaries
-- No forbidden file modifications
-- No undeclared new public exports
+After coding, `scope-check.mjs`:
+- Blocks explicitly forbidden files and symbols
+- Records expansion beyond starting points for semantic review instead of rejecting it
+- Flags unusually broad file or module expansion
 
 ### To-be completeness gate
 
 Before `plan:confirm`, `plan:adversarial-review` runs a fresh, adversarial comparison of `requirement.md`, clarification AC/VC, as-is evidence, and every structured to-be artifact. It writes `to-be/adversarial-review.json` and `.md`. A `fail` result includes actionable findings and routes back to `plan:design`; only a machine-validated `pass` can reach user confirmation. The loop has a bounded retry count and becomes `blocked` rather than silently allowing an incomplete plan.
 
-Traceability is strict in schema v2+: missing or empty matrices fail, every AC and verification condition needs an exact mapping, and task-to-matrix references are checked in both directions. Implementation cannot pass on a vague report: each task must have non-placeholder Acceptance Criteria Result and Traceability Evidence, and `Completion Status: DONE` (or an explicitly reviewed `DONE_WITH_CONCERNS`) before verification/review.
+Traceability remains strict in schema v2+. The Coder receives user-confirmed Plan goals, non-goals, contracts, invariants, tradeoffs, and task-relevant change points as decision context, while verifying Plan claims about existing code and exact files against first-hand evidence. It delivers only code, tests, and a summary of at most five lines. Provenance and post-processing scripts generate changed-file inventories and scope-risk records; reviewers verify invariants and requirement relevance.
 
 ### Stale Detection
 
@@ -297,7 +297,8 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 |---|---|
 | `scripts/document-render.mjs` | Deterministically render human-readable docs from structured artifacts without an agent call |
 | `agent-chisel-analyst` | Deep code walkthrough, produce structured as-is data (sonnet) |
-| `agent-chisel-coder` | Implement and verify confirmed tasks (inherits the orchestrator model; opus override for complex/escalated work) |
+| `agent-chisel-coder` | Implement directly from the original requirement, source code, and runtime evidence without producing process-proof reports |
+| `agent-chisel-oracle` | Freeze 3–8 executable black-box assertions from only the raw requirement and public entry points before coding |
 | `agent-chisel-reviewer` | Multi-dimension CR with single-dimension-per-pass (opus) |
 
 ### Scripts
@@ -308,6 +309,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `orchestration-status.mjs` | Side-effect-free authoritative recovery-point calculation |
 | `control-plane.mjs` | Resolves the shared control plane across linked worktrees |
 | `orchestration-transition.mjs` | Explicit revision-checked state transition and event recording |
+| `oracle-prepare.mjs` / `oracle-run.mjs` | Prepare isolated public-interface evidence and execute the frozen acceptance Oracle |
 | `gate-check.mjs` | Phase postcondition gate validation |
 | `traceability-check.mjs` | Bidirectional AC/VC → task coverage and final approval check |
 | `adversarial-review.mjs` | Deterministic to-be completeness review and bounded repair-loop record |
@@ -316,7 +318,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `task-provenance.mjs` | Per-task baseline/result fingerprint and changed-file ownership |
 | `verify-run.mjs` | Repository-aware build/test verification bound to workspace fingerprints |
 | `checkpoint.mjs` | Source-bound, full-artifact consistent snapshots and recovery |
-| `scope-check.mjs` | File boundary and forbidden zone validation |
+| `scope-check.mjs` | Explicit forbidden-boundary validation plus starting-point expansion and diff-risk detection |
 | `multi-repo-worktree.mjs` | Registry-backed multi-repository worktrees, locator/resume/status, and receipts |
 | `branch-merge.mjs` | Isolated integration merge and machine-readable conflict analysis |
 | `review-selector.mjs` | Diff/path/content-based review risk and dimension selection |

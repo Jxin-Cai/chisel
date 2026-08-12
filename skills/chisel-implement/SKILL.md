@@ -15,6 +15,21 @@ user-invocable: false
 
 ## 执行流程
 
+编码前只初始化一次独立验收 Oracle：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/oracle-prepare.mjs {IDEA_DIR} .
+```
+
+若返回 `status: prepared`，启动 `agent-chisel-oracle`，TASK 只传：
+
+```json
+{ "oracle_context_path": "{IDEA_DIR}/oracle/context.json", "output_directory": "{IDEA_DIR}/oracle" }
+```
+
+Oracle 不得接收或读取 plan、task、report、diff；生成的断言在编码前冻结。若无稳定公开入口，Oracle 写
+`status: not_applicable`，不得靠猜测制造验收项。若返回 `status: frozen`，直接复用已有产物，返修时禁止重新生成。
+
 ```dot
 digraph implement_flow {
   rankdir=TB; node [shape=box, style=rounded];
@@ -51,7 +66,7 @@ digraph implement_flow {
      - `rework_count 4-5`：**Fresh Agent 重做**——启动一个全新的 `agent-chisel-coder`（不继承前序 repair 上下文），model override: opus，agent prompt 追加：
        ```
        ⚠️ 前任实现者已尝试 {rework_count} 轮修复未通过。
-       你是全新接管者。请从 task brief 和 CR findings 出发独立实现，不要延续前任的修复方向。
+       你是全新接管者。请从原始需求、实际源码、运行结果和 CR findings 出发独立实现，不要延续前任的修复方向。
        已知失败路径记录在 debug/{task-id}-debug.json（由 `scripts/debug-workflow.mjs` 契约校验）。
        ```
      - 升级记录写入 `task-metrics.mjs` 的 `escalated_model` 和 `fresh_agent` 字段
@@ -67,19 +82,20 @@ digraph implement_flow {
      ```json
      { "idea_dir": "{IDEA_DIR}", "task_id": "<task-id>", "task_file": "tasks/<task-id>.md", "run_id": "<run-id>" }
      ```
-   - coder 完成后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-metrics.mjs {IDEA_DIR} <task-id>`
-   - coder 返回后不得直接视为完成：Read task report，确认实际 diff 非空（除非 task 明确证明为 no-op），运行 `scope-check`，并用 `gate-check.mjs {IDEA_DIR} task-report-exists` 校验报告；失败则把具体错误反馈给同一 coder 继续修复
-   - 检查 coder 返回的 Completion Status：
-     - **DONE / DONE_WITH_CONCERNS** → 正常流转（concerns 留在 report 中供 CR 关注）
+   - 检查 coder 不超过 5 行的返回结果：
+     - **DONE / DONE_WITH_CONCERNS** → 主编排器检查实际 diff 非空，然后使用 `--finish-task <task-id> coded --run-id <run-id>` 冻结 provenance
      - **NEEDS_CONTEXT** → 不调用 `--finish-task`，向用户展示缺失信息，获取后重新派发 coder
      - **BLOCKED** → 向用户报告阻塞原因，等待用户决策
+   - finish 成功后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/task-metrics.mjs {IDEA_DIR} <task-id>`；脚本从 Git diff 自动生成轻量 task inventory，Coder 不写 report
+   - 运行 `scope-check.mjs`：明确 forbidden path/symbol 命中才返修；`starting_points` 外扩展和大范围信号交给 reviewer，不要求 Coder 缩回错误的预测范围
+   - 运行 `gate-check.mjs {IDEA_DIR} task-report-exists`，只校验自动 inventory 与 task provenance 一致
 4. **多 task** → Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-implement/references/phase-parallel-coding.md`，按其流程并行执行
 
 > **并行 Agent 不能成为停止点。** 如使用后台 Agent，主编排器必须用 `TaskOutput(task_id, block: true)` 等待并收割全部结果，再完成 merge、finish、report/scope 校验和后续调度；禁止以“仍在后台运行，等待完成通知”为由结束当前 turn。
 
 ### Post-coding Build Verification
 
-长耗时编码或验证前，运行 `workflow-status.mjs {IDEA_DIR} --heartbeat <task-id> --run-id <run-id>` 续租。coder 完成后使用 `--finish-task <task-id> coded --run-id <run-id>`；旧 run 不得提交。
+长耗时编码或验证前，运行 `workflow-status.mjs {IDEA_DIR} --heartbeat <task-id> --run-id <run-id>` 续租。只有主编排器能使用 `--finish-task`；Coder 不修改工作流状态，旧 run 不得提交。
 
 首次实现完成时，先生成并检查显式验证契约，再执行全量验证：
 
@@ -121,19 +137,30 @@ orchestration-status 会再次返回 `test:unit` 且 `verification_mode=full-fin
   - 最多尝试修复 2 次；仍失败则保持在 implement/repair，报告明确阻塞原因，不得进入 CR
 - 未检测到验证命令时结果为 `fail`；先从项目说明、CI 或用户输入补充可重复执行的验证命令，不得以 skip 代替验证
 
-验证通过后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} implement:code`（返修阶段用 `repair:code`），将 stdout 原样输出到对话（脚本已生成绝对路径 Markdown 链接，不得修改或重新拼接），再继续 review。Task 多于一个时，每个 task 完成后也必须立即输出该 task report 的绝对路径 Markdown 链接（路径 = `resolve(join(IDEA_DIR, 'task-reports', '<task-id>-report.md'))`），不等待所有 task 结束。
+项目全量验证通过后（首次 `--full` 或最终 `full-final`），执行冻结的独立验收：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/oracle-run.mjs {IDEA_DIR} .
+```
+
+- `pass` / `not_applicable` → 继续 review
+- `fail` → 把 `oracle/result.json` 中的失败断言和运行输出作为返修信号交给 Coder；不要补充 plan 对失败的解释
+- Coder 修复后重跑受影响的项目测试和同一份 Oracle，最多 2 轮；禁止重写断言来适配实现
+- Oracle 未生成 manifest、脚本不可执行或断言数不在 3–8 时，视为 Oracle 产物错误，不伪装成代码失败；修正产物后再运行
+
+验证通过后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} implement:code`（返修阶段用 `repair:code`），将 stdout 原样输出到对话，再继续 review。自动 task inventory 只是机器记录，不要求逐 task 展示或让用户确认。
 
 <HARD-GATE principle="P2">
 只有 `--next-tasks` 返回的 task 才能启动。
 有依赖的 task 必须串行。
-有 expected_files 重叠的 task 必须串行（用 `--check-overlap` 检测）。
+Plan 的 `expected_files` 仅在内部作为初始冲突调度提示；发生重叠时串行（用 `--check-overlap` 检测），不得把它传递成 Coder 的修改边界。
 无依赖且无文件重叠的 task 通过 Agent worktree 并行——**但前提是 `worktree-decision.json` decision = "worktree"**。若 decision = "current-branch"，所有 task 串行执行，不使用 Agent worktree 隔离。
 
 合理化预防表：
 
 | 你的想法 | 现实 |
 |---------|------|
-| "这个 task 太简单不需要 report" | 每个 task 必须有 report |
-| "scope-check 肯定过，跳过" | 越界是最常见的返修原因 |
-| "顺便修一下旁边的代码" | 超范围修改会触发 scope 违规 |
+| "task brief 已经列全了文件" | starting_points 只是导航，必须自行追 caller、依赖和测试 |
+| "修改计划外文件会违规" | 只有明确 forbidden path/symbol 是硬边界 |
+| "让 Coder 补一份证明更可靠" | inventory、trace 和 scope 记录由脚本/reviewer生成，Coder 专注代码与测试 |
 </HARD-GATE>

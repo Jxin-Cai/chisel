@@ -25,7 +25,7 @@
 - `scripts/review-budget.mjs` 从 `review-policy.json` 生成有界 review batches、targeted skeptic 数量和并发上限；多维 findings 先全局汇总，再按风险选择性核验。
 - `scripts/gate-check.mjs` 管理每步 postcondition。
 - `plan:adversarial-review` 位于 `plan:design` 与 `plan:confirm` 之间：fresh reviewer 直接对照 requirement、clarification、as-is 和全部 to-be 结构化产物，写入 `to-be/adversarial-review.json`/`.md`；`to-be-adversarial-approved` gate 以机器规则阻断不完整方案，并在 findings 时回到 plan 修复循环。
-- `scripts/scope-check.mjs` 检查变更文件是否越界或触碰禁区。
+- `scripts/scope-check.mjs` 阻止明确禁区，并把 starting_points 外扩展和异常 diff 范围作为 reviewer 风险信号；不再把计划文件列表当作修改边界。
 - `scripts/multi-repo-worktree.mjs` 多仓 worktree 检测/创建/状态/清理（支持非 git 工作空间下的多 git 仓库场景）。
 - `scripts/branch-merge.mjs` 在独立 integration worktree 中合并、验证、commit/push 和冲突现场管理，不切换已有主仓 checkout。
 - `scripts/review-selector.mjs` 基于实际 diff/path/content 选择 review 风险与维度；spec 永远必跑，旧 D2-D9 通过 skipped/auto-pass projection 兼容。
@@ -45,6 +45,7 @@
 - `document-job.mjs` 继续记录 renderer 的完整 required source、optional source/output 及 hash；receipt stale 时重新渲染，不启动 Writer agent。
 - `requirement-classify.mjs` 在澄清完成后按 AC/VC、文件/模块边界、DB/API/迁移、显式风险与 risk tolerance 生成可重算的难度、执行档位和 subagent 预算；显式 moderate/standard/complex 是保守 floor。
 - `agent-chisel-coder` 只按已确认 task 实现，持续执行验证—修复循环并完成 diff 自检（bug/AC/scope 三项检查）。trivial/standard 默认继承主编排器当前模型，complex 和返修升级通过 model override 使用 opus。
+- `agent-chisel-oracle` 在编码前只读取原始 requirement 与公开入口，冻结 3–8 条可执行黑盒断言；它不读取 plan/task/report/diff，不拥有 skill、状态机或 HTML 产物。全量验证后执行同一份断言，失败只作为 Coder 返修信号。
 - `agent-chisel-reviewer` 通用 CR agent（opus），从功能 diff 出发审查，每次加载一个维度定义。维度 batch 严格受 `review-policy.json` 限制；所有维度结束后先由 Opus 全局汇总，只对高风险、矛盾或不确定项执行有界独立 skeptic 核验，再由 Opus 综合证据完成最终真伪裁决、共同根因合并和返修策略，完成前禁止返修。
 
 ## As-Is 分层结构

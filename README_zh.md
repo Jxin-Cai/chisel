@@ -138,7 +138,7 @@ chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，
 | 6 | **对抗完整性审查** | fresh reviewer 逐项对照 requirement/clarification/as-is/to-be；发现遗漏即生成 findings，修复后重跑，直到 pass |
 | 7 | **确认方案** | 仅在对抗 gate 通过后，人类审查策略方向和 task 拆分 |
 | 8 | **初始化 task** | 从 `tasks.json` 生成 task 文件和状态机 |
-| 9 | **编码** | coder agent 在受限文件范围内编码 |
+| 9 | **编码** | coder agent 从原始需求和 starting points 出发，自主追踪源码、调用方、依赖与测试 |
 | 10 | **单测与覆盖率** | 首轮和最终封板跑完整单测/覆盖率；返修轮只跑受影响检查，最终报告自动交付 |
 | 11 | **架构师 CR** | reviewer 检查验收标准和行为不变式 |
 | 12 | **返修闭环** | 单 task 最多返修 5 次，第 4–5 轮由 fresh agent 接管，超过后进入 blocked |
@@ -256,16 +256,16 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs <idea-dir> <completed-ste
 
 ### Scope Check
 
-编码完成后 `scope-check.mjs` 验证：
-- 变更文件在声明范围内
-- 未触碰禁区文件
-- 无未声明的新增公共导出
+编码完成后 `scope-check.mjs`：
+- 阻止明确禁区文件和符号修改
+- 将 starting points 外扩展记录为 reviewer 信号，而不是直接判错
+- 标记异常大的文件或模块扩散
 
 ### To-be 完整性 gate
 
 `plan:confirm` 之前必须先执行 `plan:adversarial-review`：由 fresh reviewer 直接对照 `requirement.md`、澄清 AC/VC、as-is 证据和全部结构化 to-be 产物，写入 `to-be/adversarial-review.json` 与 `.md`。`fail` 必须带可执行 findings 并回到 `plan:design` 修复；只有机器校验的 `pass` 才能进入用户确认。审查轮次有上限，达到上限进入 `blocked`，不会把不完整方案交给用户。
 
-schema v2+ 的追溯矩阵严格执行：缺失/空矩阵失败，每个 AC 和 verification condition 必须精确映射，并做 task→matrix 双向校验。实现报告必须逐条给出非占位的 Acceptance Criteria Result 和 Traceability Evidence，且 `Completion Status: DONE`（或明确审阅过的 `DONE_WITH_CONCERNS`）后才允许 verification/review。
+schema v2+ 的追溯矩阵仍严格执行。Coder 会收到用户确认 Plan 中的目标、非目标、契约、不变式、权衡和当前 task 相关改造点，作为决策上下文；Plan 对现有代码和精确文件的判断仍由 Coder 用第一手证据复核。Coder 只交付代码、测试和不超过 5 行的摘要；changed files、scope 风险与 task inventory 由 provenance 和后处理脚本自动生成，行为不变式与需求相关性由 reviewer 核验。
 
 ### 中断检测
 
@@ -293,7 +293,8 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 |---|---|
 | `scripts/document-render.mjs` | 从结构化产物确定性生成人类可读文档，不消耗 agent 调用 |
 | `agent-chisel-analyst` | 深度代码走查，产出结构化 as-is 数据（sonnet） |
-| `agent-chisel-coder` | 按 confirmed task 持续实现并验证（默认继承主编排器模型，复杂/升级任务覆盖为 opus） |
+| `agent-chisel-coder` | 直接基于原始需求、实际源码和运行结果实现并验证，不生产流程证明 |
+| `agent-chisel-oracle` | 编码前仅依据原始需求和公开入口冻结 3–8 条可执行黑盒断言 |
 | `agent-chisel-reviewer` | 多维度 CR，单维度/次深度审查（opus） |
 
 ### Scripts
@@ -304,6 +305,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `orchestration-status.mjs` | 只读权威恢复点计算 |
 | `control-plane.mjs` | 解析 linked worktree 共享控制面 |
 | `orchestration-transition.mjs` | 校验 resume step 与 revision 后显式切换状态并记录事件 |
+| `oracle-prepare.mjs` / `oracle-run.mjs` | 准备隔离的公开接口证据并执行冻结的验收 Oracle |
 | `gate-check.mjs` | 阶段 postcondition gate 校验 |
 | `traceability-check.mjs` | 双向 AC/VC→task 覆盖和最终批准校验 |
 | `adversarial-review.mjs` | 确定性 to-be 完整性审查和有界修复循环记录 |
@@ -312,7 +314,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `task-provenance.mjs` | 记录 task 执行基线/结果指纹与 changed-files 归属 |
 | `verify-run.mjs` | 绑定工作区指纹的多仓构建/测试验证 |
 | `checkpoint.mjs` | 绑定源码身份、保存完整 artifact 的一致性快照恢复 |
-| `scope-check.mjs` | 文件边界和禁区校验 |
+| `scope-check.mjs` | 明确禁区校验、starting-point 扩展记录和 diff 风险探测 |
 | `multi-repo-worktree.mjs` | registry 驱动的多仓 worktree、定位/恢复/状态和回执 |
 | `branch-merge.mjs` | 隔离 integration 合并和机器可读冲突分析 |
 | `review-selector.mjs` | 基于 diff/路径/内容的风险和审查维度选择 |

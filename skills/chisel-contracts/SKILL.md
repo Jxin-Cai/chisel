@@ -31,7 +31,7 @@ disable-model-invocation: true
 | 主编排器 | `references/protocols/iron-rules.md` | 状态恢复、步骤切换、gate 与完成证据纪律 |
 | 所有 Chisel agent | `references/protocols/agent-protocol.md` | Wiki、知识候选、proof、模板和上下文隔离协议 |
 | 维护 Chisel 自身 | `references/protocols/principle-enforcement-map.md` | 原则到 script/hook/prompt 的执法映射 |
-| coder agent | `references/protocols/agent-protocol.md`，再加载 `../chisel-implement/references/coder-instructions.md` | coder 流程归属于 implement skill，不属于公共层 |
+| coder agent | `../chisel-implement/references/coder-instructions.md` | Coder 只加载直接证据实现契约，不加载 proof/report 公共协议 |
 
 只加载当前角色对应的文件。不要因引用本 skill 而一次性读取全部 references。
 

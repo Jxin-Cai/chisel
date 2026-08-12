@@ -72,10 +72,13 @@ describe('task-init file_plan validation', () => {
 
   it('renders Change Points and File-Level Plan into task markdown', () => {
     const markdown = renderTaskMarkdown(baseTask({ file_plan: [filePlan()] }));
+    assert.match(markdown, /starting_points: \[src\/feature\.js\]/);
+    assert.doesNotMatch(markdown, /^expected_files:/m);
     assert.match(markdown, /change_point_refs: \[CP-1\]/);
     assert.match(markdown, /file_plan_schema_version: 1/);
     assert.match(markdown, /## Change Points/);
     assert.match(markdown, /## File-Level Plan/);
     assert.match(markdown, /\| src\/feature\.js \| modify \| implement feature X \| CP-1 \| REQ-1 \| handleFeature \| true \|/);
+    assert.match(markdown, /task brief 是起点建议，不是事实边界/);
   });
 });

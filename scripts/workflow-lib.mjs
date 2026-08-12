@@ -99,6 +99,7 @@ export function readTaskExpectedFiles(taskFile) {
   if (!taskFile || !existsSync(taskFile)) return [];
   const text = readFileSync(taskFile, 'utf8');
   const parsed = readFrontmatter(text);
+  if (Array.isArray(parsed.starting_points)) return parsed.starting_points;
   return Array.isArray(parsed.expected_files) ? parsed.expected_files : [];
 }
 
