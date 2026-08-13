@@ -108,6 +108,17 @@ Or pass a requirement file:
 /chisel docs/requirements/user-phone-validation.md
 ```
 
+For a fully unattended run that merges into the local default branch after every quality gate passes, use HOTOL mode:
+
+```text
+/chisel-hotol Add phone-number validation while preserving the existing API response contract
+```
+
+HOTOL persists the user's explicit authorization, applies conservative reversible defaults, approves the plan and exact final snapshot,
+uses isolated worktrees, and merges only after verification and CR pass. It does not push, force-push, delete branches, or absorb
+pre-existing uncommitted changes by default. A real conflict, missing authority, or high-risk ambiguity without a uniquely safe answer
+becomes a recorded terminal blocker instead of an interactive question.
+
 Chisel stores runtime artifacts under the Git common root at `.chisel/<idea-name>/`, so the main checkout and linked worktrees share one control plane. Set `CHISEL_CONTROL_ROOT` to override it.
 
 <br/>
@@ -290,6 +301,7 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `/chisel-review` | Architect CR review |
 | `/chisel-report` | View recovery point/task state or generate five standalone HTML reports |
 | `/chisel-debug` | Reproduce-first root-cause workflow (standalone or return-diagnosis mode) |
+| `/chisel-hotol` | Unattended requirement-to-verified-code flow with local default-branch merge |
 
 ### Agents
 

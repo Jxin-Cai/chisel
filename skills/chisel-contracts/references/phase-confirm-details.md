@@ -34,6 +34,17 @@ AC/VC 记录非空 `task_refs`、`change_point_refs`、`file_refs`、`verificati
 `status=pass`。每轮完成后运行
 `node ${CLAUDE_PLUGIN_ROOT}/scripts/adversarial-review.mjs {IDEA_DIR} --check`，不能手工判断通过。
 
+启动 fresh reviewer **之前**必须先运行以下初始化命令；它会一次性冻结全部现存输入文件的 SHA-256、
+列出所有 AC/VC，并生成 gate 可识别的 Markdown 固定章节。把生成的两个文件连同源文件交给 reviewer
+逐项填写，不要用 Bash heredoc 或临时修复脚本手工拼装 JSON：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/adversarial-review.mjs {IDEA_DIR} --init --attempt <N>
+```
+
+下一轮审查必须在 planner 完成修复后、fresh reviewer 启动前使用 `--force` 重新初始化并递增 `--attempt`。
+`--force` 只允许用于此时；reviewer 已开始后禁止重新初始化或刷新 hash，否则审查结论将失去源绑定。
+
 如果 fresh reviewer 以后台 Agent 运行，主编排器必须保存 task id，并在同一 turn 调用
 `TaskOutput(task_id, block: true)` 阻塞等待、收割实际结果。禁止以“reviewer 仍在后台运行”或“等待
 完成通知”为由结束 turn；也禁止主编排器单方面替代独立 reviewer 写入 pass 记录。

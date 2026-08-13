@@ -39,6 +39,28 @@ describe('isolated integration delivery', () => {
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 
+  it('can advance a clean checked-out local target after isolated verification', () => {
+    const dir = repo();
+    try {
+      git(['switch', '-c', 'feat/local-target'], dir);
+      writeFileSync(join(dir, 'feature.txt'), 'feature\n');
+      git(['add', 'feature.txt'], dir);
+      git(['commit', '-m', 'feature'], dir);
+      const featureHead = git(['rev-parse', 'HEAD'], dir);
+      git(['switch', 'main'], dir);
+      const result = nodeJson([
+        '--merge', '--source', 'feat/local-target', '--target', 'main', '--repo', dir,
+        '--confirm', '--update-local-target',
+      ], dir);
+      assert.equal(result.status, 'merged');
+      assert.equal(result.local_target.status, 'updated');
+      assert.equal(git(['branch', '--show-current'], dir), 'main');
+      assert.equal(git(['rev-parse', 'main'], dir), result.merge_commit);
+      assert.notEqual(result.merge_commit, featureHead, 'delivery keeps an explicit merge commit');
+      assert.equal(readFileSync(join(dir, 'feature.txt'), 'utf8'), 'feature\n');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('keeps conflict现场, reports base/ours/theirs, and supports continue/abort', () => {
     const dir = repo();
     try {

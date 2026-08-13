@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { atomicWriteFile } from './workflow-lib.mjs';
+import { HOTOL_CONFIRMATION_ACTOR, isValidConfirmationActor } from './execution-mode.mjs';
 
 export const REPORT_CONFIRMATIONS = Object.freeze({
   'as-is': { report: 'reports/as-is-report.html', confirmation: 'confirmations/as-is.json', phase: 'as-is', sources: ['requirement.md', 'as-is/'] },
@@ -58,7 +59,7 @@ export function reportStatus(ideaDir, reportType) {
   if (confirmation.schema_version !== 1 || confirmation.phase !== config.phase || confirmation.status !== 'confirmed') {
     return { valid: false, reason: `${config.confirmation} invalid report confirmation schema`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
   }
-  if (confirmation.confirmed_by !== 'user') return { valid: false, reason: `${config.confirmation} confirmed_by must be user`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
+  if (!isValidConfirmationActor(ideaDir, confirmation.confirmed_by)) return { valid: false, reason: `${config.confirmation} confirmed_by is not authorized`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
   if (!Number.isFinite(Date.parse(confirmation.confirmed_at))) return { valid: false, reason: `${config.confirmation} confirmed_at must be ISO-8601`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
   if (confirmation.report_file !== config.report) return { valid: false, reason: `${config.confirmation} report_file must be ${config.report}`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
   if (confirmation.report_sha256 !== reportSha256) return { valid: false, reason: `${config.confirmation} is stale: report changed`, report_type: reportType, report_file: config.report, report_sha256: reportSha256 };
@@ -84,7 +85,7 @@ export function reportReadyStatus(ideaDir, reportType) {
   return { valid: true, report_type: reportType, report_file: config.report, report_sha256: reportSha256, source_fingerprint: currentSource };
 }
 
-export function recordReportConfirmation(ideaDir, reportType, expectedSha256, comment = '') {
+export function recordReportConfirmation(ideaDir, reportType, expectedSha256, comment = '', actor = 'user') {
   const config = REPORT_CONFIRMATIONS[reportType];
   if (!config) throw new Error(`unknown report type: ${reportType}`);
   const reportPath = join(ideaDir, config.report);
@@ -97,12 +98,13 @@ export function recordReportConfirmation(ideaDir, reportType, expectedSha256, co
   if (embeddedSource !== sourceFingerprint) throw new Error('report source artifacts changed; regenerate the report before confirmation');
   const confirmationPath = join(ideaDir, config.confirmation);
   const existing = readJson(confirmationPath) || {};
+  if (!isValidConfirmationActor(ideaDir, actor)) throw new Error(`confirmation actor is not authorized: ${actor}`);
   const confirmation = {
     ...existing,
     schema_version: 1,
     phase: config.phase,
     status: 'confirmed',
-    confirmed_by: 'user',
+    confirmed_by: actor,
     confirmed_at: new Date().toISOString(),
     report_file: config.report,
     report_sha256: actualSha256,
@@ -128,7 +130,10 @@ function main() {
   }
   try {
     const result = args.includes('--confirm')
-      ? recordReportConfirmation(resolve(ideaDir), reportType, option(args, '--expected-sha'), option(args, '--comment') || '')
+      ? recordReportConfirmation(
+          resolve(ideaDir), reportType, option(args, '--expected-sha'), option(args, '--comment') || '',
+          args.includes('--hotol') ? HOTOL_CONFIRMATION_ACTOR : 'user',
+        )
       : reportStatus(resolve(ideaDir), reportType);
     console.log(JSON.stringify(result, null, 2));
     if (!args.includes('--confirm') && !result.valid) process.exitCode = 2;

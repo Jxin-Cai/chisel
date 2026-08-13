@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { evaluateStop, findActiveWorkflows } from '../hooks/stop-gate-guard.mjs';
 import { initTaskState } from '../scripts/workflow-lib.mjs';
+import { enableHotolMode } from '../scripts/execution-mode.mjs';
 
 function workflow(root, name, step) {
   const dir = join(root, '.chisel', name);
@@ -31,6 +32,22 @@ describe('Stop gate guard', () => {
   it('allows human decision steps to yield', () => {
     workflow(root, 'idea', 'plan:confirm');
     assert.deepEqual(evaluateStop(join(root, '.chisel'), { projectRoot: root }).blockers, []);
+  });
+
+  it('keeps HOTOL decision steps running instead of yielding for input', () => {
+    const ideaDir = workflow(root, 'idea', 'plan:confirm');
+    enableHotolMode(ideaDir);
+    const result = evaluateStop(join(root, '.chisel'), { projectRoot: root });
+    assert.equal(result.blockers.length, 1);
+    assert.match(result.blockers[0], /to-be-report-confirmed.*failed/);
+  });
+
+  it('keeps a recursive HOTOL stop retry alive until its gate completes', () => {
+    const ideaDir = workflow(root, 'idea', 'clarify:requirement');
+    enableHotolMode(ideaDir);
+    const result = evaluateStop(join(root, '.chisel'), { projectRoot: root, stopHookActive: true });
+    assert.equal(result.recursive_retry, true);
+    assert.match(result.blockers[0], /HOTOL step.*incomplete/);
   });
 
   it('does not recursively block the retry turn', () => {

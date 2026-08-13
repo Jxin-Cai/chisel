@@ -51,6 +51,11 @@ status 严格只读；runner 持久化租约/恢复点并通过 `orchestration-t
 classified 新流程的 `confirmations/to-be.json` 必须绑定统一 `plan_fingerprint`；tasks、traceability、risk、design-notes、对抗审查、implementation-plan 或 renderer receipt 任一变化都必须重新确认。快速 scope 超限时写 `scope-escalation.json` 并重新分类，禁止继续 coding。
 不要因"需求描述很清楚"而绕过确认。
 
+唯一例外是用户显式调用 `/chisel-hotol`，且 idea 目录中存在由 `execution-mode.mjs --enable-hotol` 写入并校验通过的
+`execution-mode.json`。此时确认不是被跳过，而是通过 `hotol-approve.mjs` 将启动时授权绑定到当前 requirement/plan/report/
+Git snapshot hash；所有机器 gate 保持不变。普通 `/chisel`、自然语言中的模糊“自动一点”或手写 confirmation 文件均不构成
+HOTOL 授权。
+
 ### 4. 每轮循环必须调用恢复点脚本 `[P2]`
 
 ```

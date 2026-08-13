@@ -7,6 +7,7 @@ import { checkGate } from '../scripts/gate-check.mjs';
 import { getStaleCodingTasks, readTaskState, STEP_GATE_MAP, taskStateFile } from '../scripts/workflow-lib.mjs';
 import { changedFilesForProject } from '../scripts/task-provenance.mjs';
 import { controlRoot } from '../scripts/control-plane.mjs';
+import { isHotolMode } from '../scripts/execution-mode.mjs';
 
 const HUMAN_WAIT_STEPS = new Set(['understand:confirm', 'clarify:requirement', 'plan:confirm', 'worktree:setup', 'test:unit', 'review:cr-report', 'final:summary', 'review:merge', 'blocked']);
 
@@ -95,13 +96,25 @@ export function evaluateStop(chiselDir, { projectRoot = '.', stopHookActive = fa
       const taskIds = liveCodingTasks(workflow);
       if (taskIds.length > 0) return [liveCodingBlocker(workflow, taskIds)];
       const reviewerBlocker = pendingAdversarialReviewBlocker(workflow);
-      return reviewerBlocker ? [reviewerBlocker] : [];
+      if (reviewerBlocker) return [reviewerBlocker];
+      if (!isHotolMode(workflow.ideaDir) || ['blocked', 'done'].includes(workflow.step)) return [];
+      const gateId = STEP_GATE_MAP[workflow.step];
+      if (!gateId) return [`${workflow.idea}: HOTOL step "${workflow.step}" has no canonical gate mapping`];
+      try {
+        const gate = checkGate(workflow.ideaDir, gateId);
+        return [gate.pass
+          ? `${workflow.idea}: HOTOL gate "${gateId}" passed; deliver artifacts and continue the runner`
+          : `${workflow.idea}: HOTOL step "${workflow.step}" is incomplete: ${gate.reason}`];
+      } catch (error) {
+        return [`${workflow.idea}: HOTOL gate evaluation error for "${gateId}": ${error.message}`];
+      }
     });
     return { blockers: liveBlockers, recursive_retry: true };
   }
   const blockers = [];
   for (const workflow of workflows) {
-    if (HUMAN_WAIT_STEPS.has(workflow.step) || workflow.step === 'done') continue;
+    const hotol = isHotolMode(workflow.ideaDir);
+    if ((HUMAN_WAIT_STEPS.has(workflow.step) && !hotol) || workflow.step === 'blocked' || workflow.step === 'done') continue;
     const liveTasks = liveCodingTasks(workflow);
     if (liveTasks.length > 0) {
       blockers.push(liveCodingBlocker(workflow, liveTasks));

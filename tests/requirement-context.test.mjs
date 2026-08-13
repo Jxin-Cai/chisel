@@ -13,6 +13,7 @@ import {
 import { checkGate } from '../scripts/gate-check.mjs';
 import { readRequirementClassification } from '../scripts/workflow-lib.mjs';
 import { writeRequirementClassification } from '../scripts/requirement-classify.mjs';
+import { enableHotolMode } from '../scripts/execution-mode.mjs';
 
 const dirs = [];
 function temp() {
@@ -111,5 +112,19 @@ describe('canonical requirement context', () => {
     const incomplete = '# Export requirement\n\n## 目标与业务结果\nExport works.\n';
     writeFileSync(join(dir, 'requirement.md'), incomplete);
     assert.throws(() => confirmRequirement(dir, hash(incomplete)), /missing sections/);
+  });
+
+  it('accepts an automation actor only for an explicitly authorized HOTOL idea', () => {
+    const dir = temp();
+    initializeRequirementContext(dir);
+    const canonical = readyRequirement();
+    writeFileSync(join(dir, 'requirement.md'), canonical);
+    canonicalClarification(dir);
+    assert.throws(() => confirmRequirement(dir, hash(canonical), 'hotol'), /not authorized/);
+    enableHotolMode(dir);
+    const confirmation = confirmRequirement(dir, hash(canonical), 'hotol');
+    assert.equal(confirmation.confirmed_by, 'hotol');
+    assert.equal(requirementConfirmationStatus(dir).valid, true);
+    assert.equal(checkGate(dir, 'clarification-complete').pass, true);
   });
 });

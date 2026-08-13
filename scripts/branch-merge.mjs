@@ -8,11 +8,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { locateIdea } from './control-plane.mjs';
+import { assertHotolCapability } from './execution-mode.mjs';
 
 const USAGE = `用法:
   node branch-merge.mjs --convert <branch-name> --repo <repo-path>
-  node branch-merge.mjs --merge --source <branch> --target <branch> --repo <repo-path> [--confirm] [--push]
-  node branch-merge.mjs --continue --repo <repo-path> --integration-worktree <path> [--confirm] [--push]
+  node branch-merge.mjs --merge --source <branch> --target <branch> --repo <repo-path> [--confirm|--hotol --idea <name>] [--update-local-target] [--push]
+  node branch-merge.mjs --continue --repo <repo-path> --integration-worktree <path> [--confirm|--hotol --idea <name>] [--update-local-target] [--push]
   node branch-merge.mjs --abort --repo <repo-path> --integration-worktree <path> [--cleanup]
   node branch-merge.mjs --analyze --repo <repo-path> [--integration-worktree <path>]
 `;
@@ -33,6 +34,8 @@ function parseArgs(argv) {
     else if (value === '--remote') args.remote = argv[++i];
     else if (value === '--idea') args.ideaName = argv[++i];
     else if (value === '--confirm') args.confirm = true;
+    else if (value === '--hotol') args.hotol = true;
+    else if (value === '--update-local-target') args.updateLocalTarget = true;
     else if (value === '--push') args.push = true;
     else if (value === '--cleanup') args.cleanup = true;
     else if (value === '--verify-command-json') {
@@ -160,6 +163,43 @@ function verifyIntegration(worktree, verifyCommand = null) {
   return { status: 'pass', checks };
 }
 
+function updateLocalTarget(repoPath, target, expectedTargetHead, mergeCommit) {
+  const current = branchCommit(repoPath, target);
+  if (current !== expectedTargetHead) {
+    return { status: 'local_target_drift', target, expected: expectedTargetHead, actual: current };
+  }
+  const targetWorktree = worktreeEntries(repoPath).find(entry => entry.branch === target)?.path;
+  if (targetWorktree) {
+    const dirty = git(['status', '--porcelain'], targetWorktree, { allowFail: true });
+    if (dirty) return { status: 'local_target_dirty', target, worktree: targetWorktree, dirty_files: dirty.split('\n').filter(Boolean) };
+    try {
+      git(['merge', '--ff-only', mergeCommit], targetWorktree);
+    } catch (error) {
+      return { status: 'local_target_update_failed', target, worktree: targetWorktree, reason: error.message };
+    }
+    return { status: 'updated', target, worktree: targetWorktree, head: branchCommit(repoPath, target) };
+  }
+  try {
+    git(['update-ref', `refs/heads/${target}`, mergeCommit, expectedTargetHead], repoPath);
+    return { status: 'updated', target, worktree: null, head: branchCommit(repoPath, target) };
+  } catch (error) {
+    return { status: 'local_target_update_failed', target, worktree: null, reason: error.message };
+  }
+}
+
+function authorizeHotol(args) {
+  if (!args.hotol) return;
+  if (!args.ideaName || !args.repo) throw new Error('--hotol requires --idea and --repo');
+  const located = locateIdea(args.repo, args.ideaName);
+  const mode = assertHotolCapability(located.idea_dir, 'merge-to-default-branch');
+  if (args.push && mode.authorization?.push !== true) throw new Error('HOTOL mode did not authorize pushing the target branch');
+  const configuredTarget = mode.authorization?.merge_target;
+  if (configuredTarget && configuredTarget !== 'default' && args.target && args.target !== configuredTarget) {
+    throw new Error(`HOTOL target mismatch: authorized ${configuredTarget}, received ${args.target}`);
+  }
+  args.confirm = true;
+}
+
 function persistReceipt(args, receipt) {
   if (!args.ideaName || !args.repo) return receipt;
   try {
@@ -193,6 +233,14 @@ function merge(args) {
   if (!args.confirm) return persistReceipt(args, { status: 'confirmation_required', source: args.source, target: args.target, integration_worktree: integration, verification, message: 'review the integration worktree and rerun with --confirm' });
   git(['commit', '--no-edit', '-m', `merge ${args.source} into ${args.target}`], integration);
   const receipt = { status: 'merged', source: args.source, target: args.target, repo: repoPath, integration_worktree: integration, target_head_before_merge: targetHead, merge_commit: branchCommit(integration, 'HEAD'), verification };
+  if (args.updateLocalTarget) {
+    receipt.local_target = updateLocalTarget(repoPath, args.target, targetHead, receipt.merge_commit);
+    if (receipt.local_target.status !== 'updated') {
+      receipt.status = receipt.local_target.status;
+      receipt.delivery_status = receipt.local_target.status;
+      return persistReceipt(args, receipt);
+    }
+  }
   if (args.push) {
     receipt.push = pushSafely(integration, args.remote || 'origin', args.target, targetHead);
     if (receipt.push.status !== 'pushed') { receipt.status = 'push_failed'; receipt.delivery_status = 'push_failed'; }
@@ -215,6 +263,14 @@ function continueMerge(args) {
   git(['add', '-A'], worktree);
   git(['commit', '--no-edit', '-m', prior.source && prior.target ? `merge ${prior.source} into ${prior.target}` : 'merge integration'], worktree);
   const result = { status: 'merged', repo: repoPath, integration_worktree: worktree, source: prior.source, target: prior.target, merge_commit: branchCommit(worktree, 'HEAD'), verification };
+  if (args.updateLocalTarget && prior.target && prior.target_head_before_merge) {
+    result.local_target = updateLocalTarget(repoPath, prior.target, prior.target_head_before_merge, result.merge_commit);
+    if (result.local_target.status !== 'updated') {
+      result.status = result.local_target.status;
+      result.delivery_status = result.local_target.status;
+      return persistReceipt(args, result);
+    }
+  }
   if (args.push && prior.target) {
     result.push = pushSafely(worktree, args.remote || 'origin', prior.target, prior.target_head_before_merge);
     if (result.push.status !== 'pushed') { result.status = 'push_failed'; result.delivery_status = 'push_failed'; }
@@ -253,9 +309,10 @@ export function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   if (!args.action) { process.stderr.write(USAGE); process.exitCode = 1; return; }
   try {
+    authorizeHotol(args);
     const result = args.action === 'merge' ? merge(args) : args.action === 'continue' ? continueMerge(args) : args.action === 'abort' ? abortMerge(args) : args.action === 'convert' ? convert(args) : analyze(args);
     console.log(JSON.stringify(result, null, 2));
-    if (['verification_failed', 'conflicts_remaining', 'remote_target_drift', 'push_failed'].includes(result.status)) process.exitCode = 1;
+    if (['verification_failed', 'conflicts_remaining', 'remote_target_drift', 'push_failed', 'local_target_drift', 'local_target_dirty', 'local_target_update_failed'].includes(result.status)) process.exitCode = 1;
   } catch (error) { process.stderr.write(`${JSON.stringify({ error: error.message })}\n`); process.exitCode = 1; }
 }
 

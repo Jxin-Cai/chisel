@@ -48,6 +48,10 @@ as-is 已存在时作为增强证据，但不得把深度代码分析作为澄�
 
 ## 执行流程
 
+若 `execution-mode.mjs {IDEA_DIR} --status` 返回 `active: true` 且 `mode: hotol`，不得调用 `AskUserQuestion` 或在步骤 12
+结束 turn。使用保守、可逆、兼容优先的默认值补齐低风险缺口，把每项自动假设写入澄清产物；高风险且无唯一安全答案时按
+HOTOL 协议写阻塞记录。生成 canonical requirement 后运行 `hotol-approve.mjs {IDEA_DIR} --requirement` 并继续 runner。
+
 1. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-context.mjs {IDEA_DIR} --init`。必须在重写
    `requirement.md` 前执行，以冻结 `requirement-original.md` 并初始化 `requirement-inputs.json`
 2. Read `requirement-original.md`、`requirement-inputs.json` 和当前 `requirement.md`

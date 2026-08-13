@@ -108,6 +108,16 @@ claude --plugin-dir /absolute/path/to/chisel
 /chisel docs/requirements/user-phone-validation.md
 ```
 
+需要完全无人值守、通过全部质量门禁后直接合并到本地默认主干时，使用 HOTOL 模式：
+
+```text
+/chisel-hotol 给用户创建流程增加手机号格式校验，保持旧接口响应兼容
+```
+
+HOTOL 会持久化本次显式授权，自动采用保守可逆的需求默认值、确认方案与最终代码快照、选择隔离 worktree，并在
+验证和 CR 全部通过后合并默认主干。它默认不 push、不 force push、不删除分支，也不会覆盖启动前的未提交改动；
+真实冲突、权限缺失或无法安全推断的高风险业务歧义会写入阻塞记录并终止，而不是停下来提问。
+
 chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，因此主工作区与 linked worktree 共享同一控制面；可用 `CHISEL_CONTROL_ROOT` 覆盖。
 
 <br/>
@@ -286,6 +296,7 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `/chisel-review` | 架构师 CR 审查 |
 | `/chisel-report` | 查看恢复点和 task 状态，或生成五份独立 HTML 报告 |
 | `/chisel-debug` | reproduce-first 根因工作流（独立模式或返修诊断模式） |
+| `/chisel-hotol` | 无人值守完成需求、验证、CR，并合并到本地默认主干 |
 
 ### Agents
 

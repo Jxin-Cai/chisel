@@ -178,6 +178,11 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/design-notes-schema.md
 
 #### 9. 对抗审查交接
 
+先运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/adversarial-review.mjs {idea_dir} --init --attempt <N>`，由脚本
+确定性生成包含全部源文件 hash、AC/VC 条目和固定 Markdown 章节的审查骨架，再把骨架与源文件交给
+fresh reviewer 填写。禁止用 Bash heredoc、内联 `node -e` 或临时 `_hash_fix`/`_cov_fix` 脚本拼装
+审查产物。修复后进入下一轮时，在 reviewer 启动前用 `--force` 重新初始化并递增 attempt。
+
 将 `requirement.md`、`requirement-clarification.json` 中每个 AC 及 verification_conditions、
 所有 as-is 结构化文件、to-be 全部 JSON/Markdown 的路径和 hash 交给 fresh reviewer。审查输出必须
 包含 requirement/clarification coverage、implementation/change points/tasks/files/verification

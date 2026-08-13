@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFrontmatter } from './workflow-lib.mjs';
+import { isValidConfirmationActor } from './execution-mode.mjs';
 
 const DEFAULT_LIMIT = 20;
 const DEFAULT_MAX_CHARS = 24_000;
@@ -125,7 +126,7 @@ export function queryDecision(ideaDir, taskId) {
   const notesSource = readJsonWithRef(ideaDir, 'to-be/design-notes.json');
   const confirmationSource = readJsonWithRef(ideaDir, 'confirmations/to-be.json');
   const confirmation = confirmationSource?.value;
-  const userConfirmed = (confirmation?.status === 'confirmed' && confirmation?.confirmed_by === 'user')
+  const userConfirmed = (confirmation?.status === 'confirmed' && isValidConfirmationActor(ideaDir, confirmation?.confirmed_by))
     || existsSync(safePath(ideaDir, '.to-be-confirmed'));
   const notes = notesSource?.value || {};
   const changePoints = Array.isArray(notes.change_point_details) ? notes.change_point_details : [];

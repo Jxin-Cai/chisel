@@ -8,6 +8,7 @@ import { atomicWriteFile, allTasksApproved, readTaskState, taskStateFile } from 
 import { collectDimResults } from './cr-report.mjs';
 import { validateVerificationResult, workspaceIdentity } from './verification-lib.mjs';
 import { reportSourceFingerprint } from './report-confirm.mjs';
+import { HOTOL_CONFIRMATION_ACTOR, isValidConfirmationActor } from './execution-mode.mjs';
 
 const REPORT_JSON = 'cr/current-change-report.json';
 const LEGACY_REPORT_MD = 'cr/current-change-report.md';
@@ -335,7 +336,7 @@ export function validateMergeReviewReport(ideaDir) {
   return '';
 }
 
-export function recordMergeReviewDecision(ideaDir, decision, comment = '') {
+export function recordMergeReviewDecision(ideaDir, decision, comment = '', actor = 'user') {
   if (!['approve', 'request_changes', 'comment'].includes(decision)) throw new Error('decision must be approve, request_changes, or comment');
   const reason = validateMergeReviewReport(ideaDir);
   if (reason) throw new Error(reason);
@@ -345,11 +346,12 @@ export function recordMergeReviewDecision(ideaDir, decision, comment = '') {
   const htmlReason = validateHtmlReportFreshness(ideaDir);
   if (htmlReason) throw new Error(htmlReason);
   const report = readJson(reportPath);
+  if (!isValidConfirmationActor(ideaDir, actor)) throw new Error(`confirmation actor is not authorized: ${actor}`);
   const confirmation = {
     schema_version: 1,
     phase: 'merge-review',
     decision,
-    confirmed_by: 'user',
+    confirmed_by: actor,
     confirmed_at: new Date().toISOString(),
     report_file: REPORT_JSON,
     report_sha256: fileSha256(reportPath),
@@ -376,7 +378,7 @@ export function validateMergeReviewConfirmation(ideaDir) {
   const htmlReason = validateHtmlReportFreshness(ideaDir);
   if (htmlReason) return htmlReason;
   if (confirmation.decision !== 'approve') return `merge review decision is ${confirmation.decision || 'missing'}`;
-  if (confirmation.confirmed_by !== 'user') return 'merge review confirmed_by must be user';
+  if (!isValidConfirmationActor(ideaDir, confirmation.confirmed_by)) return 'merge review confirmed_by is not authorized';
   if (!Number.isFinite(Date.parse(confirmation.confirmed_at))) return 'merge review confirmed_at must be ISO-8601';
   if (confirmation.report_sha256 !== fileSha256(join(ideaDir, REPORT_JSON))) return 'merge review approval is stale: report changed';
   if (confirmation.html_report_file !== HTML_REPORT) return `merge review html_report_file must be ${HTML_REPORT}`;
@@ -402,7 +404,10 @@ function main() {
   try {
     const decision = option(args, '--confirm');
     const result = decision
-      ? recordMergeReviewDecision(resolve(ideaDir), decision, option(args, '--comment') || '')
+      ? recordMergeReviewDecision(
+          resolve(ideaDir), decision, option(args, '--comment') || '',
+          args.includes('--hotol') ? HOTOL_CONFIRMATION_ACTOR : 'user',
+        )
       : generateMergeReview(resolve(ideaDir), args[1] && !args[1].startsWith('--') ? args[1] : '.');
     console.log(JSON.stringify(result, null, 2));
   } catch (error) {

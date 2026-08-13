@@ -13,6 +13,7 @@ import { checkDocumentJob } from './document-job.mjs';
 import { computeRequirementClassification } from './requirement-classify.mjs';
 import { PROJECT_MODES, projectModeFromRepoMap } from './project-profile.mjs';
 import { requirementConfirmationStatus } from './requirement-context.mjs';
+import { isValidConfirmationActor } from './execution-mode.mjs';
 
 import { checkScope, getTaskScope } from './scope-check.mjs';
 import { validateJsonFile } from './schemas/validate.mjs';
@@ -1253,7 +1254,7 @@ function validateToBeConfirmation(ideaDir) {
   if (doc.phase !== 'to-be') return 'confirmations/to-be.json phase must be to-be';
   if (doc.status !== 'confirmed') return 'confirmations/to-be.json status must be confirmed';
   if (!doc.confirmed_at || typeof doc.confirmed_at !== 'string') return 'confirmations/to-be.json missing confirmed_at';
-  if (!doc.confirmed_by || typeof doc.confirmed_by !== 'string') return 'confirmations/to-be.json missing confirmed_by';
+  if (!isValidConfirmationActor(ideaDir, doc.confirmed_by)) return 'confirmations/to-be.json confirmed_by is not authorized';
   if (!Array.isArray(doc.source_files)) return 'confirmations/to-be.json source_files must be an array';
   const missingToBeSourceFiles = ['to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json'].filter(source => !doc.source_files.includes(source));
   if (missingToBeSourceFiles.length > 0) return `confirmations/to-be.json source_files missing ${missingToBeSourceFiles.join(', ')}`;
@@ -1312,6 +1313,54 @@ export function toBePlanFingerprint(ideaDir) {
  * decision.  A few field aliases are accepted so that older generated plans
  * can be upgraded without rewriting the review by hand.
  */
+export function adversarialReviewRequirements(ideaDir) {
+  const sourceCandidates = [
+    'requirement-original.md',
+    'requirement-inputs.json',
+    'requirement.md',
+    'requirement-clarification.json',
+    'confirmations/requirement.json',
+    'requirement-classification.json',
+    'clarifications.json',
+    'as-is/evidence-ledger.json',
+    'as-is/coverage-matrix.json',
+    'to-be/implementation-plan.md',
+    'to-be/design-notes.json',
+    'to-be/tasks.json',
+    'to-be/traceability-matrix.json',
+    'to-be/impact-risk-report.json',
+    'to-be/data-change-plan.json',
+    'to-be/api-change-plan.json',
+    'document-jobs/to-be.json',
+  ];
+  const clarification = existsSync(join(ideaDir, 'requirement-clarification.json'))
+    ? readJsonFile(join(ideaDir, 'requirement-clarification.json')).value : null;
+  const mandatory_sources = ['requirement.md', 'to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json'];
+  if (clarification?.schema_version === 2) mandatory_sources.push(
+    'requirement-original.md', 'requirement-inputs.json', 'confirmations/requirement.json',
+  );
+  if (has(ideaDir, 'requirement-classification.json')) mandatory_sources.push(
+    'requirement-clarification.json', 'requirement-classification.json', 'to-be/design-notes.json',
+    'to-be/impact-risk-report.json', 'document-jobs/to-be.json',
+  );
+  const missing_sources = mandatory_sources.filter(path => !existsSync(join(ideaDir, path)));
+  const reviewed_files = sourceCandidates
+    .filter(path => existsSync(join(ideaDir, path)))
+    .map(path => ({
+      path,
+      sha256: createHash('sha256').update(readFileSync(join(ideaDir, path))).digest('hex'),
+    }));
+  const requirement_refs = [];
+  for (const criterion of clarification?.dimensions?.acceptance_criteria || []) {
+    const criterionId = typeof criterion === 'string' ? criterion.match(/\bAC-\d{3}\b/)?.[0] : criterion?.id;
+    if (criterionId) requirement_refs.push(criterionId);
+    for (const vc of typeof criterion === 'object' && Array.isArray(criterion?.verification_conditions) ? criterion.verification_conditions : []) {
+      if (criterionId && vc?.id) requirement_refs.push(`${criterionId}/${vc.id}`);
+    }
+  }
+  return { reviewed_files, requirement_refs, mandatory_sources, missing_sources };
+}
+
 function validateAdversarialReview(ideaDir) {
   const jsonPath = join(ideaDir, 'to-be/adversarial-review.json');
   const markdownPath = join(ideaDir, 'to-be/adversarial-review.md');
@@ -1351,38 +1400,9 @@ function validateAdversarialReview(ideaDir) {
   });
   if (blocking.length > 0) return 'adversarial review contains unresolved findings';
 
-  const requiredSources = [
-    'requirement-original.md',
-    'requirement-inputs.json',
-    'requirement.md',
-    'requirement-clarification.json',
-    'confirmations/requirement.json',
-    'requirement-classification.json',
-    'clarifications.json',
-    'as-is/evidence-ledger.json',
-    'as-is/coverage-matrix.json',
-    'to-be/implementation-plan.md',
-    'to-be/design-notes.json',
-    'to-be/tasks.json',
-    'to-be/traceability-matrix.json',
-    'to-be/impact-risk-report.json',
-    'to-be/data-change-plan.json',
-    'to-be/api-change-plan.json',
-    'document-jobs/to-be.json',
-  ].filter(rel => existsSync(join(ideaDir, rel)));
-  const mandatoryReviewSources = ['requirement.md', 'to-be/implementation-plan.md', 'to-be/tasks.json', 'to-be/traceability-matrix.json'];
-  const clarificationContract = existsSync(join(ideaDir, 'requirement-clarification.json'))
-    ? readJsonFile(join(ideaDir, 'requirement-clarification.json')).value : null;
-  if (clarificationContract?.schema_version === 2) mandatoryReviewSources.push(
-    'requirement-original.md', 'requirement-inputs.json', 'confirmations/requirement.json',
-  );
-  if (has(ideaDir, 'requirement-classification.json')) mandatoryReviewSources.push(
-    'requirement-clarification.json', 'requirement-classification.json', 'to-be/design-notes.json',
-    'to-be/impact-risk-report.json', 'document-jobs/to-be.json',
-  );
-  for (const mandatory of mandatoryReviewSources) {
-    if (!requiredSources.includes(mandatory)) return `${mandatory} missing from adversarial review source set`;
-  }
+  const requirements = adversarialReviewRequirements(ideaDir);
+  const requiredSources = requirements.reviewed_files.map(entry => entry.path);
+  if (requirements.missing_sources.length > 0) return `${requirements.missing_sources[0]} missing from adversarial review source set`;
   if (!Array.isArray(doc.reviewed_files)) return 'adversarial-review.json reviewed_files must be an array';
   const reviewed = new Map(doc.reviewed_files.map(entry => [typeof entry === 'string' ? entry : entry?.path, entry]));
   for (const rel of requiredSources) {
@@ -1392,16 +1412,7 @@ function validateAdversarialReview(ideaDir) {
     if (entry.sha256 !== actual) return `adversarial review is stale: ${rel} changed`;
   }
 
-  const clarification = existsSync(join(ideaDir, 'requirement-clarification.json'))
-    ? readJsonFile(join(ideaDir, 'requirement-clarification.json')).value : null;
-  const expectedRefs = [];
-  for (const criterion of clarification?.dimensions?.acceptance_criteria || []) {
-    const criterionId = typeof criterion === 'string' ? criterion.match(/\bAC-\d{3}\b/)?.[0] : criterion?.id;
-    if (criterionId) expectedRefs.push(criterionId);
-    for (const vc of typeof criterion === 'object' && Array.isArray(criterion?.verification_conditions) ? criterion.verification_conditions : []) {
-      if (criterionId && vc?.id) expectedRefs.push(`${criterionId}/${vc.id}`);
-    }
-  }
+  const expectedRefs = requirements.requirement_refs;
   if (!Array.isArray(doc.requirement_coverage)) return 'adversarial-review.json requirement_coverage must be an array';
   const tasksDoc = readJsonFile(join(ideaDir, 'to-be/tasks.json')).value || {};
   const tasks = Array.isArray(tasksDoc.tasks) ? tasksDoc.tasks : [];

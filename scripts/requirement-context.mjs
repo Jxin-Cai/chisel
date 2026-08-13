@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { atomicWriteFile, ensureDir } from './workflow-lib.mjs';
+import { HOTOL_CONFIRMATION_ACTOR, isValidConfirmationActor } from './execution-mode.mjs';
 
 const ORIGINAL = 'requirement-original.md';
 const CANONICAL = 'requirement.md';
@@ -106,14 +107,14 @@ export function requirementConfirmationStatus(ideaDir) {
   if (confirmation.schema_version !== 1 || confirmation.phase !== 'requirement' || confirmation.status !== 'confirmed') {
     return { valid: false, reason: `${CONFIRMATION} invalid schema` };
   }
-  if (confirmation.confirmed_by !== 'user') return { valid: false, reason: `${CONFIRMATION} confirmed_by must be user` };
+  if (!isValidConfirmationActor(ideaDir, confirmation.confirmed_by)) return { valid: false, reason: `${CONFIRMATION} confirmed_by is not authorized` };
   if (!Number.isFinite(Date.parse(confirmation.confirmed_at))) return { valid: false, reason: `${CONFIRMATION} confirmed_at must be ISO-8601` };
   if (!canonical || confirmation.requirement_sha256 !== sha256(canonical)) return { valid: false, reason: 'canonical requirement changed after confirmation' };
   if (!fingerprint || confirmation.source_fingerprint !== fingerprint) return { valid: false, reason: 'requirement inputs changed after confirmation' };
   return { valid: true, confirmation_file: CONFIRMATION, requirement_sha256: confirmation.requirement_sha256, source_fingerprint: fingerprint };
 }
 
-export function confirmRequirement(ideaDir, expectedSha256) {
+export function confirmRequirement(ideaDir, expectedSha256, actor = 'user') {
   initializeRequirementContext(ideaDir);
   const canonical = read(join(ideaDir, CANONICAL));
   const clarification = readJson(join(ideaDir, CLARIFICATION));
@@ -128,11 +129,12 @@ export function confirmRequirement(ideaDir, expectedSha256) {
   if (!sourceFingerprint) throw new Error('requirement source set is incomplete');
   const confirmationPath = join(ideaDir, CONFIRMATION);
   ensureDir(join(ideaDir, 'confirmations'));
+  if (!isValidConfirmationActor(ideaDir, actor)) throw new Error(`confirmation actor is not authorized: ${actor}`);
   const confirmation = {
     schema_version: 1,
     phase: 'requirement',
     status: 'confirmed',
-    confirmed_by: 'user',
+    confirmed_by: actor,
     confirmed_at: new Date().toISOString(),
     requirement_file: CANONICAL,
     requirement_sha256: actualSha256,
@@ -152,7 +154,11 @@ function main(args) {
   if (!ideaDir) throw new Error('用法: requirement-context.mjs <idea-dir> <--init|--status|--confirm|--append-file>');
   if (args.includes('--init')) return initializeRequirementContext(ideaDir);
   if (args.includes('--status')) return requirementConfirmationStatus(ideaDir);
-  if (args.includes('--confirm')) return confirmRequirement(ideaDir, option(args, '--expected-sha'));
+  if (args.includes('--confirm')) return confirmRequirement(
+    ideaDir,
+    option(args, '--expected-sha'),
+    args.includes('--hotol') ? HOTOL_CONFIRMATION_ACTOR : 'user',
+  );
   if (args.includes('--append-file')) {
     const inputFile = option(args, '--append-file');
     if (!inputFile || !existsSync(inputFile)) throw new Error('--append-file must reference an existing file');

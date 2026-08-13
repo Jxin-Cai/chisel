@@ -11,6 +11,9 @@ disable-model-invocation: true
 
 用户参数：`$ARGUMENTS`
 
+> 若用户要求 HOTOL、无人值守、不再等待输入并最终合并主干，必须改用 `/chisel-hotol`。普通 `/chisel` 不继承
+> 该授权，仍保留人工需求、方案和合并快照决策。
+
 ---
 
 ## 当前工作流状态
@@ -215,7 +218,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 | `classify:requirement` | 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/requirement-classify.mjs {IDEA_DIR} .`，先生成有界仓库证据，再按真实候选文件/模块、风险与不确定性选路；展示 difficulty、execution_profile、reasons 和 subagent_budget | `requirement-classified` |
 | `quick-dev:init` | 先执行轻量只读 discovery，写入非空 `quick-dev-scope.json`（`scope_mode=explicit`，含 `allowed_files`、`expected_files`、禁区和 AC）；超过 2 文件/2 模块、含宽泛 glob 或非低风险时写 `scope-escalation.json` 并回到 `classify:requirement`，不得继续实现。随后运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/quick-dev-init.mjs {IDEA_DIR}` | `quick-dev-ready` |
 | `plan:design` | `/chisel-plan <idea-name>` | `to-be-exists` |
-| `plan:adversarial-review` | 运行 fresh reviewer 对照 requirement/clarification/as-is 与全部 to-be 结构化产物；后台 reviewer 必须在当前 turn 用 `TaskOutput(task_id, block: true)` join，禁止只报告等待后停止；按实际结论写入 `to-be/adversarial-review.json`/`.md`。`fail` 必须修复 tasks/traceability/impact/implementation plan 后重跑，达到上限进入 `blocked` | `to-be-adversarial-approved` |
+| `plan:adversarial-review` | 先运行 `adversarial-review.mjs {IDEA_DIR} --init --attempt <N>` 确定性冻结源 hash、AC/VC 和 Markdown 章节，再运行 fresh reviewer；后台 reviewer 必须在当前 turn 用 `TaskOutput(task_id, block: true)` join，禁止只报告等待后停止；reviewer 按实际结论填写 `to-be/adversarial-review.json`/`.md`。`fail` 必须修复 tasks/traceability/impact/implementation plan，下一轮 reviewer 前用 `--force` 重新初始化，达到上限进入 `blocked` | `to-be-adversarial-approved` |
 | `plan:confirm` | Read `${REF}/phase-confirm-details.md`；按其 plan:confirm 详细行为执行 | `to-be-report-confirmed` |
 | `worktree:setup` | 多仓 worktree 设置：先运行 `multi-repo-worktree.mjs --detect <workspace-root>`，由用户确认仓库列表和隔离策略；yes → `--create <idea-name> --workspace <workspace-root> --repos ...`，创建每仓同逻辑分支并写入持久 v3 registry；no → 仍需显式记录 current-branch 决策。恢复时必须先运行 `--locate/--resume`，读取 decision/registry 并用 `git worktree list --porcelain` 验证路径；旧 v1/v2 decision 继续接受 | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
