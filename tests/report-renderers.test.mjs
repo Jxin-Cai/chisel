@@ -7,6 +7,24 @@ import { REPORT_SECTIONS, loadData } from '../scripts/report-renderers.mjs';
 import { tmpdir } from 'node:os';
 
 describe('report renderers', () => {
+  it('renders requirement behavior and concrete PASS evidence for unit-test cases', () => {
+    const html = REPORT_SECTIONS['unit-tests']({
+      ideaName: 'demo',
+      unitTestResult: {
+        status: 'pass', run_summary: { total_runs: 1, failed_runs: 0, repair_count: 0, anomalies: [] },
+        repositories: [{
+          project_root: '/repo', coverage: {}, requirement_unit_tests: [{ status: 'A', file: 'tests/order.test.js' }],
+          requirement_case_evidence: [{
+            status: 'pass', test_file: 'tests/order.test.js', test_name: 'rejects insufficient stock', trace_refs: ['AC-002/VC-001'],
+            given: 'stock is insufficient', when: 'checkout runs', then: 'no order is created', failure_mode: 'stock validation is removed',
+            evidence: { command: 'npm test', output_excerpt: 'ok 3 - rejects insufficient stock' },
+          }],
+        }],
+      },
+    });
+    for (const value of ['需求 Case 与 PASS 证据', 'AC-002/VC-001', 'no order is created', 'stock validation is removed', 'ok 3 - rejects insufficient stock']) assert.match(html, new RegExp(value));
+  });
+
   it('exposes a current-change renderer and renders structured merge data', () => {
     assert.equal(typeof REPORT_SECTIONS['current-change'], 'function');
     const html = REPORT_SECTIONS['current-change']({

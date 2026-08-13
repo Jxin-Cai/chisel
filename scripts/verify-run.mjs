@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { isAbsolute, join, resolve } from 'node:path';
 import { verificationPlanFingerprint, workspaceIdentity } from './verification-lib.mjs';
 import { durableAtomicWrite } from './file-transaction.mjs';
 import { recordDuration } from './session-metrics.mjs';
 import { appendUnitTestRun } from './unit-test-evidence.mjs';
+
+const FULL_CHECK_OUTPUT = Symbol('full-check-output');
 
 function readPackage(projectRoot) {
   const path = join(projectRoot, 'package.json');
@@ -45,21 +47,98 @@ function detectChecks(projectRoot) {
   return [];
 }
 
+function isUnitTestCheck(check = {}) {
+  return /(?:^|[-_:])(test|tests|unit|coverage)(?:$|[-_:])/i.test(String(check.id || ''))
+    || /(?:test|pytest|jest|vitest|mocha|coverage)/i.test([check.command, ...(check.args || [])].join(' '));
+}
+
+function matchingPassLine(output, marker) {
+  return String(output || '').split('\n').map(line => line.trim()).find(line => {
+    if (!line.includes(marker) || /(?:#\s*(?:SKIP|TODO)|\bSKIPPED\b)/i.test(line)) return false;
+    return /^(?:ok\s+\d+\s+-\s+|[✔✓]\s+|PASS(?:ED)?\b|\S+::\S+.*\bPASSED\b)/i.test(line);
+  }) || '';
+}
+
+function requirementCaseEvidence(cases, checks, projectRoot) {
+  return cases.map(testCase => {
+    const check = checks.find(item => item.id === testCase.check_id);
+    const output = String(check?.[FULL_CHECK_OUTPUT] || check?.output || '');
+    const passLine = matchingPassLine(output, testCase.pass_evidence);
+    const testFile = join(projectRoot, testCase.test_file);
+    return {
+      ...testCase,
+      status: check?.status === 'pass' && check?.exit_code === 0 && passLine && existsSync(testFile) ? 'pass' : 'fail',
+      evidence: {
+        command: check ? [check.command, ...(check.args || [])].join(' ') : '',
+        exit_code: check?.exit_code ?? null,
+        duration_ms: check?.duration_ms || 0,
+        output_excerpt: passLine,
+        test_file_sha256: existsSync(testFile) ? createHash('sha256').update(readFileSync(testFile)).digest('hex') : '',
+      },
+      ...(!check ? { reason: `check not executed: ${testCase.check_id}` }
+        : !existsSync(testFile) ? { reason: `test file missing: ${testCase.test_file}` }
+          : !passLine ? { reason: `passing test line not found in ${testCase.check_id} output: ${testCase.pass_evidence}` } : {}),
+    };
+  });
+}
+
+function validateRequirementCases(repo, knownTraceRefs = null) {
+  const unitCheckIds = new Set((repo.checks || []).filter(isUnitTestCheck).map(check => check.id));
+  if (unitCheckIds.size === 0) return;
+  const cases = repo.requirement_cases;
+  if (!Array.isArray(cases) || cases.length === 0) throw new Error(`repository ${repo.project_root} requires non-empty requirement_cases for its unit-test checks`);
+  const ids = new Set();
+  const passMarkers = new Set();
+  for (const [index, testCase] of cases.entries()) {
+    const label = `requirement_cases[${index}]`;
+    for (const field of ['id', 'test_file', 'test_name', 'given', 'when', 'then', 'failure_mode', 'check_id', 'pass_evidence']) {
+      if (typeof testCase?.[field] !== 'string' || !testCase[field].trim()) throw new Error(`${label}.${field} must be non-empty`);
+    }
+    if (ids.has(testCase.id)) throw new Error(`duplicate requirement case id: ${testCase.id}`);
+    ids.add(testCase.id);
+    if (passMarkers.has(testCase.pass_evidence)) throw new Error(`duplicate requirement case pass_evidence: ${testCase.pass_evidence}`);
+    passMarkers.add(testCase.pass_evidence);
+    if (!Array.isArray(testCase.trace_refs) || testCase.trace_refs.length === 0) throw new Error(`${label}.trace_refs must be non-empty`);
+    if (!unitCheckIds.has(testCase.check_id)) throw new Error(`${label}.check_id must reference a unit-test check`);
+    if (isAbsolute(testCase.test_file) || testCase.test_file.split(/[\\/]/).includes('..')) throw new Error(`${label}.test_file must be a repository-relative path`);
+    if (knownTraceRefs) {
+      const unknown = testCase.trace_refs.filter(ref => !knownTraceRefs.has(ref));
+      if (unknown.length > 0) throw new Error(`${label}.trace_refs contains unknown requirement refs: ${unknown.join(', ')}`);
+    }
+  }
+}
+
+function requirementTraceRefs(ideaDir) {
+  try {
+    const matrix = JSON.parse(readFileSync(join(ideaDir, 'to-be/traceability-matrix.json'), 'utf8'));
+    return new Set((matrix.items || []).map(item => item.id).filter(Boolean));
+  } catch { return null; }
+}
+
 function runCheck(check, projectRoot) {
   const start = Date.now();
-  try {
-    const output = execFileSync(check.command, check.args, {
-      cwd: projectRoot,
-      encoding: 'utf8',
-      timeout: Number(check.timeout_ms || 120000),
-      stdio: ['pipe', 'pipe', 'pipe'],
-      maxBuffer: 4 * 1024 * 1024,
-    });
-    return { ...check, status: 'pass', exit_code: 0, duration_ms: Date.now() - start, output: output.slice(-2000) };
-  } catch (error) {
-    const output = `${error.stdout || ''}\n${error.stderr || ''}`.slice(-3000);
-    return { ...check, status: 'fail', exit_code: Number.isInteger(error.status) ? error.status : 1, duration_ms: Date.now() - start, output };
-  }
+  const environment = { ...process.env };
+  delete environment.NODE_TEST_CONTEXT;
+  const executed = spawnSync(check.command, check.args, {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    timeout: Number(check.timeout_ms || 120000),
+    stdio: ['pipe', 'pipe', 'pipe'],
+    maxBuffer: 4 * 1024 * 1024,
+    env: environment,
+  });
+  const output = `${executed.stdout || ''}${executed.stderr || ''}`;
+  const passed = !executed.error && executed.status === 0;
+  const result = {
+    ...check,
+    status: passed ? 'pass' : 'fail',
+    exit_code: Number.isInteger(executed.status) ? executed.status : 1,
+    duration_ms: Date.now() - start,
+    output: output.slice(passed ? -64 * 1024 : -3000),
+    ...(executed.error ? { error: executed.error.message } : {}),
+  };
+  result[FULL_CHECK_OUTPUT] = output;
+  return result;
 }
 
 function contractPath(ideaDir) { return join(ideaDir, 'verification-contract.json'); }
@@ -70,11 +149,12 @@ function contractFingerprint(contract) {
 
 export function createVerificationContract(ideaDir, roots) {
   const contract = {
-    schema_version: 1,
+    schema_version: 2,
     generated_at: new Date().toISOString(),
     repositories: roots.map(root => ({
       project_root: resolve(root),
       checks: detectChecks(root).map(check => ({ ...check, timeout_ms: 120000, required: true })),
+      requirement_cases: [],
     })),
   };
   durableAtomicWrite(contractPath(ideaDir), `${JSON.stringify(contract, null, 2)}\n`);
@@ -85,12 +165,14 @@ function readVerificationContract(ideaDir) {
   const path = contractPath(ideaDir);
   if (!existsSync(path)) return null;
   const contract = JSON.parse(readFileSync(path, 'utf8'));
-  if (contract.schema_version !== 1 || !Array.isArray(contract.repositories)) throw new Error('invalid verification-contract.json');
+  if (![1, 2].includes(contract.schema_version) || !Array.isArray(contract.repositories)) throw new Error('invalid verification-contract.json');
+  const knownTraceRefs = requirementTraceRefs(ideaDir);
   for (const repo of contract.repositories) {
     if (!repo.project_root || !Array.isArray(repo.checks)) throw new Error('verification contract repository requires project_root and checks');
     for (const check of repo.checks) {
       if (!check.id || !check.command || !Array.isArray(check.args)) throw new Error('verification contract check requires id, command, and args[]');
     }
+    validateRequirementCases(repo, knownTraceRefs);
   }
   return contract;
 }
@@ -107,6 +189,7 @@ function readRepairVerificationPlan(ideaDir, fallbackRoot) {
     const repositoryRoot = repairRepositoryRoot(repo.project_root, fallbackRoot);
     if (!Array.isArray(repo.checks) || repo.checks.length === 0) throw new Error(`repair verification checks must be non-empty for ${repositoryRoot}`);
     for (const check of repo.checks) if (!check.id || !check.command || !Array.isArray(check.args)) throw new Error('repair verification checks require id, command and args[]');
+    validateRequirementCases(repo, requirementTraceRefs(ideaDir));
   }
   return plan;
 }
@@ -163,11 +246,13 @@ function main() {
     const repositories = plan.repositories.map(repo => {
       const repositoryRoot = repairRepositoryRoot(repo.project_root, projectRoot);
       const checks = repo.checks.map(check => runCheck(check, repositoryRoot));
+      const requirementCases = requirementCaseEvidence(repo.requirement_cases || [], checks, repositoryRoot);
       const identity = workspaceIdentity(repositoryRoot);
       return {
         project_root: repositoryRoot,
-        status: checks.every(check => check.status === 'pass') && !identity.error ? 'pass' : 'fail',
+        status: checks.every(check => check.status === 'pass') && requirementCases.every(testCase => testCase.status === 'pass') && !identity.error ? 'pass' : 'fail',
         git_head: identity.head || '', workspace_fingerprint: identity.fingerprint || '', checks,
+        requirement_case_evidence: requirementCases,
         ...(identity.error ? { reason: identity.error } : {}),
       };
     });
@@ -194,15 +279,20 @@ function main() {
     const entry = contract?.repositories.find(repo => resolve(repo.project_root) === resolve(root));
     const configuredChecks = entry?.checks || detectChecks(root);
     const checks = configuredChecks.map(check => runCheck(check, root));
+    const requirementCases = requirementCaseEvidence(entry?.requirement_cases || [], checks, root);
     const identity = workspaceIdentity(root);
-    const status = configuredChecks.length > 0 && checks.every(check => check.status === 'pass') && !identity.error ? 'pass' : 'fail';
+    const hasUnitChecks = configuredChecks.some(isUnitTestCheck);
+    const status = configuredChecks.length > 0 && checks.every(check => check.status === 'pass')
+      && (!hasUnitChecks || requirementCases.length > 0 && requirementCases.every(testCase => testCase.status === 'pass')) && !identity.error ? 'pass' : 'fail';
     return {
       project_root: root,
       status,
       git_head: identity.head || '',
       workspace_fingerprint: identity.fingerprint || '',
       checks,
+      requirement_case_evidence: requirementCases,
       ...(configuredChecks.length === 0 ? { reason: 'no verification command detected; configure test/build commands before review' } : {}),
+      ...(hasUnitChecks && requirementCases.length === 0 ? { reason: 'unit-test checks require requirement_cases with verifiable PASS output' } : {}),
       ...(identity.error ? { reason: identity.error } : {}),
     };
   });

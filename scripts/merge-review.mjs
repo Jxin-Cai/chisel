@@ -144,6 +144,10 @@ function changeCategories(files) {
   };
 }
 
+function deliveredControlPlaneFiles(repository) {
+  return (repository.files || []).filter(file => file.status !== 'D' && (file.path === '.chisel' || file.path.startsWith('.chisel/')));
+}
+
 function collectRepository(ideaDir, root) {
   const identity = workspaceIdentity(root);
   if (identity.error) return { project_root: root, error: identity.error };
@@ -288,6 +292,10 @@ export function generateMergeReview(ideaDir, projectRoot = '.') {
   if (machineReview.verdict !== 'approved') blockers.push('Machine CR still has blocking findings.');
   if (!existsSync(finalSummaryPath)) blockers.push('final-summary.md is missing.');
   for (const repo of repositories) if (repo.error) blockers.push(`${repo.project_root}: ${repo.error}`);
+  for (const repo of repositories) {
+    const controlFiles = deliveredControlPlaneFiles(repo);
+    if (controlFiles.length > 0) blockers.push(`${repo.project_root}: runtime control files must not be delivered: ${controlFiles.map(file => file.path).join(', ')}`);
+  }
   const report = {
     schema_version: 1,
     report_type: 'current-change',

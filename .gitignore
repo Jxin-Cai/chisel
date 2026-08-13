@@ -3,4 +3,5 @@ node_modules/
 *.log
 .idea/
 .claude/
+.chisel/
 .playwright-mcp/

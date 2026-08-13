@@ -108,4 +108,35 @@ describe('long-running resilience', () => {
     assert.equal(result.status, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
   });
+
+  it('allows read-only Bash inspection of protected machine state', () => {
+    for (const command of [
+      'ls -la .chisel/idea/task-workflow-state.yaml',
+      'cat .chisel/idea/workflow-state.yaml | head -40',
+      'grep -n current_step .chisel/idea/workflow-state.yaml',
+    ]) {
+      const result = spawnSync(process.execPath, ['hooks/pre-tool-write-guard.mjs'], {
+        cwd: process.cwd(), encoding: 'utf8',
+        input: JSON.stringify({ tool_name: 'Bash', cwd: root, tool_input: { command } }),
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, '');
+    }
+  });
+
+  it('blocks common indirect Bash mutations of protected machine state', () => {
+    for (const command of [
+      'rm .chisel/idea/workflow-state.yaml',
+      'touch .chisel/idea/events.ndjson',
+      'sed -i.bak s/a/b/ .chisel/idea/task-workflow-state.yaml',
+      'printf hacked | tee .chisel/idea/workflow-state.yaml',
+    ]) {
+      const result = spawnSync(process.execPath, ['hooks/pre-tool-write-guard.mjs'], {
+        cwd: process.cwd(), encoding: 'utf8',
+        input: JSON.stringify({ tool_name: 'Bash', cwd: root, tool_input: { command } }),
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+    }
+  });
 });

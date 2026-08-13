@@ -122,6 +122,16 @@ describe('pre-merge current change report', () => {
     assert.match(validateMergeReviewConfirmation(ideaDir), /decision is request_changes/);
   });
 
+  it('blocks delivery when runtime control files were added to Git', () => {
+    writeFileSync(join(ideaDir, 'accidentally-tracked.json'), '{}\n');
+    git(root, 'add', '.chisel/idea/accidentally-tracked.json');
+
+    const report = generateMergeReview(ideaDir, root);
+    assert.equal(report.readiness.status, 'action_required');
+    assert.match(report.readiness.blockers.join('\n'), /runtime control files must not be delivered/);
+    assert.ok(report.repositories[0].files.some(file => file.path === '.chisel/idea/accidentally-tracked.json'));
+  });
+
   it('invalidates approval when the working tree changes', () => {
     generateMergeReview(ideaDir, root);
     generateCrHtml();

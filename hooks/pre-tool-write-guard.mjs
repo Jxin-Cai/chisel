@@ -43,6 +43,27 @@ function allowWithContext(context) {
   console.log(JSON.stringify(output));
 }
 
+const PROTECTED_STATE_FILE = String.raw`(?:workflow-state\.yaml|task-workflow-state\.yaml|events\.ndjson)`;
+
+export function mutatesProtectedState(command) {
+  const text = String(command || '');
+  if (!new RegExp(PROTECTED_STATE_FILE).test(text)) return false;
+
+  // Shell redirection writes to the protected path. Input redirection (`<`) is
+  // intentionally absent because reading machine state is safe and useful for
+  // diagnostics.
+  if (new RegExp(String.raw`(?:^|\s)(?:\d*>>?|&>)\s*[^\s;&|]*${PROTECTED_STATE_FILE}`).test(text)) return true;
+
+  // Commands whose normal purpose is to create, replace, mutate, or remove the
+  // named path. Read-only commands such as cat/grep/head/ls must remain allowed.
+  const mutatingCommand = String.raw`(?:^|[;&|]\s*)(?:sudo\s+)?(?:rm|unlink|touch|truncate|mv|cp|install|chmod|chown|chgrp|tee)\b[^;&|\n]*${PROTECTED_STATE_FILE}`;
+  if (new RegExp(mutatingCommand).test(text)) return true;
+
+  // In-place editors and common programmatic filesystem write primitives.
+  if (new RegExp(String.raw`(?:sed\b[^;&|\n]*(?:\s-i(?:\S*)?|--in-place)|perl\b[^;&|\n]*\s-[^\s]*i)[^;&|\n]*${PROTECTED_STATE_FILE}`).test(text)) return true;
+  return new RegExp(String.raw`(?:writeFileSync|appendFileSync|truncateSync|renameSync|unlinkSync|rmSync|writeFile|appendFile|truncate|rename|unlink)\s*\([^\n]*${PROTECTED_STATE_FILE}`).test(text);
+}
+
 function main() {
   const raw = readStdin();
   if (!raw) return;
@@ -60,8 +81,7 @@ function main() {
 
   if (toolName === 'Bash') {
     const command = String(input.tool_input?.command || '');
-    const protectedState = /(workflow-state\.yaml|task-workflow-state\.yaml|events\.ndjson)/.test(command);
-    if (protectedState) {
+    if (mutatesProtectedState(command)) {
       deny('Machine state and event history may not be mutated through Bash; use the Chisel state transition scripts.');
       return;
     }

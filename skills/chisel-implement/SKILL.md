@@ -104,9 +104,28 @@ digraph implement_flow {
 
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --init-contract
-# 检查 verification-contract.json 中每个 repo 的 required checks，必要时补充 CI/项目特有命令
+# 检查 required checks，并为本次需求单测补充 requirement_cases
 node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --full
 ```
+
+`verification-contract.json` 中每个含单测 check 的 repo 必须填写轻量 `requirement_cases`。每项只记录一条真实业务行为，不复制测试代码：
+
+```json
+{
+  "id": "CASE-001",
+  "test_file": "tests/order.test.js",
+  "test_name": "rejects checkout when stock is insufficient",
+  "trace_refs": ["AC-002/VC-001"],
+  "given": "库存少于下单数量",
+  "when": "用户提交结算",
+  "then": "返回库存不足且不创建订单",
+  "failure_mode": "库存校验被删除、分支写反或错误地产生订单",
+  "check_id": "unit-test-coverage",
+  "pass_evidence": "ok 3 - rejects checkout when stock is insufficient"
+}
+```
+
+要求：`trace_refs` 必须来自需求追踪矩阵；Given/When/Then 必须表达调用方可观察结果；`failure_mode` 必须说明哪类真实业务破坏会让 case 失败；断言应落在真实代码行为而非 mock 调用次数、常量文本或与实现共用的 expected builder。`pass_evidence` 是测试运行输出中的唯一原文标记，必要时把测试命令调整为 verbose。运行器只有在命令 exit 0、测试文件存在且输出确实包含该标记时才记录 PASS，并绑定命令、耗时、输出片段与测试文件 SHA-256。修改或新增的每个测试文件至少要有一个这样的 case；不要求为未改动的历史回归用例逐条补录。
 
 返修完成时不要重复执行完整测试矩阵。根据本轮 CR findings、`affected_tasks`、实际 repair diff 和 task Verification Plan 写入
 `repair-verification-plan.json`：
@@ -118,7 +137,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --full
   "affected_dimensions": ["spec", "d4"],
   "repositories": [{
     "project_root": ".",
-    "checks": [{ "id": "targeted-unit", "command": "npm", "args": ["test", "--", "tests/example.test.js"] }]
+    "checks": [{ "id": "targeted-unit", "command": "npm", "args": ["test", "--", "tests/example.test.js"] }],
+    "requirement_cases": [{
+      "id": "CASE-001", "test_file": "tests/example.test.js", "test_name": "returns the required result",
+      "trace_refs": ["AC-001"], "given": "有效输入", "when": "执行目标功能", "then": "返回需求结果",
+      "failure_mode": "目标分支缺失或返回错误", "check_id": "targeted-unit", "pass_evidence": "PASS returns the required result"
+    }]
   }]
 }
 ```

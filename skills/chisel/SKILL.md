@@ -220,7 +220,7 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/roadmap.mjs {IDEA_DIR}
 | `worktree:setup` | 多仓 worktree 设置：先运行 `multi-repo-worktree.mjs --detect <workspace-root>`，由用户确认仓库列表和隔离策略；yes → `--create <idea-name> --workspace <workspace-root> --repos ...`，创建每仓同逻辑分支并写入持久 v3 registry；no → 仍需显式记录 current-branch 决策。恢复时必须先运行 `--locate/--resume`，读取 decision/registry 并用 `git worktree list --porcelain` 验证路径；旧 v1/v2 decision 继续接受 | `worktree-decided` |
 | `tasks:init` | Read `${REF}/phase-task-init.md`，按其流程执行 | `task-workflow-exists` |
 | `implement:code` | quick route 必须先通过 `quick-dev-ready`；否则禁止启动 coder。其余路径运行 `/chisel-implement <idea-name>` | `implementation-verified` |
-| `test:unit` | 首轮或最终封板运行 `verify-run.mjs --full`；返修轮运行 `verify-run.mjs --incremental` 执行 repair-verification-plan 中的受影响检查；汇总证据并生成 test HTML，报告新鲜后自动推进 | `unit-test-report-confirmed` |
+| `test:unit` | 首轮或最终封板运行 `verify-run.mjs --full`；返修轮运行 `verify-run.mjs --incremental`。每个本次需求测试 case 必须以需求 trace ref + Given/When/Then + 可捕获的业务 failure mode 描述，并由 fresh command 的 exit 0、唯一 PASS 输出片段和测试文件 hash 固化证据；修改/新增的每个测试文件至少有一个 case 证据。汇总后生成 test HTML，报告新鲜后自动推进 | `unit-test-report-confirmed` |
 | `review:cr` | `/chisel-review <idea-name>`；先运行 `review-selector.mjs`，spec 必跑，再按实际 diff/path/content 选择维度和 Dynamic Workflow batches；findings 直接进入返修闭环，不提前生成最终 CR 报告。 | `cr-complete` |
 | `review:cr-moderate` | `/chisel-review <idea-name>`（默认 moderate 维度由 selector 决定；高风险信号会升级） | `cr-complete` |
 | `review:cr-light` | `/chisel-review <idea-name>`（仅小型低风险 diff 使用；spec 必跑并记录 lite 理由） | `cr-complete` |

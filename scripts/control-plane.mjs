@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
@@ -88,6 +88,19 @@ export function controlRoot(projectRoot = '.', env = process.env) {
   return join(gitCommonRoot(projectRoot), '.chisel');
 }
 
+export function ensureControlPlaneIgnored(projectRoot = '.') {
+  const project = resolve(projectRoot);
+  const raw = runGit(['rev-parse', '--git-path', 'info/exclude'], project, { allowFail: true });
+  if (!raw) return false;
+  const excludeFile = isAbsolute(raw) ? raw : resolve(project, raw);
+  const pattern = '/.chisel/';
+  const current = existsSync(excludeFile) ? readFileSync(excludeFile, 'utf8') : '';
+  if (current.split('\n').map(line => line.trim()).includes(pattern)) return false;
+  mkdirSync(dirname(excludeFile), { recursive: true });
+  appendFileSync(excludeFile, `${current && !current.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+  return true;
+}
+
 function normalizeIdeaName(ideaName) {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(ideaName || '')) throw new Error('idea-name must be kebab-case');
   return ideaName;
@@ -109,6 +122,7 @@ export function writeControlRegistry(root, registry) {
 
 export function registerIdea(projectRoot, ideaName, record, env = process.env) {
   const name = normalizeIdeaName(ideaName);
+  ensureControlPlaneIgnored(projectRoot);
   const root = controlRoot(projectRoot, env);
   const registry = readControlRegistry(root);
   const existing = registry.ideas[name] || {};
@@ -168,6 +182,7 @@ function main() {
       console.log(mode === 'path' ? controlRoot(projectRoot) : JSON.stringify({ control_root: controlRoot(projectRoot), registry: locateRegistry(projectRoot)?.registry || null }, null, 2));
       return;
     }
+    if (mode === 'path') ensureControlPlaneIgnored(projectRoot);
     const located = locateIdea(projectRoot, ideaName);
     if (mode === 'path') console.log(located.idea_dir);
     else console.log(JSON.stringify({ ...located, action: mode }, null, 2));

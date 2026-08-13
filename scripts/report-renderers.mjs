@@ -440,6 +440,7 @@ function renderUnitTestSection(data) {
   }
   const repositories = Array.isArray(result.repositories) ? result.repositories : [];
   const tests = repositories.flatMap(repo => repo.requirement_unit_tests || []);
+  const cases = repositories.flatMap(repo => repo.requirement_case_evidence || []);
   const anomalies = result.run_summary?.anomalies || [];
   const coverage = repositories.map(repo => repo.coverage).filter(Boolean);
   const average = key => coverage.length ? Math.round(coverage.reduce((sum, item) => sum + Number(item[key]?.pct || 0), 0) / coverage.length * 100) / 100 : 0;
@@ -456,6 +457,7 @@ function renderUnitTestSection(data) {
   }
   body += `</table></div>`;
   body += `<div class="card animate-in"><h2>本次需求补充的单测 List</h2>${tests.length ? `<table><tr><th>状态</th><th>测试文件</th></tr>${tests.map(test => `<tr><td>${esc(test.status)}</td><td class="desc">${esc(test.file)}</td></tr>`).join('')}</table>` : '<p class="muted">Git diff 中未识别到新增或修改的单测文件。</p>'}</div>`;
+  body += `<div class="card animate-in"><h2>需求 Case 与 PASS 证据</h2>${cases.length ? `<table><tr><th>需求</th><th>Case</th><th>业务行为</th><th>成功证据</th></tr>${cases.map(testCase => `<tr><td>${esc((testCase.trace_refs || []).join(', '))}</td><td class="desc"><strong>${esc(testCase.test_name)}</strong><br><span class="muted">${esc(testCase.test_file)}</span></td><td class="desc">Given ${esc(testCase.given)}<br>When ${esc(testCase.when)}<br>Then ${esc(testCase.then)}<br><span class="muted">可捕获：${esc(testCase.failure_mode)}</span></td><td class="desc"><span class="pill ${pillClass(testCase.status)}">${esc(testCase.status)}</span><br><span class="mono">${esc(testCase.evidence?.command || '')}</span><br>${esc(testCase.evidence?.output_excerpt || '')}</td></tr>`).join('')}</table>` : '<p class="muted">未记录需求级测试 Case 或 PASS 证据。</p>'}</div>`;
   body += `<div class="card animate-in"><h2>单测通过与返修情况</h2><p>共执行 ${esc(result.run_summary?.total_runs || 0)} 轮，失败 ${esc(result.run_summary?.failed_runs || 0)} 轮，集中返修 ${esc(result.run_summary?.repair_count || 0)} 次，当前状态：<span class="pill ${pillClass(result.status)}">${esc(result.status)}</span>。</p>${anomalies.length ? `<table><tr><th>轮次</th><th>检查</th><th>异常</th><th>状态</th></tr>${anomalies.map(item => `<tr><td>${esc(item.run)}</td><td>${esc(item.check)}</td><td class="desc">${esc((item.failed_tests || []).join('; ') || oneSentence(item.output_tail || '未解析到测试名'))}</td><td>${item.resolved ? '已修复' : '待修复'}</td></tr>`).join('')}</table>` : '<p class="muted">未记录单测异常。</p>'}</div>`;
   return wrapHtml(`单测 — ${data.ideaName}`, body);
 }

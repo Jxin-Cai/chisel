@@ -105,6 +105,48 @@ describe('verification evidence', () => {
     assert.match(validateVerificationResult(ideaDir, root), /contract changed/);
   });
 
+  it('records requirement-level PASS evidence from fresh test output', () => {
+    mkdirSync(join(root, 'tests'));
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { test: 'node --test tests/value.test.mjs' } }));
+    writeFileSync(join(root, 'tests/value.test.mjs'), [
+      "import test from 'node:test';",
+      "import assert from 'node:assert/strict';",
+      "import { value } from '../app.js';",
+      "test('returns requested value', () => assert.equal(value, 1));",
+    ].join('\n'));
+    mkdirSync(join(ideaDir, 'to-be'), { recursive: true });
+    writeFileSync(join(ideaDir, 'to-be/traceability-matrix.json'), JSON.stringify({ items: [{ id: 'AC-001' }] }));
+    const contract = createVerificationContract(ideaDir, [root]);
+    contract.repositories[0].requirement_cases = [{
+      id: 'CASE-001', test_file: 'tests/value.test.mjs', test_name: 'returns requested value', trace_refs: ['AC-001'],
+      given: 'the requested value is configured', when: 'the value is read', then: 'the public result is 1',
+      failure_mode: 'the feature returns a wrong value', check_id: 'test', pass_evidence: 'returns requested value',
+    }];
+    writeFileSync(join(ideaDir, 'verification-contract.json'), JSON.stringify(contract));
+
+    try {
+      execFileSync(process.execPath, ['scripts/verify-run.mjs', ideaDir, root, '--full'], { cwd: process.cwd() });
+    } catch (error) {
+      assert.fail(`verification failed: ${readFileSync(join(ideaDir, 'verify-result.json'), 'utf8')}`);
+    }
+    const result = JSON.parse(readFileSync(join(ideaDir, 'verify-result.json'), 'utf8'));
+    const evidence = result.repositories[0].requirement_case_evidence[0];
+    assert.equal(evidence.status, 'pass');
+    assert.equal(evidence.evidence.exit_code, 0);
+    assert.match(evidence.evidence.output_excerpt, /[✔✓]|^ok\s+1/);
+    assert.match(evidence.evidence.output_excerpt, /returns requested value/);
+    assert.match(evidence.evidence.test_file_sha256, /^[a-f0-9]{64}$/);
+
+    // The marker appears in npm's echoed command, but not in a passing case
+    // line. A zero exit code plus incidental text must not count as evidence.
+    contract.repositories[0].requirement_cases[0].pass_evidence = 'tests/value.test.mjs';
+    writeFileSync(join(ideaDir, 'verification-contract.json'), JSON.stringify(contract));
+    assert.throws(() => execFileSync(process.execPath, ['scripts/verify-run.mjs', ideaDir, root, '--full'], { cwd: process.cwd() }));
+    const failedEvidence = JSON.parse(readFileSync(join(ideaDir, 'verify-result.json'), 'utf8')).repositories[0].requirement_case_evidence[0];
+    assert.equal(failedEvidence.status, 'fail');
+    assert.match(failedEvidence.reason, /passing test line not found/);
+  });
+
   it('selects every schema v3 worktree repository for verification', () => {
     const secondRoot = join(root, 'second-worktree');
     mkdirSync(secondRoot);

@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { isAbsolute, join, resolve } from 'node:path';
 import { durableAtomicWrite } from './file-transaction.mjs';
+import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
 import { validateVerificationResult, workspaceIdentity } from './verification-lib.mjs';
 
 const RESULT_FILE = 'unit-test-result.json';
@@ -42,7 +43,10 @@ export function appendUnitTestRun(ideaDir, verificationResult) {
       failed_tests: failedTestNames(check.output),
       output_tail: check.status === 'pass' ? '' : String(check.output || '').slice(-3000),
     }));
-    return { project_root: repo.project_root, status: checks.length > 0 && checks.every(check => check.status === 'pass') ? 'pass' : 'fail', checks };
+    const requirementCaseEvidence = Array.isArray(repo.requirement_case_evidence) ? repo.requirement_case_evidence : [];
+    const status = checks.length > 0 && checks.every(check => check.status === 'pass')
+      && requirementCaseEvidence.length > 0 && requirementCaseEvidence.every(testCase => testCase.status === 'pass') ? 'pass' : 'fail';
+    return { project_root: repo.project_root, status, checks, requirement_case_evidence: requirementCaseEvidence };
   }).filter(repo => repo.checks.length > 0);
   if (repositories.length === 0) return null;
 
@@ -159,20 +163,35 @@ function baseRefFor(ideaDir, projectRoot) {
 }
 
 function changedUnitTests(ideaDir, projectRoot) {
-  let output = '';
+  const lines = [];
   try {
-    output = execFileSync('git', ['diff', '--name-status', baseRefFor(ideaDir, projectRoot), '--'], {
+    lines.push(execFileSync('git', ['diff', '--name-status', baseRefFor(ideaDir, projectRoot), '--'], {
       cwd: projectRoot, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    const untracked = execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
+    }));
+  } catch { /* an unborn repository has no HEAD to diff against */ }
+  try {
+    lines.push(execFileSync('git', ['ls-files', '--others', '--exclude-standard'], {
       cwd: projectRoot, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
-    }).split('\n').filter(Boolean).map(file => `??\t${file}`).join('\n');
-    output = `${output}\n${untracked}`;
-  } catch { return []; }
-  return output.split('\n').map(line => line.trim()).filter(Boolean).map(line => {
+    }).split('\n').filter(Boolean).map(file => `??\t${file}`).join('\n'));
+  } catch { /* not a Git repository */ }
+
+  // A greenfield baseline has no historical implementation. If its first
+  // implementation was already committed, every current tracked test still
+  // belongs to this requirement even though `git diff HEAD` is empty.
+  if (readProjectProfile(ideaDir).mode === PROJECT_MODES.GREENFIELD) {
+    try {
+      lines.push(execFileSync('git', ['ls-files'], {
+        cwd: projectRoot, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+      }).split('\n').filter(Boolean).map(file => `A\t${file}`).join('\n'));
+    } catch { /* not a Git repository */ }
+  }
+
+  const seen = new Set();
+  return lines.join('\n').split('\n').map(line => line.trim()).filter(Boolean).map(line => {
     const [status, ...parts] = line.split(/\s+/);
     return { status, file: parts.at(-1) || '' };
-  }).filter(item => /(^|\/)(?:test|tests|__tests__)(\/|$)|(?:\.test\.|\.spec\.)/i.test(item.file));
+  }).filter(item => /(^|\/)(?:test|tests|__tests__)(\/|$)|(?:\.test\.|\.spec\.)/i.test(item.file))
+    .filter(item => item.file && !seen.has(item.file) && seen.add(item.file));
 }
 
 export function buildUnitTestEvidence(ideaDir, fallbackRoot = '.') {
@@ -181,14 +200,16 @@ export function buildUnitTestEvidence(ideaDir, fallbackRoot = '.') {
   const verificationReason = validateVerificationResult(ideaDir, fallbackRoot);
   const history = readJson(join(ideaDir, HISTORY_FILE), { schema_version: 1, runs: [] });
   const anomalies = (history.runs || []).filter(run => run.status === 'fail').flatMap(run =>
-    (run.repositories || []).flatMap(repo => (repo.checks || []).filter(check => check.status !== 'pass').map(check => ({
-      run: run.run,
-      repository: repo.project_root,
-      check: check.id,
-      failed_tests: check.failed_tests || [],
-      output_tail: check.output_tail || '',
-      resolved: verificationReason === '',
-    })))
+    (run.repositories || []).flatMap(repo => [
+      ...(repo.checks || []).filter(check => check.status !== 'pass').map(check => ({
+        run: run.run, repository: repo.project_root, check: check.id,
+        failed_tests: check.failed_tests || [], output_tail: check.output_tail || '', resolved: verificationReason === '',
+      })),
+      ...(repo.requirement_case_evidence || []).filter(testCase => testCase.status !== 'pass').map(testCase => ({
+        run: run.run, repository: repo.project_root, check: `case:${testCase.id || 'unknown'}`,
+        failed_tests: [testCase.test_name || testCase.id || 'unknown requirement case'], output_tail: testCase.reason || '', resolved: verificationReason === '',
+      })),
+    ])
   );
   const repositories = (verification?.repositories || []).map(repo => {
     const root = repo.project_root || fallbackRoot;
@@ -200,13 +221,21 @@ export function buildUnitTestEvidence(ideaDir, fallbackRoot = '.') {
       checks: checks.map(({ id, status, exit_code, duration_ms }) => ({ id, status, exit_code, duration_ms: duration_ms || 0 })),
       coverage: readIstanbulSummary(root) || readNodeCoverage((repo.checks || []).filter(isUnitTestCheck)),
       requirement_unit_tests: changedUnitTests(ideaDir, root),
+      requirement_case_evidence: Array.isArray(repo.requirement_case_evidence) ? repo.requirement_case_evidence : [],
       git_head: identity.head || '',
       workspace_fingerprint: identity.fingerprint || '',
     };
   });
   const missingCoverage = repositories.filter(repo => !repo.coverage).map(repo => repo.project_root);
   const noUnitTests = repositories.filter(repo => repo.checks.length === 0).map(repo => repo.project_root);
+  const missingCaseEvidence = repositories.filter(repo => repo.requirement_case_evidence.length === 0).map(repo => repo.project_root);
+  const failedCaseEvidence = repositories.flatMap(repo => repo.requirement_case_evidence.filter(testCase => testCase.status !== 'pass').map(testCase => `${repo.project_root}:${testCase.id || testCase.test_name || 'unknown'}`));
+  const uncoveredTestFiles = repositories.flatMap(repo => {
+    const evidenced = new Set(repo.requirement_case_evidence.map(testCase => testCase.test_file));
+    return repo.requirement_unit_tests.filter(test => !evidenced.has(test.file)).map(test => `${repo.project_root}:${test.file}`);
+  });
   const status = !verificationReason && repositories.length > 0 && missingCoverage.length === 0 && noUnitTests.length === 0
+    && missingCaseEvidence.length === 0 && failedCaseEvidence.length === 0 && uncoveredTestFiles.length === 0
     && repositories.every(repo => repo.status === 'pass') ? 'pass' : 'fail';
   const result = {
     schema_version: 1,
@@ -220,7 +249,14 @@ export function buildUnitTestEvidence(ideaDir, fallbackRoot = '.') {
       repair_count: (history.runs || []).filter(run => run.status === 'fail').length,
       anomalies,
     },
-    reasons: [verificationReason, missingCoverage.length ? `coverage summary missing: ${missingCoverage.join(', ')}` : '', noUnitTests.length ? `unit test command missing: ${noUnitTests.join(', ')}` : ''].filter(Boolean),
+    reasons: [
+      verificationReason,
+      missingCoverage.length ? `coverage summary missing: ${missingCoverage.join(', ')}` : '',
+      noUnitTests.length ? `unit test command missing: ${noUnitTests.join(', ')}` : '',
+      missingCaseEvidence.length ? `requirement case evidence missing: ${missingCaseEvidence.join(', ')}` : '',
+      failedCaseEvidence.length ? `requirement cases did not produce PASS evidence: ${failedCaseEvidence.join(', ')}` : '',
+      uncoveredTestFiles.length ? `changed requirement test files lack case evidence: ${uncoveredTestFiles.join(', ')}` : '',
+    ].filter(Boolean),
   };
   durableAtomicWrite(join(ideaDir, RESULT_FILE), `${JSON.stringify(result, null, 2)}\n`);
   return result;
@@ -239,6 +275,16 @@ export function validateUnitTestEvidence(ideaDir, fallbackRoot = '.') {
   for (const repo of result.repositories) {
     if (!repo.coverage) return `coverage summary missing for ${repo.project_root}`;
     if (!Array.isArray(repo.checks) || repo.checks.length === 0 || repo.checks.some(check => check.status !== 'pass' || check.exit_code !== 0)) return `unit tests did not pass for ${repo.project_root}`;
+    if (!Array.isArray(repo.requirement_case_evidence) || repo.requirement_case_evidence.length === 0) return `requirement case evidence missing for ${repo.project_root}`;
+    for (const testCase of repo.requirement_case_evidence) {
+      if (testCase.status !== 'pass') return `requirement case did not pass: ${testCase.id || testCase.test_name || 'unknown'}`;
+      if (!Array.isArray(testCase.trace_refs) || testCase.trace_refs.length === 0) return `requirement case missing trace_refs: ${testCase.id || 'unknown'}`;
+      for (const field of ['test_file', 'test_name', 'given', 'when', 'then', 'failure_mode']) if (!String(testCase[field] || '').trim()) return `requirement case missing ${field}: ${testCase.id || 'unknown'}`;
+      if (!testCase.evidence?.command || testCase.evidence.exit_code !== 0 || !testCase.evidence.output_excerpt || !testCase.evidence.test_file_sha256) return `requirement case PASS evidence incomplete: ${testCase.id || 'unknown'}`;
+    }
+    const evidencedFiles = new Set(repo.requirement_case_evidence.map(testCase => testCase.test_file));
+    const uncovered = (repo.requirement_unit_tests || []).filter(test => !evidencedFiles.has(test.file));
+    if (uncovered.length > 0) return `changed requirement test files lack case evidence: ${uncovered.map(test => test.file).join(', ')}`;
     const current = workspaceIdentity(repo.project_root || fallbackRoot);
     if (current.head !== repo.git_head || current.fingerprint !== repo.workspace_fingerprint) return `${RESULT_FILE} is stale: workspace changed for ${repo.project_root}`;
   }

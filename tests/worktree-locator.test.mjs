@@ -66,4 +66,16 @@ describe('registry-backed multi-repo locator', () => {
       assert.equal(JSON.parse(readFileSync(join(control, 'registry.json'), 'utf8')).schema_version, 2);
     } finally { rmSync(outer, { recursive: true, force: true }); }
   });
+
+  it('adds the runtime control directory to the repository-local Git exclude', () => {
+    const outer = mkdtempSync(join(tmpdir(), 'chisel-local-exclude-'));
+    try {
+      const repo = initRepo(outer, 'service');
+      execFileSync(process.execPath, [CONTROL, '--project-root', repo, '--idea', 'new-feature'], { cwd: repo, encoding: 'utf8' });
+      mkdirSync(join(repo, '.chisel', 'new-feature'), { recursive: true });
+      writeFileSync(join(repo, '.chisel', 'new-feature', 'workflow-state.yaml'), 'current_step: receive-requirement\n');
+      assert.equal(runGit(['check-ignore', '.chisel/new-feature/workflow-state.yaml'], repo), '.chisel/new-feature/workflow-state.yaml');
+      assert.doesNotMatch(runGit(['status', '--short', '--untracked-files=all'], repo), /\.chisel/);
+    } finally { rmSync(outer, { recursive: true, force: true }); }
+  });
 });
