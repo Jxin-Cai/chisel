@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 const policy = JSON.parse(readFileSync(new URL('../skills/chisel-contracts/review-policy.json', import.meta.url), 'utf8'));
 

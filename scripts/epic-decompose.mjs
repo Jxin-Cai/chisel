@@ -1,49 +1,11 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export function loadEpicState(epicDir) {
   const statePath = join(epicDir, 'epic-state.json');
   if (!existsSync(statePath)) return null;
   try { return JSON.parse(readFileSync(statePath, 'utf8')); } catch { return null; }
-}
-
-export function initEpic(epicDir, { name, description, ideas = [] }) {
-  if (!existsSync(epicDir)) mkdirSync(epicDir, { recursive: true });
-
-  const initiative = { name, description, created_at: new Date().toISOString() };
-  writeFileSync(join(epicDir, 'initiative.md'), `# ${name}\n\n${description}\n`);
-
-  const ideasDir = join(epicDir, 'ideas');
-  if (!existsSync(ideasDir)) mkdirSync(ideasDir, { recursive: true });
-
-  const epicState = {
-    name,
-    created_at: initiative.created_at,
-    ideas: ideas.map((idea, i) => ({
-      id: idea.id || `idea-${String(i + 1).padStart(2, '0')}`,
-      title: idea.title,
-      status: 'pending',
-      depends_on: idea.depends_on || [],
-    })),
-  };
-
-  for (const idea of epicState.ideas) {
-    const ideaFile = join(ideasDir, `${idea.id}.md`);
-    if (!existsSync(ideaFile)) {
-      const ideaData = ideas.find(i => (i.id || `idea-${String(ideas.indexOf(i) + 1).padStart(2, '0')}`) === idea.id);
-      writeFileSync(ideaFile, `# ${idea.title}\n\n${ideaData?.description || ''}\n`);
-    }
-  }
-
-  const depGraph = {
-    nodes: epicState.ideas.map(i => ({ id: i.id, title: i.title })),
-    edges: epicState.ideas.flatMap(i => i.depends_on.map(dep => ({ from: dep, to: i.id }))),
-  };
-  writeFileSync(join(epicDir, 'dependency-graph.json'), JSON.stringify(depGraph, null, 2));
-  writeFileSync(join(epicDir, 'epic-state.json'), JSON.stringify(epicState, null, 2));
-
-  return epicState;
 }
 
 export function updateIdeaStatus(epicDir, ideaId, status) {

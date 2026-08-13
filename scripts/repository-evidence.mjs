@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { SOURCE_EXTENSIONS, discoverRelatedFiles, listRepositoryFiles, unique } from './source-discovery.mjs';
 
 const MAX_SCAN_FILES = 2_000;

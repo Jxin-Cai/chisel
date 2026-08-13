@@ -115,14 +115,6 @@ export function recordDuration(ideaDir, category, name, durationMs, metadata = {
   return span;
 }
 
-export function recordTaskMetric(ideaDir, taskId, field, value) {
-  const metrics = loadMetrics(ideaDir);
-  let entry = metrics.task_metrics.find(t => t.task_id === taskId);
-  if (!entry) { entry = { task_id: taskId }; metrics.task_metrics.push(entry); }
-  entry[field] = value;
-  saveMetrics(ideaDir, metrics);
-}
-
 export function finalize(ideaDir) {
   const metrics = loadMetrics(ideaDir);
   if (metrics.started_at) {

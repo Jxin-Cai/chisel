@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { execSync } from 'node:child_process';
-import { join, basename, resolve } from 'node:path';
-import { atomicWriteFile, readTaskState, taskStateFile, readFrontmatter, detectComplexity } from './workflow-lib.mjs';
-import { WORKFLOW_PATHS } from './workflow-definition.mjs';
-import { generateReport as generateCrReport } from './cr-report.mjs';
+import { join } from 'node:path';
+import { readTaskState, taskStateFile, readFrontmatter, detectComplexity } from './workflow-lib.mjs';
 
 // Shared report data model. No HTML page or workflow side effects live here.
 
@@ -14,61 +11,6 @@ function readJson(ideaDir, rel) {
   const p = join(ideaDir, rel);
   if (!existsSync(p)) return null;
   try { return JSON.parse(readFileSync(p, 'utf8')); } catch { return null; }
-}
-
-function readMd(ideaDir, rel) {
-  const p = join(ideaDir, rel);
-  if (!existsSync(p)) return null;
-  return readFileSync(p, 'utf8');
-}
-
-function readWorkflowState(ideaDir) {
-  const p = join(ideaDir, 'workflow-state.yaml');
-  if (!existsSync(p)) return null;
-  const text = readFileSync(p, 'utf8');
-  const result = {};
-  for (const line of text.split('\n')) {
-    const m = line.match(/^([a-z_]+):\s*(.+)$/);
-    if (m) result[m[1]] = m[2].trim();
-  }
-  // parse phase section
-  const phases = {};
-  const phaseLines = text.split('\n').filter(l => /^  [a-z]+:/.test(l));
-  for (const l of phaseLines) {
-    const m = l.match(/^\s+([a-z]+):\s*(.+)$/);
-    if (m) phases[m[1]] = m[2].trim();
-  }
-  result.phases = phases;
-  // parse step_history
-  const history = [];
-  const historyStart = text.indexOf('step_history:');
-  if (historyStart !== -1) {
-    const histLines = text.slice(historyStart).split('\n').slice(1);
-    let entry = {};
-    for (const hl of histLines) {
-      if (/^\s+-\s*$/.test(hl) || /^\s+- step:/.test(hl)) {
-        if (entry.step) history.push(entry);
-        entry = {};
-        const sm = hl.match(/step:\s*(.+)/);
-        if (sm) entry.step = sm[1].trim();
-      } else if (/^\s+step:/.test(hl)) {
-        const sm = hl.match(/step:\s*(.+)/);
-        if (sm) entry.step = sm[1].trim();
-      } else if (/^\s+entered_at:/.test(hl)) {
-        const sm = hl.match(/entered_at:\s*(.+)/);
-        if (sm) entry.entered_at = sm[1].trim();
-      } else if (/^\s+exited_at:/.test(hl)) {
-        const sm = hl.match(/exited_at:\s*(.+)/);
-        if (sm) entry.exited_at = sm[1].trim();
-      } else if (/^\s+duration_ms:/.test(hl)) {
-        const sm = hl.match(/duration_ms:\s*(.+)/);
-        if (sm) entry.duration_ms = Number(sm[1].trim()) || 0;
-      } else if (/^[a-z]/.test(hl)) break;
-    }
-    if (entry.step) history.push(entry);
-  }
-  result.step_history = history;
-  return result;
 }
 
 function parseTableSection(text, heading) {
@@ -197,10 +139,6 @@ function escHtml(s) {
 
 function escAttr(s) {
   return escHtml(s).replace(/'/g, '&#39;');
-}
-
-function scriptJson(value) {
-  return JSON.stringify(value || {}).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 }
 
 function stripMarkdown(text) {
@@ -354,30 +292,6 @@ function formatEvidenceOne(e) {
   return loc || e.url || e.note || '';
 }
 
-function collectTaskDetails(ideaDir, taskState = { tasks: {} }) {
-  const details = {};
-  for (const [taskId, task] of Object.entries(taskState.tasks || {})) {
-    const taskFile = task.file || `tasks/${taskId}.md`;
-    const reportFile = task.report_file || `task-reports/${taskId}-report.md`;
-    const crFile = task.cr_file || `cr/${taskId}-cr.md`;
-    const taskMd = readMd(ideaDir, taskFile);
-    const reportMd = readMd(ideaDir, reportFile);
-    const crMd = readMd(ideaDir, crFile);
-    details[taskId] = {
-      id: taskId,
-      status: task.status || 'pending',
-      description: task.description || '',
-      file: taskFile,
-      report_file: reportFile,
-      cr_file: crFile,
-      task_html: taskMd ? mdToHtml(taskMd) : '<p style="color:var(--text2)">未找到 task markdown</p>',
-      report_html: reportMd ? mdToHtml(reportMd) : '<p style="color:var(--text2)">暂无 task report</p>',
-      cr_html: crMd ? mdToHtml(crMd) : '<p style="color:var(--text2)">暂无 task CR</p>',
-    };
-  }
-  return details;
-}
-
 function safeDomId(prefix, id) {
   const raw = String(id || 'unknown').trim() || 'unknown';
   const safe = raw.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'unknown';
@@ -520,110 +434,6 @@ function computeReportSummary({ tasks, traceabilityModel, crResults, impactRisk,
   };
 }
 
-function generateStatusSentence(currentStep, taskStats, crStats) {
-  const STEP_LABELS = {
-    'receive-requirement': '正在接收需求',
-    'understand:explore': '正在探索 AS-IS 现状',
-    'understand:confirm': '等待用户确认 AS-IS 理解',
-    'clarify:requirement': '正在澄清需求细节',
-    'quick-dev:init': '正在初始化快速开发',
-    'plan:design': '正在设计 TO-BE 方案',
-    'plan:confirm': '等待用户确认方案',
-    'worktree:setup': '等待配置工作分支',
-    'tasks:init': '正在初始化 Task',
-    'implement:code': '正在编码实现',
-    'test:unit': '正在执行单测、覆盖率与异常集中返修',
-    'review:cr': '正在进行代码审查',
-    'review:cr-light': '正在进行轻量审查',
-    'review:cr-moderate': '正在进行中等审查',
-    'repair:code': '正在修复 CR 发现的问题',
-    'review:integration': '正在进行集成审查',
-    'review:cr-report': '正在生成最终 CR 报告',
-    'final:summary': '正在生成最终总结',
-    'review:merge': '等待用户审阅当前变更并批准合并',
-    'done': '需求已完成',
-    'blocked': '流程被阻塞',
-  };
-  const stepLabel = STEP_LABELS[currentStep] || `当前步骤：${currentStep}`;
-  const parts = [stepLabel];
-  if (taskStats.total > 0) {
-    parts.push(`${taskStats.approved}/${taskStats.total} task 已通过`);
-  }
-  if (crStats.rework > 0) {
-    parts.push(`${crStats.rework} 个 CR 问题待修复`);
-  }
-  return parts.join('，');
-}
-
-function getTopChangePoints(changePoints, limit = 3) {
-  const sorted = [...changePoints].sort((a, b) => {
-    const riskOrder = { high: 0, medium: 1, low: 2 };
-    const ra = riskOrder[a.risk_level] ?? 2;
-    const rb = riskOrder[b.risk_level] ?? 2;
-    if (ra !== rb) return ra - rb;
-    const decOrder = { '删除': 0, '新增': 1, '改造': 2, '保留': 3 };
-    return (decOrder[a.decision] ?? 3) - (decOrder[b.decision] ?? 3);
-  });
-  return { items: sorted.slice(0, limit), remaining: Math.max(0, sorted.length - limit) };
-}
-
-function getTopRisks(impactRisk, crResults, limit = 3) {
-  const risks = [];
-  for (const r of (impactRisk?.risk_matrix || [])) {
-    if (String(r.severity || '').toLowerCase() === 'high') {
-      risks.push({ severity: 'high', source: 'risk-matrix', description: r.description || r.mitigation || '' });
-    }
-  }
-  for (const cr of crResults) {
-    for (const item of (cr.reworkItems || [])) {
-      const sev = String(item['严重度'] || item.severity || '').toLowerCase();
-      if (sev.includes('high') || sev.includes('critical')) {
-        risks.push({ severity: sev.includes('critical') ? 'critical' : 'high', source: `CR ${cr.dimension}`, description: item['问题描述'] || item.description || '' });
-      }
-    }
-  }
-  return { items: risks.slice(0, limit), remaining: Math.max(0, risks.length - limit) };
-}
-
-function renderFocusSummary({ currentStep, taskStats, crStats, changePoints, impactRisk, crResults }) {
-  const sentence = generateStatusSentence(currentStep, taskStats, crStats);
-  const topCPs = getTopChangePoints(changePoints);
-  const topRisks = getTopRisks(impactRisk, crResults);
-
-  const taskProgressParts = [];
-  const byStatus = taskStats.byStatus || {};
-  if (byStatus.approved) taskProgressParts.push(`${byStatus.approved} approved`);
-  if (byStatus.coding || byStatus.coded) taskProgressParts.push(`${(byStatus.coding || 0) + (byStatus.coded || 0)} coding`);
-  if (byStatus.needs_rework || byStatus.repairing) taskProgressParts.push(`${(byStatus.needs_rework || 0) + (byStatus.repairing || 0)} rework`);
-  if (byStatus.pending || byStatus.confirmed) taskProgressParts.push(`${(byStatus.pending || 0) + (byStatus.confirmed || 0)} pending`);
-
-  return `<section class="focus-summary" aria-label="状态聚焦">
-    <div class="focus-sentence">${escHtml(sentence)}</div>
-    <div class="focus-grid">
-      <div class="focus-block">
-        <div class="focus-block-title">关键变化点</div>
-        ${topCPs.items.length > 0 ? `<ul class="focus-list-compact">${topCPs.items.map(cp => `<li><span class="ref-chip cp">${escHtml(cp.id)}</span><span class="status s-${cp.risk_level === 'high' ? 'failed' : cp.risk_level === 'medium' ? 'needs_rework' : 'approved'}">${escHtml(cp.risk_level || 'low')}</span><span class="focus-desc">${escHtml(oneSentence(cp.summary || cp.node || cp.id, 60))}</span></li>`).join('')}</ul>${topCPs.remaining > 0 ? `<div class="focus-more"><button type="button" class="view-link" onclick="activateView('view-to-be')">+${topCPs.remaining} more</button></div>` : ''}` : '<p class="muted">暂无改造点</p>'}
-      </div>
-      <div class="focus-block">
-        <div class="focus-block-title">风险关注</div>
-        ${topRisks.items.length > 0 ? `<ul class="focus-list-compact">${topRisks.items.map(r => `<li><span class="status s-${r.severity === 'critical' ? 'fail' : 'failed'}">${escHtml(r.severity)}</span><span class="focus-desc">${escHtml(oneSentence(r.description, 70))}</span></li>`).join('')}</ul>${topRisks.remaining > 0 ? `<div class="focus-more">+${topRisks.remaining} 项风险</div>` : ''}` : '<p class="muted">暂无高风险项</p>'}
-      </div>
-      <div class="focus-block">
-        <div class="focus-block-title">Task 进度</div>
-        ${taskStats.total > 0 ? `<div class="progress-bar" style="height:8px;margin:6px 0"><div class="progress-fill ${taskStats.percentage === 100 ? 'fill-success' : 'fill-accent'}" style="width:${taskStats.percentage}%"></div></div><div class="focus-task-status">${taskProgressParts.join(' · ')}</div>` : '<p class="muted">暂无 Task</p>'}
-      </div>
-    </div>
-  </section>`;
-}
-
-function traceTypeLabel(type) {
-  return ({ requirement: 'REQ 需求', acceptance_criteria: 'AC 验收', verification: 'VC/VER 验证', constraint: 'C 约束', risk: 'RISK 风险', risk_mitigation: '风险缓解' })[type] || type;
-}
-
-function statusClassForCoverage(coverage) {
-  return coverage === 'complete' ? 'approved' : coverage === 'missing' ? 'failed' : coverage === 'in_progress' ? 'coding' : 'pending';
-}
-
 function normalizeChangePoints({ impactRisk, tasks, traceabilityModel, coverageRefs, implementationPlan }) {
   const byId = new Map();
   for (const cp of impactRisk?.change_points || []) {
@@ -673,11 +483,6 @@ function normalizeApiChangePlan(jsonDoc, markdownText) {
   if (jsonDoc) return { kind: 'json', summary: jsonDoc.summary || {}, endpoints: jsonDoc.endpoints || [] };
   if (markdownText) return { kind: 'markdown', markdown: markdownText, summary: {}, endpoints: [] };
   return null;
-}
-
-function mermaidId(s) {
-  const raw = String(s || 'entity').replace(/[^A-Za-z0-9_]/g, '_');
-  return /^[A-Za-z_]/.test(raw) ? raw : `E_${raw}`;
 }
 
 function formatDuration(ms) {

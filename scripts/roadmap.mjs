@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { STEP_GATE_MAP, WORKFLOW_PATHS } from './workflow-definition.mjs';
 import { detectComplexity } from './workflow-lib.mjs';
 import { checkGate } from './gate-check.mjs';

@@ -3,7 +3,7 @@
  * Keep the public README inventory honest.  This is intentionally a small,
  * dependency-free check so it can run in CI and from an offline checkout.
  */
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/\/$/, '');

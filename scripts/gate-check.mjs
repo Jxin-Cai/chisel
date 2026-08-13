@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { MAX_REWORK_COUNT, allTasksApproved, detectComplexity, readFrontmatter, readRequirementClassification, readTaskState, taskStateFile } from './workflow-lib.mjs';
@@ -600,21 +600,6 @@ function validateTaskReport(reportPath, behaviorInvariants = [], traceRefs = [],
   return '';
 }
 
-function validateCrFile(crPath, status, behaviorInvariants = []) {
-  const text = readText(crPath);
-  const required = ['## 结论', '## 功能完整度', '## Scope Control', '## Rework Items'];
-  const missing = required.filter(section => !hasSection(text, section));
-  if (missing.length > 0) return `missing sections: ${missing.join(', ')}`;
-  const reworkCount = Number(readFrontmatter(text).rework_count || 0);
-  if (reworkCount > 0 && !hasSection(text, '## Rework Verification'))
-    return 'CR with rework_count > 0 must include ## Rework Verification section';
-  const crResult = readFrontmatter(text).result || status;
-  const scopeProofReason = validateScopeProof(text, 'cr', { behaviorInvariants, requireAllInvariantPass: crResult === 'approved' });
-  if (scopeProofReason) return scopeProofReason;
-  if (crResult === 'needs_rework' && !/\bCR-\d{3}\b/.test(text)) return 'needs_rework CR must include at least one CR-xxx rework item';
-  return '';
-}
-
 const REVIEW_DIMENSIONS = ['spec', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'];
 const QUALITY_REVIEW_DIMENSIONS = ['d2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9'];
 
@@ -806,10 +791,6 @@ function readJsonFile(file) {
   } catch (error) {
     return { error: error.message };
   }
-}
-
-function factIds(text) {
-  return [...new Set([...String(text || '').matchAll(/\[F-\d{3}\]/g)].map(match => match[0].slice(1, -1)))];
 }
 
 function validateEvidenceLedger(ideaDir) {

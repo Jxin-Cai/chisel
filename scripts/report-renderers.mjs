@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import {
   readTaskState, taskStateFile, detectComplexity
@@ -12,7 +12,7 @@ import {
   countCrFindings, countTasksByStatus, normalizeApiChangePlan,
   normalizeCoverageMatrixRefs, normalizeDataChangePlan, normalizeStepTimings,
   normalizeTasksJson, normalizeTraceabilityTree, oneSentence,
-  formatDuration, formatEvidence, mdToHtml, parseTableSection
+  formatDuration, mdToHtml
 } from './report-model.mjs';
 import { summary as collectSessionMetrics } from './session-metrics.mjs';
 

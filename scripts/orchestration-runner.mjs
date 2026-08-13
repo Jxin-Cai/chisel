@@ -18,21 +18,6 @@ function parse(argv) {
   return result;
 }
 
-export function parseStatus(text) {
-  const result = {};
-  for (const line of text.split('\n')) {
-    const match = line.match(/^([a-z_]+):\s*(.*)$/);
-    if (!match || match[1] === 'phase_detail') continue;
-    const [, key, raw] = match;
-    if (raw === 'true' || raw === 'false') result[key] = raw === 'true';
-    else if (key === 'state_revision') result[key] = Number(raw);
-    else {
-      try { result[key] = JSON.parse(raw); } catch { result[key] = raw; }
-    }
-  }
-  return result;
-}
-
 function runnerFile(ideaDir) { return join(ideaDir, 'runner-state.json'); }
 function readRunner(ideaDir) {
   if (!existsSync(runnerFile(ideaDir))) return null;

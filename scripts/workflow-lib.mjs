@@ -332,10 +332,6 @@ export function updateWorkflowPhase(ideaDir, stepId, options = {}) {
   return rendered.transition;
 }
 
-export function transitionWorkflowPhase(ideaDir, stepId, expectedRevision) {
-  return updateWorkflowPhase(ideaDir, stepId, { expectedRevision, incrementRevision: true });
-}
-
 export function initTaskState(ideaDir, ideaName, specs) {
   const file = taskStateFile(ideaDir);
   const existing = readTaskState(file);

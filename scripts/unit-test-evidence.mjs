@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { isAbsolute, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { durableAtomicWrite } from './file-transaction.mjs';
 import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
 import { validateVerificationResult, workspaceIdentity } from './verification-lib.mjs';
