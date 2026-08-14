@@ -119,7 +119,9 @@ uses isolated worktrees, and merges only after verification and CR pass. It does
 pre-existing uncommitted changes by default. A real conflict, missing authority, or high-risk ambiguity without a uniquely safe answer
 becomes a recorded terminal blocker instead of an interactive question.
 
-Chisel stores runtime artifacts under the Git common root at `.chisel/<idea-name>/`, so the main checkout and linked worktrees share one control plane. Set `CHISEL_CONTROL_ROOT` to override it.
+Every `/chisel` invocation starts a new isolated requirement by default. Chisel never resumes, scans, or reuses another requirement's
+artifacts unless the user explicitly asks to resume a specific idea. Runtime artifacts live under the Git common root at
+`.chisel/<allocated-idea-name>/`; repeated names receive numeric suffixes. Set `CHISEL_CONTROL_ROOT` to override the control root.
 
 <br/>
 
@@ -199,7 +201,7 @@ When multiple tasks have no file overlap:
 Preview rollback impact before executing:
 
 ```bash
-IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>)
+IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <explicit-idea-name>)
 node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-step <step> --dry-run
 ```
 

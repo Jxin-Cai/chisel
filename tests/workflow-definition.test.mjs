@@ -57,6 +57,14 @@ describe('canonical workflow definition', () => {
     }
   });
 
+  it('starts isolated requirements by default and reserves resume for an explicit target', () => {
+    const skill = readFileSync(join(process.cwd(), 'skills/chisel/SKILL.md'), 'utf8');
+    assert.match(skill, /control-plane\.mjs --new --project-root/);
+    assert.match(skill, /只有用户明确说“恢复\/继续”并指定具体 idea-name 或需求目录/);
+    assert.doesNotMatch(skill, /workflow-snapshot\.mjs/);
+    assert.match(skill, /不得定位、读取、恢复或复用其/);
+  });
+
   it('gates CR behind the unit-test report and emits the CR report only after review', () => {
     for (const complexity of ALL_COMPLEXITIES) {
       const steps = WORKFLOW_PATHS[complexity].map(entry => entry.step);

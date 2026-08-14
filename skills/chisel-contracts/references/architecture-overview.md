@@ -15,7 +15,7 @@
 ## 架构要点
 
 - 单一插件 `chisel`，主入口 skill 是 `/chisel`。
-- 运行态产物写入 `control-plane.mjs` locator 解析的持久 control root `.chisel/<idea-name>/`；外层 workspace 可以非 Git，locator 会从外层、原 repo 或 linked worktree 读取 registry，恢复 workspace_root、各 repo/worktree、branch、base/default ref 和 lifecycle，也可用 `CHISEL_CONTROL_ROOT` 覆盖。
+- 每次新需求都由 `control-plane.mjs --new` 在持久 control root 下分配独立 `.chisel/<allocated-idea-name>/`；同名时使用数字后缀，不读取或复用其他需求产物。只有用户明确指定恢复目标时，locator 才从外层 workspace、原 repo 或 linked worktree 的 registry 恢复 workspace_root、各 repo/worktree、branch、base/default ref 和 lifecycle。control root 可用 `CHISEL_CONTROL_ROOT` 覆盖。
 - `skills/chisel-contracts/workflow-definition.json` 是 step/phase/gate/complexity path 的唯一机器定义；脚本通过 `workflow-definition.mjs` 加载，不再复制枚举。
 - `scripts/orchestration-status.mjs` 是严格只读的恢复点计算器；`orchestration-runner.mjs` 持久化 runner 租约、iteration 和最后决策，恢复事务后驱动显式 transition。
 - `scripts/orchestration-transition.mjs` 是 workflow step 的唯一写入口：校验权威 resume step 与 expected revision，持有 transition lock，记录 `events.ndjson`，再更新任务与耗时报告投影。

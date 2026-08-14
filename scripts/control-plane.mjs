@@ -142,6 +142,50 @@ export function registerIdea(projectRoot, ideaName, record, env = process.env) {
   return { control_root: root, idea_dir: ideaDir, record: nextRecord };
 }
 
+/**
+ * Reserve a brand-new requirement directory without consulting or reusing the
+ * contents of any existing requirement. A numeric suffix keeps repeated names
+ * isolated while mkdir provides the collision boundary for concurrent starts.
+ */
+export function createIsolatedIdea(projectRoot, ideaName, env = process.env) {
+  const requestedName = normalizeIdeaName(ideaName);
+  ensureControlPlaneIgnored(projectRoot);
+  const root = controlRoot(projectRoot, env);
+  const registry = readControlRegistry(root);
+  mkdirSync(root, { recursive: true });
+
+  let sequence = 1;
+  let allocatedName;
+  let ideaDir;
+  while (!allocatedName) {
+    const candidate = sequence === 1 ? requestedName : `${requestedName}-${sequence}`;
+    sequence += 1;
+    if (registry.ideas[candidate]) continue;
+    const candidateDir = join(root, candidate);
+    try {
+      mkdirSync(candidateDir);
+      allocatedName = candidate;
+      ideaDir = candidateDir;
+    } catch (error) {
+      if (error?.code === 'EEXIST') continue;
+      throw error;
+    }
+  }
+
+  const registered = registerIdea(projectRoot, allocatedName, {
+    idea_dir: ideaDir,
+    workspace_root: resolve(projectRoot),
+    lifecycle: 'active',
+    created_at: new Date().toISOString(),
+  }, env);
+  return {
+    ...registered,
+    requested_idea_name: requestedName,
+    allocated_idea_name: allocatedName,
+    reused: false,
+  };
+}
+
 export function locateIdea(projectRoot, ideaName, env = process.env) {
   const name = normalizeIdeaName(ideaName);
   const roots = candidateControlRoots(projectRoot, env);
@@ -176,14 +220,21 @@ function main() {
   const projectRoot = projectIndex >= 0 ? args[projectIndex + 1] : '.';
   const ideaIndex = args.indexOf('--idea');
   const ideaName = ideaIndex >= 0 ? args[ideaIndex + 1] : '';
-  const mode = args.includes('--locate') ? 'locate' : args.includes('--resume') ? 'resume' : args.includes('--status') ? 'status' : 'path';
+  const mode = args.includes('--new') ? 'new' : args.includes('--locate') ? 'locate' : args.includes('--resume') ? 'resume' : args.includes('--status') ? 'status' : 'path';
   try {
     if (!ideaName) {
       console.log(mode === 'path' ? controlRoot(projectRoot) : JSON.stringify({ control_root: controlRoot(projectRoot), registry: locateRegistry(projectRoot)?.registry || null }, null, 2));
       return;
     }
     if (mode === 'path') ensureControlPlaneIgnored(projectRoot);
+    if (mode === 'new') {
+      console.log(JSON.stringify({ ...createIsolatedIdea(projectRoot, ideaName), action: mode }, null, 2));
+      return;
+    }
     const located = locateIdea(projectRoot, ideaName);
+    if (mode === 'resume' && !located.record && !existsSync(located.idea_dir)) {
+      throw new Error(`cannot resume unknown idea: ${ideaName}`);
+    }
     if (mode === 'path') console.log(located.idea_dir);
     else console.log(JSON.stringify({ ...located, action: mode }, null, 2));
   } catch (error) {

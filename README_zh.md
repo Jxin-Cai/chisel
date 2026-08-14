@@ -118,7 +118,9 @@ HOTOL 会持久化本次显式授权，自动采用保守可逆的需求默认�
 验证和 CR 全部通过后合并默认主干。它默认不 push、不 force push、不删除分支，也不会覆盖启动前的未提交改动；
 真实冲突、权限缺失或无法安全推断的高风险业务歧义会写入阻塞记录并终止，而不是停下来提问。
 
-chisel 将运行态产物写入 Git common root 下的 `.chisel/<idea-name>/`，因此主工作区与 linked worktree 共享同一控制面；可用 `CHISEL_CONTROL_ROOT` 覆盖。
+每次调用 `/chisel` 默认都创建全新的隔离需求；除非用户明确要求恢复某个具体 idea，否则不会恢复、扫描或复用其他需求的
+产物。运行态产物写入 Git common root 下的 `.chisel/<allocated-idea-name>/`，同名需求自动添加数字后缀；可用
+`CHISEL_CONTROL_ROOT` 覆盖控制根目录。
 
 <br/>
 
@@ -196,7 +198,7 @@ chisel 支持外层非 Git workspace 包含一个或多个 Git 仓库。持久�
 ### 局部回退
 
 ```bash
-IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <idea-name>)
+IDEA_DIR=$(node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --project-root . --idea <明确指定的-idea-name>)
 node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-status.mjs "$IDEA_DIR" --rollback-step <step> --dry-run
 ```
 

@@ -22,6 +22,32 @@ function initRepo(root, name) {
 }
 
 describe('registry-backed multi-repo locator', () => {
+  it('allocates every default start as a new isolated requirement', () => {
+    const outer = mkdtempSync(join(tmpdir(), 'chisel-isolated-'));
+    try {
+      const repo = initRepo(outer, 'service');
+      const first = runNode(CONTROL, ['--new', '--project-root', repo, '--idea', 'team-kanban'], repo);
+      writeFileSync(join(first.idea_dir, 'requirement.md'), 'first requirement\n');
+      const second = runNode(CONTROL, ['--new', '--project-root', repo, '--idea', 'team-kanban'], repo);
+
+      assert.equal(first.allocated_idea_name, 'team-kanban');
+      assert.equal(second.allocated_idea_name, 'team-kanban-2');
+      assert.equal(first.reused, false);
+      assert.equal(second.reused, false);
+      assert.notEqual(first.idea_dir, second.idea_dir);
+      assert.equal(existsSync(join(second.idea_dir, 'requirement.md')), false);
+
+      const resumed = runNode(CONTROL, ['--resume', '--project-root', repo, '--idea', 'team-kanban'], repo);
+      assert.equal(resumed.idea_dir, first.idea_dir);
+      assert.equal(readFileSync(join(resumed.idea_dir, 'requirement.md'), 'utf8'), 'first requirement\n');
+
+      assert.throws(
+        () => execFileSync(process.execPath, [CONTROL, '--resume', '--project-root', repo, '--idea', 'missing'], { cwd: repo, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }),
+        /cannot resume unknown idea: missing/,
+      );
+    } finally { rmSync(outer, { recursive: true, force: true }); }
+  });
+
   it('supports an outer non-Git workspace and resumes from a linked worktree', () => {
     const outer = mkdtempSync(join(tmpdir(), 'chisel-outer-'));
     try {

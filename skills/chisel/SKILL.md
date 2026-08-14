@@ -16,21 +16,30 @@ disable-model-invocation: true
 
 ---
 
-## 当前工作流状态
+## 需求隔离与启动意图
 
-!`node ${CLAUDE_PLUGIN_ROOT}/scripts/workflow-snapshot.mjs 2>/dev/null || echo "无活跃工作流"`
+<HARD-GATE principle="P3,P5">
+`/chisel` 默认表示一个全新的需求迭代。即使仓库中存在同名、活跃或已完成的需求，也不得定位、读取、恢复或复用其
+`.chisel` 产物，不得把它登记为 baseline。每个新需求必须拥有独立目录、需求账本、方案、任务、验证和审批记录。
+
+只有用户明确说“恢复/继续”并指定具体 idea-name 或需求目录时，才允许进入恢复模式。仅提到相同产品、功能或自然语言名称，
+不构成恢复授权。恢复目标不明确时停止并请用户指定，不得从活跃工作流列表或“最近完成”记录中猜测。
+</HARD-GATE>
 
 ---
 
 ## 启动
 
 1. Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-contracts/workflow-definition.json`。这是 step / phase / gate / complexity path 的唯一来源；`orchestration.yaml` 只是旧消费者的生成投影，不得作为编排依据
-2. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
-3. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --locate --project-root . --idea <idea-name>`。从外层 workspace、原 repo 或 linked worktree 启动时，locator 读取持久 registry（v1/v2/v3）恢复 `{IDEA_DIR}`、workspace_root、各 repo/worktree、branch、base/default ref 和 lifecycle；新 idea 再用不带 `--locate` 的路径命令创建目录。可用 `CHISEL_CONTROL_ROOT` 显式覆盖
-4. 如果目录不存在，设 idea-dir = `none`
-5. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --start --idea-dir {IDEA_DIR} --owner main-orchestrator`，保存返回的 `runner_id`
-6. 执行路线图初始化（见下方 §路线图协议）
-7. 进入步骤执行循环。每步完成后先 TaskUpdate 标记对应 task 为 `completed`，再调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
+2. 判断启动意图：默认 `new`；仅在用户明确指定恢复目标时为 `resume`
+3. 从 `$ARGUMENTS` 解析 idea-name（英文 kebab-case）
+4. `new`：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --new --project-root . --idea <idea-name>`，从 JSON 读取
+   `idea_dir` 与 `allocated_idea_name`。若名称已存在，控制面使用数字后缀分配全新目录；不得读取旧需求内容或改用 `--locate`
+5. `resume`：运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/control-plane.mjs --resume --project-root . --idea <用户明确指定的 idea-name>`，
+   并确认返回的 `record` 或目录真实存在；不得回退为新建，也不得猜测其他需求
+6. 运行 `node ${CLAUDE_PLUGIN_ROOT}/scripts/orchestration-runner.mjs --start --idea-dir {IDEA_DIR} --owner main-orchestrator`，保存返回的 `runner_id`
+7. 执行路线图初始化（见下方 §路线图协议）
+8. 进入步骤执行循环。每步完成后先 TaskUpdate 标记对应 task 为 `completed`，再调用 `--next`；长耗时操作前调用 `--heartbeat`；compaction/会话恢复后调用 `--resume`
 
 ## 自主完成契约
 

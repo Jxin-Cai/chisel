@@ -45,7 +45,8 @@ disable-model-invocation: true
 
 ## 运行态目录
 
-`control-plane.mjs --project-root . --idea <idea-name>` 的输出（默认 Git common root 下 `.chisel/<idea-name>/`）
+新需求使用 `control-plane.mjs --new --project-root . --idea <idea-name>` 分配独立目录；只有用户明确指定恢复目标时才使用
+`--resume`。默认位于 Git common root 下 `.chisel/<allocated-idea-name>/`，同名需求使用数字后缀隔离。
 
 ## 加载方式
 
