@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { durableAtomicWrite, recoverFileTransactions } from './file-transaction.mjs';
-import { ideaDirectory } from './control-plane.mjs';
+import { ideaDirectory, resolveExistingIdeaDirectory } from './control-plane.mjs';
 import { computeStatus } from './orchestration-status.mjs';
 import { performTransition } from './orchestration-transition.mjs';
 import { collectPhaseArtifacts, formatPhaseArtifacts } from './phase-artifacts.mjs';
@@ -85,7 +85,7 @@ function tick(ideaDir, state) {
 function main() {
   const args = parse(process.argv.slice(2));
   const projectRoot = resolve(args.project_root || '.');
-  const ideaDir = args.idea_dir ? resolve(args.idea_dir) : ideaDirectory(projectRoot, args.idea);
+  const ideaDir = args.idea_dir ? resolveExistingIdeaDirectory(args.idea_dir, projectRoot) : ideaDirectory(projectRoot, args.idea);
   mkdirSync(ideaDir, { recursive: true });
   try {
     if (args.command === '--status') {

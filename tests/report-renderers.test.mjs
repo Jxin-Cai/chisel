@@ -118,24 +118,41 @@ describe('report renderers', () => {
       dataChanges: null, apiChanges: null, taskDetails: {},
       impactRisk: { flow_graph: { nodes: [{ id: 'N1', label: 'Controller', decision: '保留' }, { id: 'N2', label: 'Service', decision: '改造', cp_ref: 'CP-1' }], edges: [{ from: 'N1', to: 'N2' }] }, risk_matrix: [] },
     });
-    assert.match(toBe, /UML Target Model/);
-    assert.match(toBe, /改造点全链路/);
-    assert.match(toBe, /diagram-card-bleed/);
+    assert.match(toBe, /Target sequence/);
+    assert.match(toBe, /改造链路/);
+    assert.doesNotMatch(toBe, /diagram-card-(?:full|bleed)/);
+    assert.match(toBe, /to-be-summary/);
     assert.match(toBe, /flowchart LR/);
     assert.match(toBe, /href="#cp-cp-1"/);
     assert.match(toBe, /id="cp-cp-1"/);
     assert.match(toBe, /完整实施方案/);
   });
 
-  it('renders Mermaid fenced blocks from To-Be markdown instead of showing them as paragraphs', () => {
+  it('removes duplicate Mermaid blocks from the expanded To-Be plan', () => {
     const html = REPORT_SECTIONS['to-be']({
       ideaName: 'demo',
       implementationPlan: '# 方案\n\n```mermaid\nflowchart LR\nA --> B\n```',
       normalizedTasks: [], traceabilityTree: { percentage: 0, covered: 0, total: 0 },
       changePoints: [], dataChanges: null, apiChanges: null, taskDetails: {}, impactRisk: null,
     });
-    assert.match(html, /<pre class="mermaid">flowchart LR/);
+    assert.doesNotMatch(html, /<pre class="mermaid">flowchart LR/);
     assert.doesNotMatch(html, /<p>```mermaid<\/p>/);
+  });
+
+  it('sanitizes Mermaid-reserved characters in structured To-Be diagrams', () => {
+    const html = REPORT_SECTIONS['to-be']({
+      ideaName: 'demo', implementationPlan: '# 方案', normalizedTasks: [],
+      traceabilityTree: { percentage: 100, covered: 1, total: 1 },
+      changePoints: [], dataChanges: null, apiChanges: null, taskDetails: {},
+      impactRisk: { flow_graph: {
+        nodes: [{ id: 'N1', label: 'Controller [v2] | "entry"', decision: '保留' }, { id: 'N2', label: 'Service:save();', decision: '改造' }],
+        edges: [{ from: 'N1', to: 'N2', label: 'call | async: safe' }],
+      }, risk_matrix: [] },
+    });
+    assert.match(html, /Controller v2 entry/);
+    assert.match(html, /Service：save\(\)/);
+    assert.match(html, /call async： safe/);
+    assert.doesNotMatch(html, /Controller \[v2\] \|/);
   });
 
   it('ignores a stale merge confirmation whose report hash does not match', () => {

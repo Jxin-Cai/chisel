@@ -7,6 +7,7 @@ import { verificationPlanFingerprint, workspaceIdentity } from './verification-l
 import { durableAtomicWrite } from './file-transaction.mjs';
 import { recordDuration } from './session-metrics.mjs';
 import { appendUnitTestRun } from './unit-test-evidence.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const FULL_CHECK_OUTPUT = Symbol('full-check-output');
 
@@ -219,7 +220,7 @@ function verificationRoots(ideaDir, fallbackRoot) {
 
 function main() {
   const verifyStartedAt = Date.now();
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
   const projectRoot = process.argv[3] || '.';
   if (!ideaDir) {
     process.stderr.write(`${JSON.stringify({ error: '用法: verify-run.mjs <idea-dir> [project-root]' })}\n`);
@@ -236,7 +237,7 @@ function main() {
       process.exit(1);
     }
     const contract = existing && !process.argv.includes('--force-contract') ? existing : createVerificationContract(ideaDir, roots);
-    console.log(JSON.stringify({ initialized: !existing || process.argv.includes('--force-contract'), existing: Boolean(existing), contract: contractPath(ideaDir), repositories: contract.repositories }));
+    console.log(JSON.stringify({ initialized: !existing || process.argv.includes('--force-contract'), existing: Boolean(existing), contract: resolve(contractPath(ideaDir)), repositories: contract.repositories }));
     return;
   }
   if (incremental) {
@@ -265,7 +266,7 @@ function main() {
     };
     durableAtomicWrite(join(ideaDir, 'incremental-verify-result.json'), `${JSON.stringify(result, null, 2)}\n`);
     try { appendUnitTestRun(ideaDir, result); } catch { /* history is non-critical */ }
-    console.log(JSON.stringify({ status, mode: 'incremental', affected_files: result.affected_files, repositories: repositories.map(repo => ({ project_root: repo.project_root, status: repo.status })) }));
+    console.log(JSON.stringify({ status, mode: 'incremental', result_file: resolve(ideaDir, 'incremental-verify-result.json'), affected_files: result.affected_files, repositories: repositories.map(repo => ({ project_root: repo.project_root, status: repo.status })) }));
     if (status !== 'pass') process.exit(1);
     return;
   }
@@ -310,7 +311,7 @@ function main() {
     process.stderr.write(`${JSON.stringify({ warning: `cannot record unit-test run: ${error.message}` })}\n`);
   }
   try { recordDuration(ideaDir, 'verification', 'verify-run', Date.now() - verifyStartedAt, { repositories: repositories.length, checks: repositories.reduce((sum, repo) => sum + repo.checks.length, 0) }, status); } catch { /* metrics are non-critical */ }
-  console.log(JSON.stringify({ status, repositories: repositories.map(repo => ({ project_root: repo.project_root, status: repo.status, checks: repo.checks.map(({ id, status: checkStatus }) => ({ id, status: checkStatus })) })) }));
+  console.log(JSON.stringify({ status, result_file: resolve(ideaDir, 'verify-result.json'), repositories: repositories.map(repo => ({ project_root: repo.project_root, status: repo.status, checks: repo.checks.map(({ id, status: checkStatus }) => ({ id, status: checkStatus })) })) }));
   if (status !== 'pass') process.exit(1);
 }
 

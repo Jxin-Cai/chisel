@@ -5,6 +5,8 @@ import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { atomicWriteFile } from './workflow-lib.mjs';
 import { HOTOL_CONFIRMATION_ACTOR, isValidConfirmationActor } from './execution-mode.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
+import { toBeDecisionConfirmation } from './to-be-confirmation.mjs';
 
 export const REPORT_CONFIRMATIONS = Object.freeze({
   'as-is': { report: 'reports/as-is-report.html', confirmation: 'confirmations/as-is.json', phase: 'as-is', sources: ['requirement.md', 'as-is/'] },
@@ -99,8 +101,10 @@ export function recordReportConfirmation(ideaDir, reportType, expectedSha256, co
   const confirmationPath = join(ideaDir, config.confirmation);
   const existing = readJson(confirmationPath) || {};
   if (!isValidConfirmationActor(ideaDir, actor)) throw new Error(`confirmation actor is not authorized: ${actor}`);
+  const decision = reportType === 'to-be' ? toBeDecisionConfirmation(ideaDir) : {};
   const confirmation = {
     ...existing,
+    ...decision,
     schema_version: 1,
     phase: config.phase,
     status: 'confirmed',
@@ -122,7 +126,7 @@ function option(args, name) {
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = args[0];
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   const reportType = args[1];
   if (!ideaDir || !REPORT_CONFIRMATIONS[reportType]) {
     process.stderr.write('用法: report-confirm.mjs <idea-dir> <as-is|to-be|test|cr|task-time> [--confirm --expected-sha <sha256>] [--comment text]\n');

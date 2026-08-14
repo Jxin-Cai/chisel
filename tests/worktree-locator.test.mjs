@@ -2,8 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { resolveExistingIdeaDirectory } from '../scripts/control-plane.mjs';
 
 const ROOT = process.cwd();
 const SCRIPT = join(ROOT, 'scripts/multi-repo-worktree.mjs');
@@ -61,6 +62,8 @@ describe('registry-backed multi-repo locator', () => {
         assert.match(runGit(['worktree', 'list', '--porcelain'], record.repo_path), new RegExp(record.worktree_path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
       }
       const firstWorktree = created.repos[0].worktree_path;
+      const mistypedParent = join(dirname(outer), 'definitely-wrong-parent', '.chisel', 'multi-change');
+      assert.equal(resolveExistingIdeaDirectory(mistypedParent, firstWorktree), created.idea_dir);
       const located = runNode(CONTROL, ['--locate', '--project-root', firstWorktree, '--idea', 'multi-change'], outer);
       assert.equal(located.record.branch, 'feat/multi-change');
       assert.equal(located.record.workspace_root, outer);

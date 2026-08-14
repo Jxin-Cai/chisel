@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 export const REGISTRY_SCHEMA_VERSION = 3;
@@ -212,6 +212,20 @@ export function locateIdea(projectRoot, ideaName, env = process.env) {
 
 export function ideaDirectory(projectRoot, ideaName, env = process.env) {
   return locateIdea(projectRoot, ideaName, env).idea_dir;
+}
+
+/**
+ * Recover an existing idea directory from the registry when a caller copied a
+ * stale or mistyped absolute parent path. Only the basename is reused, and only
+ * when it is a valid idea name and the registry target actually exists.
+ */
+export function resolveExistingIdeaDirectory(input, projectRoot = '.', env = process.env) {
+  const requested = resolve(input);
+  if (existsSync(requested)) return requested;
+  const ideaName = basename(requested);
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(ideaName)) return requested;
+  const located = locateIdea(projectRoot, ideaName, env);
+  return existsSync(located.idea_dir) ? resolve(located.idea_dir) : requested;
 }
 
 function main() {

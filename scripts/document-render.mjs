@@ -47,7 +47,14 @@ function scopeRows(values, kind) {
 }
 
 function mermaidText(value, fallback = '') {
-  return text(value, fallback).replace(/[\r\n]+/g, ' ').replace(/["<>]/g, '').trim();
+  return text(value, fallback)
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/["<>\[\]{}|;#]/g, ' ')
+    .replace(/:/g, '：')
+    .replace(/&/g, '＆')
+    .replace(/\\/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function flowGraphDiagram(flowGraph = {}) {

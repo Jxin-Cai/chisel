@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { checkGate } from '../scripts/gate-check.mjs';
@@ -13,6 +14,31 @@ function makeTmpDir() {
 function writeRequirement(ideaDir, complexity = 'standard') {
   writeFileSync(join(ideaDir, 'requirement.md'), `# Req\n## 复杂度: ${complexity}\n## 涉及范围\n- a\n- b\n- c\n`);
 }
+
+describe('gate-check CLI workflow-step compatibility', () => {
+  let ideaDir;
+
+  beforeEach(() => {
+    ideaDir = makeTmpDir();
+    writeRequirement(ideaDir);
+  });
+
+  afterEach(() => { rmSync(ideaDir, { recursive: true, force: true }); });
+
+  it('maps a workflow step to its postcondition gate', () => {
+    const result = checkGate(ideaDir, 'receive-requirement');
+    assert.deepEqual(result, { pass: true, gate: 'requirement-exists' });
+  });
+
+  it('accepts both canonical and reversed CLI argument order for known workflow steps', () => {
+    const script = join(process.cwd(), 'scripts/gate-check.mjs');
+    for (const args of [[ideaDir, 'receive-requirement'], ['receive-requirement', ideaDir]]) {
+      const run = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8' });
+      assert.equal(run.status, 0, run.stderr || run.stdout);
+      assert.deepEqual(JSON.parse(run.stdout), { pass: true, gate: 'requirement-exists' });
+    }
+  });
+});
 
 function writeMinimalToBe(ideaDir) {
   const tobeDir = join(ideaDir, 'to-be');

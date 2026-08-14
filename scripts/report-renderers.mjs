@@ -153,7 +153,14 @@ function detailPanel(id, title, body, open = false) {
 }
 
 function mermaidText(value, fallback = '') {
-  return String(value || fallback).replace(/[\r\n]+/g, ' ').replace(/["<>]/g, '').trim();
+  return String(value || fallback)
+    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/["<>\[\]{}|;#]/g, ' ')
+    .replace(/:/g, '：')
+    .replace(/&/g, '＆')
+    .replace(/\\/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function mermaidId(value, prefix = 'N') {
@@ -261,7 +268,7 @@ function renderChangeFlow(impactRisk = {}, changePoints = []) {
   for (const edge of edges) {
     if (!aliases.has(edge.from) || !aliases.has(edge.to)) continue;
     const label = mermaidText(edge.label || edge.kind || edge.type);
-    source.push(`  ${aliases.get(edge.from)} -->${label ? `|${label}|` : ''} ${aliases.get(edge.to)}`);
+    source.push(`  ${aliases.get(edge.from)} -->${label ? `|"${label}"|` : ''} ${aliases.get(edge.to)}`);
   }
   if (edges.length === 0) {
     for (let index = 1; index < nodes.length; index++) source.push(`  ${aliases.get(nodes[index - 1].id)} --> ${aliases.get(nodes[index].id)}`);
@@ -269,9 +276,10 @@ function renderChangeFlow(impactRisk = {}, changePoints = []) {
   source.push('  classDef keep fill:#f8fafc,stroke:#94a3b8,color:#475569,stroke-width:1px');
   source.push('  classDef modify fill:#fffbeb,stroke:#f59e0b,color:#92400e,stroke-width:3px');
   source.push('  classDef add fill:#f0fdf4,stroke:#16a34a,color:#166534,stroke-width:3px');
-  source.push('  classDef remove fill:#fef2f2,stroke:#dc2626,color:#991b1b,stroke-width:3px,stroke-dasharray:5 3');
+  source.push('  classDef remove fill:#fef2f2,stroke:#dc2626,color:#991b1b,stroke-width:3px');
   const cpLinks = nodes.map(node => node.cp_ref || node.change_point_ref || (String(node.id || '').startsWith('CP-') ? node.id : '')).filter(Boolean);
-  return `<section class="card diagram-card diagram-card-bleed" id="change-flow"><div class="card-heading"><div><p class="eyebrow">Change Journey</p><h2>改造点全链路</h2><p class="muted compact">一张图保留入口、分支与终点的完整拓扑；画布使用原始尺寸，可横向滚动查看，不会缩成缩略图。</p></div><span class="diagram-legend">${changed}/${nodes.length} 节点变化</span></div>${nodes.length ? mermaidDiagram(source.join('\n'), 'To-Be 改造点全链路大图', { wide: true }) : '<p class="diagram-empty">暂无 flow_graph 节点。</p>'}<div class="change-legend"><span class="keep">保留</span><span class="modify">改造</span><span class="add">新增</span><span class="remove">删除</span></div>${cpLinks.length ? `<nav class="diagram-links" aria-label="跳转到改造点详情">${[...new Set(cpLinks)].map(cp => `<a href="#cp-${domId(cp)}">${esc(cp)}</a>`).join('')}</nav>` : ''}</section>`;
+  const minWidth = nodes.length > 6 ? Math.min(nodes.length * 190, 2200) : 0;
+  return `<section class="card diagram-card" id="change-flow"><div class="card-heading"><div><p class="eyebrow">Change journey</p><h2>改造链路</h2><p class="muted compact">保留入口、分支与终点的完整拓扑；长链路在图内滚动查看。</p></div><span class="diagram-legend">${changed}/${nodes.length} 节点变化</span></div>${nodes.length ? mermaidDiagram(source.join('\n'), 'To-Be 改造点全链路', { wide: true, minWidth }) : '<p class="diagram-empty">暂无 flow_graph 节点。</p>'}<div class="change-legend"><span class="keep">保留</span><span class="modify">改造</span><span class="add">新增</span><span class="remove">删除</span></div>${cpLinks.length ? `<nav class="diagram-links" aria-label="跳转到改造点详情">${[...new Set(cpLinks)].map(cp => `<a href="#cp-${domId(cp)}">${esc(cp)}</a>`).join('')}</nav>` : ''}</section>`;
 }
 
 function renderToBeUml(impactRisk = {}) {
@@ -281,7 +289,9 @@ function renderToBeUml(impactRisk = {}) {
   const byId = new Map(nodes.map(node => [node.id, node]));
   if (edges.length > 0) {
     const sequenceLinks = edges.map(edge => ({ ...edge, from: byId.get(edge.from)?.label || byId.get(edge.from)?.name || edge.from, to: byId.get(edge.to)?.label || byId.get(edge.to)?.name || edge.to, kind: edge.label || edge.kind || 'interaction' }));
-    return `<section class="card diagram-card diagram-card-full" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">UML Target Model · Sequence</p><h2>目标核心时序</h2><p class="muted compact">以真实 UML 时序展示目标系统的参与者与交互顺序。</p></div><span class="diagram-legend">${nodes.length} 个参与节点</span></div>${mermaidDiagram(renderSequenceSource(sequenceLinks), '目标核心时序', { wide: true })}</section>`;
+    const participantCount = new Set(sequenceLinks.flatMap(link => [link.from, link.to]).filter(Boolean)).size;
+    const minWidth = participantCount > 7 ? Math.min(participantCount * 118, 2200) : 0;
+    return `<section class="card diagram-card" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">Target sequence</p><h2>目标核心时序</h2></div><span class="diagram-legend">${participantCount} 个参与节点</span></div>${mermaidDiagram(renderSequenceSource(sequenceLinks), '目标核心时序', { wide: true, minWidth })}</section>`;
   }
   return `<section class="card diagram-card" id="to-be-model"><div class="card-heading"><div><p class="eyebrow">UML Target Model</p><h2>目标系统模型</h2></div><span class="diagram-legend">${nodes.length} 个节点</span></div><p class="diagram-empty">flow_graph 暂无边，无法生成目标时序；请补充节点间交互。</p></section>`;
 }
@@ -399,25 +409,22 @@ function renderToBeSection(data) {
     return wrapHtml(`To-Be — ${data.ideaName}`, body);
   }
 
-  body += `<div class="metric-grid stagger-group">`;
-  body += metric('需求覆盖', `${traceabilityTree?.percentage || 0}%`, `${traceabilityTree?.covered || 0}/${traceabilityTree?.total || 0}`, (traceabilityTree?.percentage || 0) === 100 ? 'success' : 'accent');
-  body += metric('改造点', String(changePoints.length), 'CP');
-  body += metric('Task', String(normalizedTasks.length), '实现拆分');
-  body += metric('数据/API', `${dataChanges ? 1 : 0}/${apiChanges ? 1 : 0}`, 'DB/API 计划');
-  body += `</div>\n`;
+  const tlDr = String(implementationPlan || '').match(/^##\s+TL;DR\s*\n([\s\S]*?)(?=^##\s+|$(?![\s\S]))/m)?.[1] || implementationPlan || '';
+  const riskCount = Array.isArray(impactRisk?.risk_matrix) ? impactRisk.risk_matrix.length : 0;
+  body += `<section class="to-be-summary" aria-label="To-Be 摘要"><div class="to-be-summary-main"><p class="eyebrow">Plan summary</p><h2>方案结论</h2><p>${esc(oneSentence(tlDr, '目标方案已生成，详细设计见下方实施方案。'))}</p></div><div class="to-be-stat"><strong>${traceabilityTree?.percentage || 0}%</strong><span>需求覆盖</span></div><div class="to-be-stat"><strong>${changePoints.length}</strong><span>改造点</span></div><div class="to-be-stat"><strong>${normalizedTasks.length}</strong><span>Task</span></div><div class="to-be-stat"><strong>${riskCount}</strong><span>风险项</span></div></section>`;
 
   body += sectionNav([
-    { id: 'implementation-plan', label: '完整 To-Be 方案' },
-    { id: 'to-be-model', label: '目标核心时序' },
-    { id: 'change-flow', label: '变更点在 As-Is 节点上的呈现' },
-    { id: 'change-points', label: '全部变更点' },
-    { id: 'risk-plan', label: '风险点与风险评估' },
+    { id: 'to-be-model', label: '目标时序' },
+    { id: 'change-flow', label: '改造链路' },
+    { id: 'implementation-plan', label: '完整方案' },
+    { id: 'change-points', label: '改造点' },
+    { id: 'risk-plan', label: '风险' },
   ]);
-  if (implementationPlan) {
-    body += detailPanel('implementation-plan', '完整 To-Be 方案（完整实施方案）', `<div class="section-md">${mdToHtml(implementationPlan)}</div>`, true);
-  }
   body += renderToBeUml(impactRisk || {});
   body += renderChangeFlow(impactRisk || {}, changePoints);
+  if (implementationPlan) {
+    body += detailPanel('implementation-plan', '完整实施方案', `<div class="section-md">${mdToHtml(withoutMermaidBlocks(implementationPlan))}</div>`);
+  }
 
   if ((normalizedTasks || []).length > 0) {
     let taskBody = `<table><tr><th>Task</th><th>风险</th><th>关联需求</th><th>目标</th></tr>`;

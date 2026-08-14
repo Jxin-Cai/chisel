@@ -4,11 +4,12 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { assertHotolCapability, HOTOL_CONFIRMATION_ACTOR } from './execution-mode.mjs';
-import { checkGate, toBePlanFingerprint } from './gate-check.mjs';
+import { checkGate } from './gate-check.mjs';
 import { recordMergeReviewDecision } from './merge-review.mjs';
 import { recordReportConfirmation } from './report-confirm.mjs';
 import { confirmRequirement } from './requirement-context.mjs';
 import { atomicWriteFile, ensureDir } from './workflow-lib.mjs';
+import { toBeDecisionConfirmation } from './to-be-confirmation.mjs';
 
 function readJson(path, fallback = null) {
   if (!existsSync(path)) return fallback;
@@ -30,32 +31,13 @@ export function approveToBe(ideaDir, expectedReportSha) {
   assertHotolCapability(ideaDir, 'approve-plan');
   const adversarial = checkGate(ideaDir, 'to-be-adversarial-approved');
   if (!adversarial.pass) throw new Error(`cannot auto-approve an incomplete plan: ${adversarial.reason}`);
-  const tasksDoc = readJson(join(ideaDir, 'to-be/tasks.json'));
-  const tasks = Array.isArray(tasksDoc?.tasks) ? tasksDoc.tasks : [];
-  if (tasks.length === 0) throw new Error('to-be/tasks.json has no tasks');
-  const risk = readJson(join(ideaDir, 'to-be/impact-risk-report.json'), {});
   const confirmation = {
+    ...toBeDecisionConfirmation(ideaDir),
     schema_version: 1,
     phase: 'to-be',
     status: 'confirmed',
     confirmed_at: new Date().toISOString(),
     confirmed_by: HOTOL_CONFIRMATION_ACTOR,
-    plan_fingerprint: toBePlanFingerprint(ideaDir),
-    source_files: [
-      'to-be/implementation-plan.md',
-      'to-be/tasks.json',
-      'to-be/traceability-matrix.json',
-      'to-be/impact-risk-report.json',
-    ],
-    task_acknowledgement: {
-      task_ids: tasks.map(task => task.task_id).filter(Boolean),
-      dependencies_reviewed: true,
-    },
-    risk_acknowledgement: {
-      reviewed: true,
-      risk_level: risk.summary?.risk_level || 'not_assessed',
-      risk_count: Array.isArray(risk.risk_matrix) ? risk.risk_matrix.length : 0,
-    },
     automation_basis: 'explicit HOTOL mode authorization',
   };
   ensureDir(join(ideaDir, 'confirmations'));

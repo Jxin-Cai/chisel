@@ -14,6 +14,9 @@ import { computeRequirementClassification } from './requirement-classify.mjs';
 import { PROJECT_MODES, projectModeFromRepoMap } from './project-profile.mjs';
 import { requirementConfirmationStatus } from './requirement-context.mjs';
 import { isValidConfirmationActor } from './execution-mode.mjs';
+import { STEP_GATE_MAP } from './workflow-definition.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
+import { toBePlanFingerprint } from './to-be-confirmation.mjs';
 
 import { checkScope, getTaskScope } from './scope-check.mjs';
 import { validateJsonFile } from './schemas/validate.mjs';
@@ -1261,30 +1264,6 @@ function validateToBeConfirmation(ideaDir) {
   return '';
 }
 
-const TO_BE_CONFIRMATION_SOURCES = Object.freeze([
-  'requirement-classification.json',
-  'to-be/implementation-plan.md',
-  'to-be/design-notes.json',
-  'to-be/tasks.json',
-  'to-be/traceability-matrix.json',
-  'to-be/impact-risk-report.json',
-  'to-be/data-change-plan.json',
-  'to-be/api-change-plan.json',
-  'to-be/adversarial-review.json',
-  'to-be/adversarial-review.md',
-  'document-jobs/to-be.json',
-]);
-
-export function toBePlanFingerprint(ideaDir) {
-  const mandatory = ['requirement-classification.json', 'to-be/implementation-plan.md', 'to-be/design-notes.json', 'to-be/tasks.json', 'to-be/traceability-matrix.json', 'to-be/impact-risk-report.json', 'to-be/adversarial-review.json', 'to-be/adversarial-review.md', 'document-jobs/to-be.json'];
-  if (mandatory.some(rel => !has(ideaDir, rel))) return null;
-  const hash = createHash('sha256');
-  for (const rel of TO_BE_CONFIRMATION_SOURCES.filter(path => has(ideaDir, path))) {
-    hash.update(rel).update('\0').update(readFileSync(join(ideaDir, rel))).update('\0');
-  }
-  return hash.digest('hex');
-}
-
 /**
  * Validate the independent, adversarial planning review.  This is deliberately
  * a separate artifact from the user confirmation: the review proves that the
@@ -1518,6 +1497,12 @@ function validateQuickDevScopeContract(ideaDir) {
 }
 
 export function checkGate(ideaDir, gateId) {
+  // Orchestration APIs expose workflow step ids (for example,
+  // `receive-requirement`), while this module historically accepted only the
+  // corresponding postcondition gate id (`requirement-exists`). Accept both at
+  // the boundary so callers cannot accidentally turn a valid resume_step into
+  // an "unknown gate" failure.
+  gateId = STEP_GATE_MAP[gateId] || gateId;
   if (!ideaDir || ideaDir === 'none') return { pass: false, gate: gateId, reason: 'idea-dir does not exist' };
   switch (gateId) {
     case 'requirement-exists': {
@@ -1942,16 +1927,28 @@ function result(gate, pass, reason = '', extra = {}) {
 }
 
 export async function main(argv) {
-  const ideaDir = argv[0];
-  const gateId = argv[1];
+  let [ideaDir, gateId] = argv;
   if (!ideaDir || !gateId) {
-    process.stderr.write('用法: gate-check.mjs <idea-dir> <gate-id>\n');
+    process.stderr.write('用法: gate-check.mjs <idea-dir> <gate-id|workflow-step>\n');
     process.exit(1);
   }
+
+  // Be tolerant of the common retry form `<gate-or-step> <idea-dir>`. The
+  // canonical order remains directory first; this branch is deliberately
+  // limited to known identifiers plus a path-like second argument so two
+  // arbitrary strings are never silently reinterpreted.
+  const workflowGateIds = new Set(Object.values(STEP_GATE_MAP));
+  const firstIsKnownIdentifier = Boolean(STEP_GATE_MAP[ideaDir]) || workflowGateIds.has(ideaDir);
+  const secondLooksLikePath = existsSync(gateId) || gateId.includes('/') || gateId.includes('\\') || gateId.startsWith('.');
+  if (firstIsKnownIdentifier && secondLooksLikePath) [ideaDir, gateId] = [gateId, ideaDir];
+  ideaDir = resolveExistingIdeaDirectory(ideaDir, process.cwd());
+
   const checked = checkGate(ideaDir, gateId);
   console.log(JSON.stringify(checked));
   if (!checked.pass) process.exit(1);
 }
+
+export { toBePlanFingerprint } from './to-be-confirmation.mjs';
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main(process.argv.slice(2));

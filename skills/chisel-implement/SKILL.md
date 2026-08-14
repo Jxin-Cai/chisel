@@ -108,6 +108,9 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --init-contract
 node ${CLAUDE_PLUGIN_ROOT}/scripts/verify-run.mjs {IDEA_DIR} . --full
 ```
 
+`--init-contract` stdout 的 `contract` 和验证 stdout 的 `result_file` 是权威绝对路径。只按这些字段读取文件；不得从当前
+worktree 手拼 `.chisel/...`，不得用 `cd ..` 搜索控制目录，也不得复制 `verify-run.mjs` 或其依赖到临时目录运行。
+
 `verification-contract.json` 中每个含单测 check 的 repo 必须填写轻量 `requirement_cases`。每项只记录一条真实业务行为，不复制测试代码：
 
 ```json

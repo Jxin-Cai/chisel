@@ -78,6 +78,13 @@ node ${SCRIPTS}/gate-check.mjs {IDEA_DIR} <gate-id>
 
 gate 不通过时不能继续。
 
+### 5.1 运行时路径纪律 `[P3, P5]`
+
+- 绝对路径只能来自控制面、runner 或目标脚本的 JSON stdout；必须原样复用，不得凭记忆重打用户名、缓存版本、idea 目录或 worktree 路径。
+- 路径失效时，从当前目录运行 `control-plane.mjs --resume --project-root . --idea <idea-name>` 重新定位；不得用逐级 `cd ..` 猜根目录。
+- 插件脚本必须在 `${CLAUDE_PLUGIN_ROOT}/scripts/` 原位执行。禁止复制单个 `.mjs` 到 `/tmp` 或 `.chisel/tmp-scripts`；ESM 相对依赖、schema 和 assets 会因此断裂。
+- 诊断命令不得使用未引用的裸 glob 或把 `===` 一类分隔符当 shell 命令；优先调用脚本的结构化 JSON 输出，不手工搜索已由 stdout 给出的产物路径。
+
 ### 6. 返修上限 `[P2]`
 
 同一 task 最多返修 5 次。超过后脚本会标记为 `blocked`，不得继续重试。

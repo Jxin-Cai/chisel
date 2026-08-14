@@ -3,6 +3,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WORKFLOW_STEPS } from './workflow-definition.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const STEP_OUTPUTS = Object.freeze({
   'receive-requirement': ['requirement.md', 'as-is/ui-snapshot.md'],
@@ -84,7 +85,7 @@ export function formatPhaseArtifacts(ideaDir, step, artifacts = collectPhaseArti
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = args[0];
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   const step = args[1];
   const json = args.includes('--json');
   if (!ideaDir || !step) {

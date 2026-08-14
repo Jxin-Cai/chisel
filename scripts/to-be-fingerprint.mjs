@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
-import { toBePlanFingerprint } from './gate-check.mjs';
+import { toBePlanFingerprint } from './to-be-confirmation.mjs';
 
 const ideaDir = process.argv[2];
 if (!ideaDir) {

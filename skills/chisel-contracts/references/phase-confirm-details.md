@@ -67,8 +67,8 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 ```
 
 将第二条命令 stdout 原样输出到对话（脚本已生成绝对路径 Markdown 链接，不得修改或重新拼接路径）。
-`reports.mjs` 返回的 JSON 中 `generated[0].path` 即为报告绝对路径，同时输出 SHA-256。用户明确确认后，才写入
-`confirmations/to-be.json`，通过 gate 后进入下一步；若用户要求调整，回到
+`reports.mjs` 返回的 JSON 中 `generated[0].path` 即为报告绝对路径，同时输出 SHA-256。用户明确确认后，才调用下方
+`report-confirm.mjs` 生成 `confirmations/to-be.json`，通过 gate 后进入下一步；若用户要求调整，回到
 `plan:design` 重新生成方案和 HTML。
 
 展示 `{IDEA_DIR}/to-be/implementation-plan.md` 中的实现策略方向、设计决策、目标行为、非目标行为、**改造点映射**（保留/改造/新增/删除决策表）、允许修改范围、禁止修改范围、Task 拆分建议、风险和回滚信息，等用户明确确认。
@@ -85,7 +85,14 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 
 ### 确认凭据
 
-确认后写入 `{IDEA_DIR}/confirmations/to-be.json`，必须严格包含以下结构（gate-check 会逐字段校验），然后运行 `report-confirm.mjs {IDEA_DIR} to-be --confirm --expected-sha <已展示哈希>` 绑定 HTML 文件：
+确认后只运行以下命令，由脚本原子生成完整决策凭据并绑定已展示的 HTML；不得手写、预创建或事后修补
+`confirmations/to-be.json`：
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/scripts/report-confirm.mjs {IDEA_DIR} to-be --confirm --expected-sha <已展示哈希>
+```
+
+脚本会从权威 To-Be 文件派生以下结构（gate-check 会逐字段校验）：
 
 ```json
 {
@@ -108,12 +115,12 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/phase-artifacts.mjs {IDEA_DIR} plan:design
 }
 ```
 
-- `task_acknowledgement.task_ids` 必须列出 `to-be/tasks.json` 中所有 task_id
+- `task_acknowledgement.task_ids` 由脚本列出 `to-be/tasks.json` 中所有 task_id
 - `task_acknowledgement.dependencies_reviewed` 必须为 `true`
 - `risk_acknowledgement.reviewed` 必须为 `true`
 - `risk_acknowledgement.risk_level` 应填 impact-risk-report.json 的 `summary.risk_level`
 - `risk_acknowledgement.risk_count` 应填 `risk_matrix` 数组长度
-- classified 新流程必须在用户点击确认的同一时刻运行 `to-be-fingerprint.mjs` 并原样写入 `plan_fingerprint`。implementation plan、tasks、traceability、risk、design-notes、对抗审查或 writer receipt 任一变化都会使确认失效，必须重新展示并让用户确认
+- classified 新流程由 `report-confirm.mjs` 在确认时计算并写入 `plan_fingerprint`。implementation plan、tasks、traceability、risk、design-notes、对抗审查或 writer receipt 任一变化都会使确认失效，必须重新展示并让用户确认
 - 任何字段缺失或值错误都会导致 `to-be-confirmed` gate 失败
 
 新流程不得只创建 `.to-be-confirmed` marker；该 marker 仅用于历史运行目录兼容。

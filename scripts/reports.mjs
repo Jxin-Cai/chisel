@@ -7,6 +7,7 @@ import { atomicWriteFile } from './workflow-lib.mjs';
 import { REPORT_SECTIONS, loadData } from './report-renderers.mjs';
 import { fileSha256, reportReadyStatus, reportSourceFingerprint, reportStatus } from './report-confirm.mjs';
 import { recordDuration } from './session-metrics.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const assetDir = join(scriptDir, 'assets');
@@ -45,12 +46,21 @@ if (diagrams.length) {
       sequence: { useMaxWidth: false, mirrorActors: false, diagramMarginX: 24, diagramMarginY: 24 },
       class: { useMaxWidth: false }
     });
-    await mermaid.run({ nodes: diagrams, suppressErrors: false });
-    document.documentElement.dataset.mermaid = 'ready';
+    let rendered = 0;
+    for (const diagram of diagrams) {
+      try {
+        await mermaid.run({ nodes: [diagram], suppressErrors: true });
+        rendered += 1;
+      } catch (error) {
+        diagram.insertAdjacentHTML('beforebegin', '<p class="mermaid-error" role="alert">该图表暂时无法渲染，下面保留 Mermaid 源码供排查。</p>');
+        console.error('Mermaid diagram failed', error);
+      }
+    }
+    document.documentElement.dataset.mermaid = rendered === diagrams.length ? 'ready' : 'partial';
   } catch (error) {
     document.documentElement.dataset.mermaid = 'error';
     for (const diagram of diagrams) {
-      diagram.insertAdjacentHTML('beforebegin', '<p class="mermaid-error" role="alert">图表渲染失败，下面保留 Mermaid 源码供排查。</p>');
+      diagram.insertAdjacentHTML('beforebegin', '<p class="mermaid-error" role="alert">Mermaid 运行时加载失败，下面保留图表源码。</p>');
     }
     console.error('Mermaid render failed', error);
   }
@@ -109,7 +119,7 @@ export function generateReports(ideaDir, requested) {
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = args[0];
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   const reportsIndex = args.indexOf('--reports');
   const requested = reportsIndex >= 0 ? String(args[reportsIndex + 1] || '').split(',').map(v => v.trim()).filter(Boolean) : [];
   if (!ideaDir) {

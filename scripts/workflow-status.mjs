@@ -32,6 +32,7 @@ import {
   taskRunPath,
 } from './task-provenance.mjs';
 import { commitFileTransaction } from './file-transaction.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function option(argv, name, fallback) {
   const index = argv.indexOf(name);
@@ -74,7 +75,9 @@ function help() {
 }
 
 export async function main(argv) {
-  const ideaDir = argv[0];
+  const rawIdeaDir = argv[0];
+  const ideaDir = rawIdeaDir && !['--help', 'help', '-h'].includes(rawIdeaDir)
+    ? resolveExistingIdeaDirectory(rawIdeaDir, process.cwd()) : rawIdeaDir;
   if (['--help', 'help', '-h'].includes(ideaDir)) {
     console.log(help());
     return;

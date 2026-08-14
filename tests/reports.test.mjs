@@ -42,14 +42,16 @@ describe('standalone HTML reports', () => {
         assert.match(html, /^<!doctype html>/);
         assert.match(html, /<style>[^]*:root/);
         assert.match(html, /mermaid@11\/dist\/mermaid\.esm\.min\.mjs/);
-        assert.match(html, /mermaid\.run\(\{ nodes: diagrams/);
+        assert.match(html, /mermaid\.run\(\{ nodes: \[diagram\]/);
         assert.doesNotMatch(html, /工作流总览.*As-Is.*To-Be.*CR/s);
       }
       assert.match(readFileSync(join(ideaDir, 'reports/as-is-report.html'), 'utf8'), /AS-IS-MARKER/);
       assert.match(readFileSync(join(ideaDir, 'reports/as-is-report.html'), 'utf8'), /Core flow|Domain model/);
+      assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /class="to-be-report"/);
+      assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /for \(const diagram of diagrams\)/);
       assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /TO-BE-MARKER/);
-      assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /UML Target Model/);
-      assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /改造点全链路/);
+      assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /Target sequence|UML Target Model/);
+      assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /改造链路/);
       assert.match(readFileSync(join(ideaDir, 'reports/test-report.html'), 'utf8'), /单测与覆盖率/);
       assert.match(readFileSync(join(ideaDir, 'reports/test-report.html'), 'utf8'), /tests\/new\.test\.mjs/);
       assert.match(readFileSync(join(ideaDir, 'reports/cr-report.html'), 'utf8'), /CR-MARKER/);
@@ -91,6 +93,42 @@ describe('standalone HTML reports', () => {
 
       generateReports(ideaDir, ['task-time']);
       assert.equal(reportStatus(ideaDir, 'task-time').valid, false, 'regeneration must invalidate the prior confirmation');
+    } finally {
+      rmSync(ideaDir, { recursive: true, force: true });
+    }
+  });
+
+  it('atomically derives the complete to-be decision receipt instead of requiring hand-written JSON', () => {
+    const ideaDir = mkdtempSync(join(tmpdir(), 'chisel-to-be-confirm-'));
+    try {
+      mkdirSync(join(ideaDir, 'to-be'), { recursive: true });
+      mkdirSync(join(ideaDir, 'document-jobs'), { recursive: true });
+      writeFileSync(join(ideaDir, 'requirement.md'), '# Requirement\n## Scope\n- feature\n');
+      writeFileSync(join(ideaDir, 'requirement-classification.json'), '{}');
+      writeFileSync(join(ideaDir, 'to-be/implementation-plan.md'), '# Plan\n');
+      writeFileSync(join(ideaDir, 'to-be/design-notes.json'), '{}');
+      writeFileSync(join(ideaDir, 'to-be/tasks.json'), JSON.stringify({ tasks: [
+        { task_id: 'task-001' }, { task_id: 'task-002' },
+      ] }));
+      writeFileSync(join(ideaDir, 'to-be/traceability-matrix.json'), JSON.stringify({ items: [] }));
+      writeFileSync(join(ideaDir, 'to-be/impact-risk-report.json'), JSON.stringify({
+        summary: { risk_level: 'high' }, risk_matrix: [{ id: 'RISK-1' }, { id: 'RISK-2' }],
+      }));
+      writeFileSync(join(ideaDir, 'to-be/adversarial-review.json'), '{}');
+      writeFileSync(join(ideaDir, 'to-be/adversarial-review.md'), '# Review\n');
+      writeFileSync(join(ideaDir, 'document-jobs/to-be.json'), '{}');
+
+      const report = generateReports(ideaDir, ['to-be']).generated[0];
+      const confirmation = recordReportConfirmation(ideaDir, 'to-be', report.sha256, '确认方案');
+      assert.match(confirmation.plan_fingerprint, /^[a-f0-9]{64}$/);
+      assert.deepEqual(confirmation.task_acknowledgement, {
+        task_ids: ['task-001', 'task-002'], dependencies_reviewed: true,
+      });
+      assert.deepEqual(confirmation.risk_acknowledgement, {
+        reviewed: true, risk_level: 'high', risk_count: 2,
+      });
+      assert.ok(confirmation.source_files.includes('to-be/implementation-plan.md'));
+      assert.equal(reportStatus(ideaDir, 'to-be').valid, true);
     } finally {
       rmSync(ideaDir, { recursive: true, force: true });
     }
