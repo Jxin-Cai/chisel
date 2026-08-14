@@ -107,42 +107,6 @@
 
 ---
 
-## constraints.md
-
-> Severity: `hard`（planner 必须遵守，违反直接 fail）/ `soft`（可权衡后覆写，需在 risk-report 说明理由）
-
-```
-## Source Coverage
-
-| Source | Covered refs | Omissions | Reason |
-|---|---|---|---|
-| as-is/overview.md + clarifications.json + confirmations/as-is.json | C-001 | 无 | — |
-
-## 禁区（不能修改）
-
-| ID | 范围 | Severity | 原因 | 证据 |
-|----|------|----------|------|------|
-| FZ-001 | <path/module> | hard | <原因> | <file:line> |
-
-## 包袱（看起来奇怪但有原因）
-
-| ID | 现象 | Severity | 原因 | 证据 |
-|----|------|----------|------|------|
-| WBI-001 | <现象> | soft | <原因> | <file:line> |
-
-## 坏味道（暂不重构）
-
-| ID | 位置 | Severity | 坏味道 | 不处理原因 |
-|----|------|----------|-------|-----------|
-| DNR-001 | <path> | soft | <描述> | <原因> |
-
-## 兼容约束
-
-- <兼容行为描述>
-```
-
----
-
 ## change-surface.md
 
 ```

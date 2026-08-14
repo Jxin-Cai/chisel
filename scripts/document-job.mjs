@@ -6,11 +6,9 @@ import { atomicWriteFile } from './workflow-lib.mjs';
 
 const JOBS = Object.freeze({
   'as-is': {
-    sources: ['requirement.md', 'requirement-classification.json', 'as-is/repo-map.json', 'as-is/evidence-ledger.json', 'as-is/coverage-matrix.json', 'as-is/context-budget.json', 'as-is/ai-input/facts.md', 'as-is/ai-input/call-graph.md', 'as-is/ai-input/data-schema.md', 'as-is/ai-input/api-surface.md', 'as-is/ai-input/constraints.md', 'as-is/ai-input/change-surface.md'],
+    sources: ['requirement.md', 'requirement-classification.json', 'as-is/repo-map.json', 'as-is/evidence-ledger.json', 'as-is/coverage-matrix.json', 'as-is/context-budget.json', 'as-is/ai-input/facts.md', 'as-is/ai-input/call-graph.md', 'as-is/ai-input/data-schema.md', 'as-is/ai-input/api-surface.md', 'as-is/ai-input/change-surface.md'],
     optionalSources: ['as-is/ai-input/field-flow.md'],
-    optionalSourceDirs: ['as-is/debt-signals'],
     outputs: ['as-is/overview.md', 'as-is/core-walkthrough.md', 'as-is/evidence-index.md', 'as-is/context-budget.md'],
-    optionalOutputs: ['as-is/knowledge-candidates.md'],
     optionalOutputDirs: ['as-is/details'],
   },
   'to-be': {

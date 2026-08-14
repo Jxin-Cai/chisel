@@ -135,7 +135,6 @@ Read 上次本维度的 CR 文件 `{idea_dir}/cr/dim-{dimension}-cr.md`，对照
 ## 限制
 
 - 不改业务代码
-- Write 只用于 `{idea_dir}/cr/` 和 `{idea_dir}/knowledge-candidates/`
+- Write 只用于 `{idea_dir}/cr/`
 - 不要求超出当前需求范围的返修
-- 发现知识候选时按 `chisel-contracts/references/protocols/agent-protocol.md` §2 写入候选 JSON
 - 只审查 TASK 指定的维度，不越界审查其他维度

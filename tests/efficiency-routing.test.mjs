@@ -200,9 +200,8 @@ describe('asynchronous human-document receipts', () => {
       'as-is/context-budget.json': '{}',
       'as-is/ai-input/facts.md': 'facts', 'as-is/ai-input/call-graph.md': 'call graph',
       'as-is/ai-input/data-schema.md': 'schema', 'as-is/ai-input/api-surface.md': 'api',
-      'as-is/ai-input/constraints.md': 'constraints', 'as-is/ai-input/change-surface.md': 'surface',
+      'as-is/ai-input/change-surface.md': 'surface',
       'as-is/ai-input/field-flow.md': 'field flow',
-      'as-is/debt-signals/nested/debt.json': 'debt',
     };
     for (const [rel, value] of Object.entries(files)) { mkdirSync(join(dir, rel, '..'), { recursive: true }); writeFileSync(join(dir, rel), value); }
   }
@@ -222,8 +221,8 @@ describe('asynchronous human-document receipts', () => {
     assert.match(checkGate(dir, 'as-is-complete').reason, /document-jobs\/as-is\.json missing/);
   });
 
-  it('invalidates receipts for structural, context-budget, and optional writer inputs', () => {
-    for (const source of ['as-is/repo-map.json', 'as-is/context-budget.json', 'as-is/ai-input/field-flow.md', 'as-is/debt-signals/nested/debt.json']) {
+  it('invalidates receipts for structural, context-budget, and optional inputs', () => {
+    for (const source of ['as-is/repo-map.json', 'as-is/context-budget.json', 'as-is/ai-input/field-flow.md']) {
       const dir = temp(); seedAsIs(dir); prepareDocumentJob(dir, 'as-is');
       for (const rel of ['overview.md', 'core-walkthrough.md', 'evidence-index.md', 'context-budget.md']) writeFileSync(join(dir, 'as-is', rel), rel);
       completeDocumentJob(dir, 'as-is');
@@ -232,14 +231,6 @@ describe('asynchronous human-document receipts', () => {
     }
   });
 
-  it('tracks the conditional knowledge-candidates writer output', () => {
-    const dir = temp(); seedAsIs(dir); prepareDocumentJob(dir, 'as-is');
-    for (const rel of ['overview.md', 'core-walkthrough.md', 'evidence-index.md', 'context-budget.md', 'knowledge-candidates.md']) writeFileSync(join(dir, 'as-is', rel), rel);
-    completeDocumentJob(dir, 'as-is');
-    assert.equal(checkDocumentJob(dir, 'as-is').valid, true);
-    writeFileSync(join(dir, 'as-is/knowledge-candidates.md'), 'changed');
-    assert.equal(checkDocumentJob(dir, 'as-is').status, 'stale');
-  });
 });
 
 describe('classified to-be confirmation identity', () => {

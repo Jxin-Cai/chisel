@@ -17,12 +17,13 @@ describe('deterministic human document rendering', () => {
       writeFileSync(join(dir, 'as-is/evidence-ledger.json'), JSON.stringify({ facts: [{ id: 'F-001', claim: 'entry exists', status: 'confirmed', evidence: [{ file: 'src/a.js', line_start: 1 }] }] }));
       writeFileSync(join(dir, 'as-is/coverage-matrix.json'), JSON.stringify({ entrypoints: [{ id: 'E-001', name: 'main' }], links: [{ from: 'main', to: 'service', kind: 'call' }] }));
       writeFileSync(join(dir, 'as-is/context-budget.json'), JSON.stringify({ read_file_count: 1, read_lines: 10, coverage: '100%' }));
-      for (const file of ['facts.md', 'call-graph.md', 'data-schema.md', 'api-surface.md', 'constraints.md', 'change-surface.md']) writeFileSync(join(dir, `as-is/ai-input/${file}`), file);
+      for (const file of ['facts.md', 'call-graph.md', 'data-schema.md', 'api-surface.md', 'change-surface.md']) writeFileSync(join(dir, `as-is/ai-input/${file}`), file);
       const result = renderHumanDocuments(dir, 'as-is');
       assert.equal(result.status, 'complete');
       assert.equal(checkDocumentJob(dir, 'as-is').valid, true);
       assert.match(readFileSync(join(dir, 'as-is/overview.md'), 'utf8'), /无需用户确认/);
       assert.match(readFileSync(join(dir, 'as-is/core-walkthrough.md'), 'utf8'), /```mermaid/);
+      assert.doesNotMatch(readFileSync(join(dir, 'as-is/core-walkthrough.md'), 'utf8'), /禁区|包袱|坏味道/);
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 

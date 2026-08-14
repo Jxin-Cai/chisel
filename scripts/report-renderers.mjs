@@ -35,6 +35,10 @@ function readMd(ideaDir, rel) {
   return readFileSync(p, 'utf8');
 }
 
+function withoutMermaidBlocks(text) {
+  return String(text || '').replace(/```mermaid\s*[\s\S]*?```/gi, '');
+}
+
 function readWorkflowState(ideaDir) {
   const p = join(ideaDir, 'workflow-state.yaml');
   if (!existsSync(p)) return null;
@@ -157,8 +161,10 @@ function mermaidId(value, prefix = 'N') {
   return `${prefix}_${normalized || 'item'}`;
 }
 
-function mermaidDiagram(source, label, { wide = false } = {}) {
-  return `<div class="diagram-stage${wide ? ' diagram-stage-wide' : ''}" role="region" aria-label="${esc(label)}" tabindex="0"><pre class="mermaid">${esc(source)}</pre></div>`;
+function mermaidDiagram(source, label, { wide = false, minWidth = 0 } = {}) {
+  const readable = minWidth > 0 ? ' diagram-stage-readable' : '';
+  const style = minWidth > 0 ? ` style="--diagram-min-width:${Math.round(minWidth)}px"` : '';
+  return `<div class="diagram-stage${wide ? ' diagram-stage-wide' : ''}${readable}"${style} role="region" aria-label="${esc(label)}" tabindex="0"><pre class="mermaid">${esc(source)}</pre></div>`;
 }
 
 function renderSequenceSource(links) {
@@ -227,13 +233,14 @@ function renderClassSource(coverageMatrix) {
 function renderAsIsUml(coverageMatrix = {}) {
   const links = Array.isArray(coverageMatrix.links) ? coverageMatrix.links : [];
   const models = normalizeDomainModels(coverageMatrix);
+  const participantCount = new Set(links.flatMap(link => [link.from || link.source || link.caller, link.to || link.target || link.callee]).filter(Boolean)).size;
   const sequence = links.length > 0
-    ? mermaidDiagram(renderSequenceSource(links), '需求范围内全部既有代码逻辑时序', { wide: true })
+    ? mermaidDiagram(renderSequenceSource(links), '需求范围内全部既有代码逻辑时序', { wide: true, minWidth: participantCount > 7 ? Math.min(participantCount * 118, 2200) : 0 })
     : '<p class="diagram-empty">未识别到既有代码调用链；请检查 coverage-matrix.links。</p>';
   const modelDiagram = models.length > 0
-    ? mermaidDiagram(renderClassSource(coverageMatrix), '领域模型 UML 类图', { wide: true })
+    ? mermaidDiagram(renderClassSource(coverageMatrix), '领域模型 UML 类图', { wide: true, minWidth: models.length > 5 ? Math.min(models.length * 230, 2000) : 0 })
     : '<p class="diagram-empty">当前需求不涉及领域模型，或 coverage-matrix.domain_models 尚未补充。</p>';
-  return `<section class="card diagram-card diagram-card-full" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">UML Sequence</p><h2>待改已有代码逻辑全链路</h2><p class="muted compact">完整罗列需求范围内从入口到副作用终点的既有调用，不截断节点或分支。</p></div><span class="diagram-legend">${links.length} 次交互</span></div>${sequence}</section><section class="card diagram-card diagram-card-full" id="as-is-models"><div class="card-heading"><div><p class="eyebrow">UML Class Diagram</p><h2>领域模型定义与关系</h2><p class="muted compact">展示领域模型的属性、行为、关系类型与多重性；它不是数据库表调用顺序图。</p></div><span class="diagram-legend">${models.length} 个模型</span></div>${modelDiagram}</section>`;
+  return `<section class="card diagram-card" id="as-is-sequence"><div class="card-heading"><div><p class="eyebrow">Core flow</p><h2>现有核心链路</h2></div><span class="diagram-legend">${links.length} 次交互</span></div>${sequence}<p class="diagram-help">图表按内容区自适应；内容较多时可在图内滚动，移动端默认保留可读字号。</p></section><section class="card diagram-card" id="as-is-models"><div class="card-heading"><div><p class="eyebrow">Domain model</p><h2>领域模型与关系</h2></div><span class="diagram-legend">${models.length} 个模型</span></div>${modelDiagram}</section>`;
 }
 
 function renderChangeFlow(impactRisk = {}, changePoints = []) {
@@ -342,17 +349,21 @@ function renderAsIsSection(data) {
     return wrapHtml(`As-Is — ${data.ideaName}`, body);
   }
 
+  const links = Array.isArray(coverageMatrix?.links) ? coverageMatrix.links : [];
+  const participants = new Set(links.flatMap(link => [link.from || link.source || link.caller, link.to || link.target || link.callee]).filter(Boolean));
+  const models = normalizeDomainModels(coverageMatrix || {});
+  const evidenceItems = Array.isArray(evidenceLedger) ? evidenceLedger : (evidenceLedger?.facts || evidenceLedger?.items || []);
+  const summarySource = String(overview || coreWalkthrough || '').replace(/^#\s+.*$/m, '');
+  body += `<section class="as-is-summary" aria-label="As-Is 摘要"><div class="as-is-summary-main"><h2>现状结论</h2><p>${esc(oneSentence(summarySource, '已完成需求相关现有代码走查。'))}</p></div><div class="as-is-stat"><strong>${participants.size}</strong><span>参与节点</span></div><div class="as-is-stat"><strong>${links.length}</strong><span>链路交互</span></div><div class="as-is-stat"><strong>${models.length}</strong><span>领域模型</span></div></section>`;
   body += sectionNav([
-    { id: 'as-is-sequence', label: '待改已有逻辑全链路' },
-    { id: 'as-is-models', label: '领域模型 UML' },
-    { id: 'as-is-walkthrough', label: '完整逻辑走查' },
-    { id: 'as-is-overview', label: '一句话现状总结' },
-    { id: 'as-is-evidence', label: '证据与质量（按需）' },
+    { id: 'as-is-sequence', label: '核心链路' },
+    { id: 'as-is-models', label: '领域模型' },
+    { id: 'as-is-walkthrough', label: '逻辑走查' },
+    { id: 'as-is-evidence', label: '证据' },
   ]);
   body += renderAsIsUml(coverageMatrix || {});
-  if (coreWalkthrough) body += detailPanel('as-is-walkthrough', '所有待变更既有代码逻辑（完整走查）', `<div class="section-md">${mdToHtml(coreWalkthrough)}</div>`, true);
-  if (overview) body += detailPanel('as-is-overview', '现状总结（一段话）', `<p>${esc(oneSentence(overview))}</p>`, true);
-  body += `<section id="as-is-evidence" class="detail-stack">`;
+  if (coreWalkthrough) body += detailPanel('as-is-walkthrough', '完整逻辑走查', `<div class="section-md">${mdToHtml(withoutMermaidBlocks(coreWalkthrough))}</div>`);
+  body += `<section id="as-is-evidence" class="evidence-grid">`;
   if (qualityScore) {
     const dims = qualityScore.dimensions || qualityScore.scores || {};
     let qualityBody = `<table><tr><th>维度</th><th>评分</th></tr>`;
@@ -365,7 +376,7 @@ function renderAsIsSection(data) {
     body += detailPanel('as-is-quality', '质量评分', `${qualityBody}</table>`);
   }
   if (evidenceLedger) {
-    const items = Array.isArray(evidenceLedger) ? evidenceLedger : (evidenceLedger.facts || evidenceLedger.items || []);
+    const items = evidenceItems;
     if (items.length > 0) {
       let evidenceBody = `<table><tr><th>ID</th><th>声明</th><th>状态</th></tr>`;
       for (const e of items.slice(0, 20)) {

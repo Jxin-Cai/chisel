@@ -60,7 +60,6 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-plan/references/plan-prompt-guide.md`ï
    - `{idea_dir}/as-is/ai-input/facts.md`
    - `{idea_dir}/as-is/ai-input/call-graph.md`
    - `{idea_dir}/as-is/ai-input/change-surface.md`
-   - `{idea_dir}/as-is/ai-input/constraints.md`
    - `{idea_dir}/requirement-clarification.json`
    - `{idea_dir}/clarifications.json`
    - `{idea_dir}/as-is/coverage-matrix.json`

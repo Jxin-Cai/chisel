@@ -29,7 +29,7 @@ disable-model-invocation: true
 | 角色 | 必须加载 | 说明 |
 |---|---|---|
 | 主编排器 | `references/protocols/iron-rules.md` | 状态恢复、步骤切换、gate 与完成证据纪律 |
-| 所有 Chisel agent | `references/protocols/agent-protocol.md` | Wiki、知识候选、proof、模板和上下文隔离协议 |
+| 所有 Chisel agent | `references/protocols/agent-protocol.md` | proof、模板和上下文隔离协议 |
 | 维护 Chisel 自身 | `references/protocols/principle-enforcement-map.md` | 原则到 script/hook/prompt 的执法映射 |
 | coder agent | `../chisel-implement/references/coder-instructions.md` | Coder 只加载直接证据实现契约，不加载 proof/report 公共协议 |
 

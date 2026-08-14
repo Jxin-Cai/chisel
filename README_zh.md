@@ -332,7 +332,6 @@ task 的 `run_id` lease 过期时，orchestration-status 输出 stale warning；
 | `branch-merge.mjs` | 隔离 integration 合并和机器可读冲突分析 |
 | `review-selector.mjs` | 基于 diff/路径/内容的风险和审查维度选择 |
 | `repo-map.mjs` | 代码地图生成 |
-| `debt-scan.mjs` | 静态技术债务扫描 |
 | `as-is-score.mjs` | as-is 产物质量评分 |
 | `cr-prepare.mjs` | CR 预计算数据 |
 | `reports.mjs` | 五份独立 HTML 报告生成（As-Is、To-Be、单测、CR、任务与耗时） |

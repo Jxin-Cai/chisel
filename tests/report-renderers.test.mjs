@@ -99,14 +99,16 @@ describe('report renderers', () => {
         domain_relationships: [{ from: 'DM-1', to: 'DM-2', kind: 'composition', from_cardinality: '1', to_cardinality: '1..*', label: 'contains' }],
       },
     });
-    assert.match(asIs, /UML Sequence/);
+    assert.match(asIs, /Core flow/);
     assert.match(asIs, /Controller/);
     assert.match(asIs, /L-014/, 'the full existing logic chain must not be truncated');
     assert.match(asIs, /classDiagram/);
     assert.match(asIs, /OrderStatus status/);
     assert.match(asIs, /\*--/);
-    assert.match(asIs, /<pre class="mermaid">flowchart LR/);
-    assert.match(asIs, /<details[^>]+as-is-overview[^>]+open/);
+    assert.doesNotMatch(asIs, /<pre class="mermaid">flowchart LR/);
+    assert.match(asIs, /as-is-summary/);
+    assert.doesNotMatch(asIs, /diagram-card-full/);
+    assert.doesNotMatch(asIs, /as-is-overview/);
     assert.match(asIs, /阅读路径/);
 
     const toBe = REPORT_SECTIONS['to-be']({

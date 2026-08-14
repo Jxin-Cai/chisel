@@ -27,7 +27,7 @@ user-invocable: false
 
 ---
 
-### Phase 0: 代码地图 + 债务扫描
+### Phase 0: 代码地图
 
 **代码地图生成**：
 
@@ -49,11 +49,6 @@ node ${CLAUDE_PLUGIN_ROOT}/scripts/gate-check.mjs {idea_dir} as-is-complete
 
 脚本会一次性生成真实的 N/A 基线、AI 输入、人类摘要、document receipt 和质量分数。gate 通过后直接结束本 skill；不得启动 Explore / Analyst / Writer，不得把未来设计伪装成既有入口、调用链、数据模型或副作用。交付复杂度和风险级别保持不变，只裁剪没有意义的历史代码侦察。
 
-仅非 greenfield 继续运行 debt-scan（如有 entry_candidates，从中提取目录前缀缩小范围）：
-
-```bash
-node ${CLAUDE_PLUGIN_ROOT}/scripts/debt-scan.mjs --project-root . --repo-map {idea_dir}/as-is/repo-map.json --output {idea_dir}/as-is/debt-signals/ --scope-dirs <目录前缀>
-```
 </HARD-GATE>
 
 ---
@@ -102,7 +97,6 @@ Analyst 产出以下结构化产物（每条 fact 必须有已验证的 file:lin
 | `as-is/ai-input/call-graph.md` | 调用链 + 入口→终点映射 + 前端→API 映射 |
 | `as-is/ai-input/data-schema.md` | 表结构 + 关系 |
 | `as-is/ai-input/api-surface.md` | 接口清单 + 错误码 |
-| `as-is/ai-input/constraints.md` | 禁区/包袱/坏味道/兼容约束 |
 | `as-is/ai-input/change-surface.md` | 安全变更区域 + 影响面 |
 | `as-is/ai-input/field-flow.md` | 字段流转表（仅当有字段变更时） |
 | `as-is/context-budget.json` | 已读文件清单、行数、覆盖率、未读相关文件、覆盖度自评 |
@@ -111,7 +105,7 @@ Analyst 产出以下结构化产物（每条 fact 必须有已验证的 file:lin
 Analyst 返回后，验证结构化产物合规：
 - `evidence-ledger.json` 存在且非空，所有 fact 的 status 为 "confirmed"
 - `coverage-matrix.json` 使用 schema v3，links 不抽样且覆盖需求范围内全部待改既有逻辑，domain_models/domain_relationships 可生成领域模型 UML；不涉及的维度有 `not_applicable` reason
-- `ai-input/` 下至少有 facts.md、call-graph.md、data-schema.md、api-surface.md、constraints.md、change-surface.md
+- `ai-input/` 下至少有 facts.md、call-graph.md、data-schema.md、api-surface.md、change-surface.md
 
 不满足则重新派发 Analyst 补充缺失产物（传入 `retry_reason` 说明缺失项）。
 </HARD-GATE>
@@ -147,7 +141,6 @@ Read stdout 查看各维度得分。hard gate 是 `overall >= 0.6` 且每个维�
 - coverage 低 → 检查 coverage-matrix 是否遗漏维度
 - evidence_density 低 → 回到 Phase 2 补充 fact
 - diagram 低 → 补充 coverage-matrix 的结构化 links/domain_models 后重新渲染
-- risk_awareness 低 → 在 Phase 2 补充风险识别后重新写入
 
 补强后重新运行评分，直到满足 hard gate。
 </HARD-GATE>
@@ -168,7 +161,6 @@ Phase 4 通过后，确认以下产物全部存在：
 - `as-is/ai-input/call-graph.md`
 - `as-is/ai-input/data-schema.md`
 - `as-is/ai-input/api-surface.md`
-- `as-is/ai-input/constraints.md`
 - `as-is/ai-input/change-surface.md`
 
 **人类文档（确定性 renderer 产出）：**

@@ -7,6 +7,9 @@ import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
 import { atomicWriteFile } from './workflow-lib.mjs';
 
 function write(ideaDir, relativePath, content) {
+  if (relativePath === 'as-is/overview.md') {
+    content = content.replace(/\n### 风险地图[\s\S]*?(?=\n### 用户确认清单)/, '');
+  }
   atomicWriteFile(join(ideaDir, relativePath), content.endsWith('\n') ? content : `${content}\n`);
 }
 
@@ -78,7 +81,6 @@ export function generateGreenfieldAsIs(ideaDir) {
   write(ideaDir, 'as-is/ai-input/call-graph.md', `# 调用链\n\n不适用：greenfield 仓库尚无入口、调用链或前端到 API 映射。\n`);
   write(ideaDir, 'as-is/ai-input/data-schema.md', `# 数据模型\n\n不适用：greenfield 仓库尚无既有表、实体或持久化结构。\n`);
   write(ideaDir, 'as-is/ai-input/api-surface.md', `# 接口面\n\n不适用：greenfield 仓库尚无既有 API、消息或 MCP tool。\n`);
-  write(ideaDir, 'as-is/ai-input/constraints.md', `# 既有约束\n\n- 没有历史实现形成的兼容约束、技术债或禁改区域。\n- 需求约束以 requirement.md 和 requirement-clarification.json 为准。\n`);
   write(ideaDir, 'as-is/ai-input/change-surface.md', `# 变更面\n\n- Safe-to-change：整个新项目空间。\n- 历史实现影响面：不适用。\n- 新架构和范围边界应在 plan 阶段确定，不在 as-is 阶段虚构。\n`);
 
   if (existsSync(join(ideaDir, 'requirement-classification.json'))) prepareDocumentJob(ideaDir, 'as-is');
@@ -98,7 +100,7 @@ export function generateGreenfieldAsIs(ideaDir) {
   return {
     project_mode: profile.mode,
     fast_path: true,
-    generated_files: 14,
+    generated_files: 13,
     document_receipt: existsSync(join(ideaDir, 'document-jobs/as-is.json')),
     quality_score: score.overall,
   };

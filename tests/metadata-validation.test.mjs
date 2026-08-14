@@ -6,7 +6,7 @@ describe('plugin metadata', () => {
   it('passes the offline strict metadata contract and keeps versions aligned', () => {
     const result = validateMetadata();
     assert.equal(result.valid, true, result.errors.join('\n'));
-    assert.equal(result.plugin_version, '0.52.0');
+    assert.equal(result.plugin_version, '0.54.0');
   });
 
   it('rejects agent frontmatter that Claude Code would silently omit from inventory', () => {

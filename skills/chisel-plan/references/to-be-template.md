@@ -102,8 +102,6 @@
 |---|---|---|---|
 | | low / medium / high | | |
 
-## 知识候选处理策略
-
 ## Task 拆分建议
 
 每个 Task 必须通过 `trace_refs` 关联到一个或多个需求/验收/验证追踪项，并通过 `change_point_refs` 关联到一个或多个 CP。

@@ -39,7 +39,6 @@ const AI_INPUT_FILES = [
   'as-is/ai-input/call-graph.md',
   'as-is/ai-input/data-schema.md',
   'as-is/ai-input/api-surface.md',
-  'as-is/ai-input/constraints.md',
   'as-is/ai-input/change-surface.md'
 ];
 
@@ -124,7 +123,7 @@ function arraysEqual(a = [], b = []) {
 function validateAsIsOverview(ideaDir) {
   const overviewPath = join(ideaDir, 'as-is/overview.md');
   const overview = readText(overviewPath);
-  const requiredSections = ['### 3分钟摘要', '### 读者导航', '### 风险地图', '### 常见误解点', '### 用户确认清单'];
+  const requiredSections = ['### 3分钟摘要', '### 读者导航', '### 当前能力边界', '### 用户确认清单'];
   const missing = requiredSections.filter(section => !overview.includes(section));
   if (missing.length > 0) return `as-is overview is missing required user-understanding sections: ${missing.join(', ')}`;
   const checklist = sectionText(overview, '用户确认清单');
@@ -957,7 +956,7 @@ function validateContextBudget(ideaDir) {
   return '';
 }
 
-const QUALITY_SCORE_DIMENSIONS = ['coverage', 'evidence_density', 'uncertainty', 'diagram', 'structure', 'risk_awareness'];
+const QUALITY_SCORE_DIMENSIONS = ['coverage', 'evidence_density', 'uncertainty', 'diagram', 'structure'];
 
 function validateQualityScore(ideaDir) {
   const file = join(ideaDir, 'as-is/quality-score.json');
@@ -976,7 +975,6 @@ function validateQualityScore(ideaDir) {
   if (doc.overall < 0.6) return `quality-score.json overall ${doc.overall} is below minimum threshold 0.6`;
   const complexity = detectComplexity(ideaDir);
   for (const dim of QUALITY_SCORE_DIMENSIONS) {
-    if (dim === 'risk_awareness' && complexity === 'standard') continue;
     if (doc.dimensions[dim].score < 0.3) return `quality-score.json ${dim} score ${doc.dimensions[dim].score} is below minimum threshold 0.3`;
   }
   return '';

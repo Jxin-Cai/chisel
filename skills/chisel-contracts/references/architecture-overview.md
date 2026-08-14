@@ -30,7 +30,6 @@
 - `scripts/branch-merge.mjs` 在独立 integration worktree 中合并、验证、commit/push 和冲突现场管理，不切换已有主仓 checkout。
 - `scripts/review-selector.mjs` 基于实际 diff/path/content 选择 review 风险与维度；spec 永远必跑，旧 D2-D9 通过 skipped/auto-pass projection 兼容。
 - `scripts/repo-map.mjs` 产出语言统计、目录结构和前端框架/路由检测（无 LLM 依赖），explorer 探索前自动运行。
-- `scripts/debt-scan.mjs` 纯静态技术债务扫描器（无 LLM 依赖），explorer 探索前自动运行，产出 proposed 候选。
 - `scripts/repo-map.mjs` 同时输出 `project_mode`。当 `source_files=0` 时标记为 `greenfield`，`scripts/greenfield-as-is.mjs` 一次生成 N/A 基线并跳过 Explore/Analyst/Writer；交付复杂度和后续审查强度不因此降低。
 - `scripts/as-is-score.mjs` AS_IS 产物多维质量评分（覆盖度/证据/不确定性/图表/结构/风险）；greenfield 的无历史代码维度按 N/A 处理，不要求伪造入口、调用链或 0/0 行覆盖率。
 - `scripts/quick-dev-init.mjs` trivial 快速通道自动生成单 task + worktree-decision + traceability-matrix。

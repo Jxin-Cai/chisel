@@ -222,7 +222,7 @@ Rollback only cleans whitelisted runtime artifacts — never deletes business so
   coverage-matrix.json     # Entry/path/data/side-effect coverage
   ai-input/                # Structured AI-consumable version (standard only)
     facts.md, call-graph.md, data-schema.md, api-surface.md,
-    constraints.md, change-surface.md
+    change-surface.md
 ```
 
 ### To-be & Tasks
@@ -337,7 +337,6 @@ A task becomes stale when its `run_id` lease expires. Long operations renew the 
 | `branch-merge.mjs` | Isolated integration merge and machine-readable conflict analysis |
 | `review-selector.mjs` | Diff/path/content-based review risk and dimension selection |
 | `repo-map.mjs` | Code map generation (stats, structure, entry candidates) |
-| `debt-scan.mjs` | Static technical debt scanning |
 | `as-is-score.mjs` | As-is artifact quality scoring |
 | `cr-prepare.mjs` | Pre-compute diff and scope data for reviewer |
 | `reports.mjs` | Five standalone HTML reports (As-Is, To-Be, unit tests, CR, task/time) |

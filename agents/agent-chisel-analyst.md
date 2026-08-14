@@ -63,7 +63,6 @@ Read `${CLAUDE_PLUGIN_ROOT}/skills/chisel-understand/references/ai-input-templat
 | `as-is/ai-input/call-graph.md` | 调用链 + 入口→终点映射 + 前端→API 映射 |
 | `as-is/ai-input/data-schema.md` | 表结构 + 关系 |
 | `as-is/ai-input/api-surface.md` | 接口清单 + 错误码 |
-| `as-is/ai-input/constraints.md` | 禁区/包袱/坏味道/兼容约束 |
 | `as-is/ai-input/change-surface.md` | 安全变更区域 + 影响面 |
 | `as-is/ai-input/field-flow.md` | 字段流转表（仅当有字段变更时） |
 | `as-is/context-budget.json` | 已读文件清单、行数、覆盖率、未读相关文件、覆盖度自评 |

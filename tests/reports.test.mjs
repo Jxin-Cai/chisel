@@ -46,7 +46,7 @@ describe('standalone HTML reports', () => {
         assert.doesNotMatch(html, /工作流总览.*As-Is.*To-Be.*CR/s);
       }
       assert.match(readFileSync(join(ideaDir, 'reports/as-is-report.html'), 'utf8'), /AS-IS-MARKER/);
-      assert.match(readFileSync(join(ideaDir, 'reports/as-is-report.html'), 'utf8'), /UML Model|UML Sequence/);
+      assert.match(readFileSync(join(ideaDir, 'reports/as-is-report.html'), 'utf8'), /Core flow|Domain model/);
       assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /TO-BE-MARKER/);
       assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /UML Target Model/);
       assert.match(readFileSync(join(ideaDir, 'reports/to-be-report.html'), 'utf8'), /改造点全链路/);

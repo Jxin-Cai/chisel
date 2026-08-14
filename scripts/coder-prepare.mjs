@@ -155,7 +155,6 @@ function main() {
     decision_refs: decisionRefs,
     discovery: related,
     advisory_refs: {
-      constraints: fileRef(ideaDir, 'as-is/ai-input/constraints.md'),
       change_surface: fileRef(ideaDir, 'as-is/ai-input/change-surface.md'),
     },
     rework_refs: reworkRefs(ideaDir, taskId),

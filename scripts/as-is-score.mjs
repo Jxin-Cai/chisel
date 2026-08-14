@@ -26,12 +26,11 @@ const MIN_OVERALL_SCORE = 0.6;
 const MIN_DIMENSION_SCORE = 0.3;
 
 const DIMENSION_WEIGHTS = {
-  coverage: 0.30,
-  evidence_density: 0.25,
+  coverage: 0.32,
+  evidence_density: 0.27,
   uncertainty: 0.15,
-  diagram: 0.10,
-  structure: 0.10,
-  risk_awareness: 0.10,
+  diagram: 0.13,
+  structure: 0.13,
 };
 
 function readText(file) {
@@ -52,16 +51,6 @@ function sectionText(text, heading) {
   const rest = text.slice(start);
   const nextHeading = rest.match(/^#{2,3}\s+/m);
   return nextHeading ? rest.slice(0, nextHeading.index).trim() : rest.trim();
-}
-
-function dataRows(text) {
-  return text.split('\n')
-    .filter(l => /^\|.*\|$/.test(l.trim()))
-    .filter(l => {
-      const cells = l.split('|').map(c => c.trim()).filter(Boolean);
-      return cells.length >= 2 && !cells.every(c => /^-+$/.test(c));
-    })
-    .filter(l => !/^\|\s*(风险|容易误解为|如果你想了解|文件|维度)\s*\|/.test(l));
 }
 
 function countMermaid(text) {
@@ -256,25 +245,6 @@ function scoreStructure(ideaDir) {
   };
 }
 
-function scoreRiskAwareness(ideaDir) {
-  const overview = readText(join(ideaDir, 'as-is/overview.md'));
-  let score = 0;
-
-  const riskRows = dataRows(sectionText(overview, '风险地图'));
-  if (riskRows.length > 0) score += 0.4;
-
-  const misconceptionRows = dataRows(sectionText(overview, '常见误解点'));
-  if (misconceptionRows.length > 0) score += 0.3;
-
-  return {
-    score: round(score),
-    detail: {
-      risk_map_rows: riskRows.length,
-      misconception_rows: misconceptionRows.length,
-    },
-  };
-}
-
 function scoreRelevance(ideaDir) {
   const repoMap = readJson(join(ideaDir, 'as-is/repo-map.json'));
   const entryCandidates = repoMap?.entry_candidates || [];
@@ -339,10 +309,6 @@ function generateWeaknesses(dimensions) {
         if (data.detail.branch_expected > data.detail.branch_present)
           weaknesses.push(`structure: 缺少 ${data.detail.branch_expected - data.detail.branch_present} 个应产出的枝干文件`);
         break;
-      case 'risk_awareness':
-        if (data.detail.risk_map_rows === 0) weaknesses.push('risk_awareness: 风险地图为空');
-        if (data.detail.misconception_rows === 0) weaknesses.push('risk_awareness: 常见误解点为空');
-        break;
     }
   }
   return weaknesses;
@@ -366,7 +332,6 @@ export function computeScore(ideaDir, options = {}) {
     uncertainty: scoreUncertainty(ideaDir),
     diagram: scoreDiagram(ideaDir),
     structure: scoreStructure(ideaDir),
-    risk_awareness: scoreRiskAwareness(ideaDir),
   };
 
   const relevance = scoreRelevance(ideaDir);
@@ -381,10 +346,7 @@ export function computeScore(ideaDir, options = {}) {
 
   const minDimScore = options.complexity === 'standard' ? 0 : MIN_DIMENSION_SCORE;
   const dimensionFailures = Object.entries(dimensions)
-    .filter(([dim, data]) => {
-      if (dim === 'risk_awareness' && options.complexity === 'standard') return false;
-      return data.score < minDimScore;
-    });
+    .filter(([, data]) => data.score < minDimScore);
 
   return {
     schema_version: 2,

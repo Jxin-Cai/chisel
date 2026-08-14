@@ -124,16 +124,13 @@ function linkSequence(coverage) {
 
 function renderAsIs(ideaDir) {
   const requirement = readText(ideaDir, 'requirement.md');
-  const repo = readJson(ideaDir, 'as-is/repo-map.json');
   const ledger = readJson(ideaDir, 'as-is/evidence-ledger.json');
   const coverage = readJson(ideaDir, 'as-is/coverage-matrix.json');
   const budget = readJson(ideaDir, 'as-is/context-budget.json');
-  const constraints = readText(ideaDir, 'as-is/ai-input/constraints.md');
   const changeSurface = readText(ideaDir, 'as-is/ai-input/change-surface.md');
   const facts = readText(ideaDir, 'as-is/ai-input/facts.md');
   const sequence = linkSequence(coverage);
   const entrypoints = Array.isArray(coverage.entrypoints) ? coverage.entrypoints : [];
-  const risks = Array.isArray(repo.risk_signals) ? repo.risk_signals : [];
 
   const overview = `# As-Is 概览
 
@@ -154,15 +151,6 @@ ${text(facts, '结构化事实已记录在 evidence-ledger.json。')}
 ### 当前能力边界
 
 ${list(entrypoints.map(item => item.name || item.entrypoint || item.id), '未识别既有入口')}
-
-### 风险地图
-
-${list(risks, '未发现额外仓库风险信号；以结构化 coverage 和 constraints 为准')}
-
-### 常见误解点
-
-- 本文由结构化证据确定性渲染，不增加未经证实的事实。
-- 结构化 JSON 是权威来源；本文仅用于阅读和确认。
 
 ### 待澄清问题
 
@@ -188,10 +176,6 @@ ${sequence}
 \`\`\`mermaid
 ${sequence}
 \`\`\`
-
-## 约束
-
-${text(constraints)}
 
 ## 安全变更面
 

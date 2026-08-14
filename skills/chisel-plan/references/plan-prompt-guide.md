@@ -13,7 +13,6 @@
 - {idea_dir}/as-is/ai-input/facts.md — 已确认事实
 - {idea_dir}/as-is/ai-input/call-graph.md — 调用链和入口映射
 - {idea_dir}/as-is/ai-input/change-surface.md — 安全变更区域
-- {idea_dir}/as-is/ai-input/constraints.md — 禁区/包袱/约束
 - {idea_dir}/requirement-clarification.json — 多维需求澄清（含 AC 和 VC）
 - {idea_dir}/clarifications.json — 用户澄清决策
 - {idea_dir}/as-is/coverage-matrix.json — 覆盖矩阵

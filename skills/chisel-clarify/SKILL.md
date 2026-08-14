@@ -24,7 +24,7 @@ as-is 已存在时作为增强证据，但不得把深度代码分析作为澄�
 | `{IDEA_DIR}/requirement.md` | 澄清前是临时草稿；用户确认后是所有下游阶段的权威需求 |
 | `{IDEA_DIR}/as-is/overview.md`（如存在） | 当前系统能力边界、风险地图 |
 | `{IDEA_DIR}/clarifications.json` | understand:confirm 阶段的 as-is 澄清结论 |
-| `{IDEA_DIR}/as-is/ai-input/`（如存在） | 必读 facts.md + constraints.md；按维度按需读 call-graph/data-schema/api-surface/change-surface |
+| `{IDEA_DIR}/as-is/ai-input/`（如存在） | 必读 facts.md；按维度按需读 call-graph/data-schema/api-surface/change-surface |
 
 ## 开发就绪度模型
 
@@ -58,7 +58,7 @@ HOTOL 协议写阻塞记录。生成 canonical requirement 后运行 `hotol-appr
 3. 如存在则 Read `{IDEA_DIR}/as-is/overview.md`；不存在时从需求本身分析缺口，不启动 Explore/Analyst 补齐
 4. Read `{IDEA_DIR}/clarifications.json`（如存在）
 5. 如存在 `{IDEA_DIR}/as-is/ai-input/`：
-   - 必读：`facts.md`（事实锚点）+ `constraints.md`
+   - 必读：`facts.md`（事实锚点）
    - 按维度按需读：
      - 影响分析 → `call-graph.md` + `change-surface.md`
      - 兼容性约束 → `api-surface.md` + `data-schema.md`
@@ -83,7 +83,7 @@ HOTOL 协议写阻塞记录。生成 canonical requirement 后运行 `hotol-appr
 此步骤澄清的是需求本身的诉求和边界，不是 as-is 理解的正确性（那是 understand:confirm 的职责）。
 不要用固定问题数量代替判断。模型应主动发现缺口、合并重复问题并提供低风险默认建议；最终由用户对完整
 `requirement.md` 一次性确认。确认凭据绑定原始输入、追加输入、澄清记录和最终需求，任一变化都会失效。
-有 as-is 时，问题要基于实际发现的事实并追溯到 facts.md 的 F-xxx、constraints.md 的 FZ/WBI/DNR 或具体文件位置。没有 as-is 时，问题必须追溯到 requirement.md 的章节/AC，禁止伪造 F-xxx 或为了引用证据而启动 Explore/Analyst。
+有 as-is 时，问题要基于实际发现的事实并追溯到 facts.md 的 F-xxx 或具体文件位置。没有 as-is 时，问题必须追溯到 requirement.md 的章节/AC，禁止伪造 F-xxx 或为了引用证据而启动 Explore/Analyst。
 
 合理化预防表：
 
