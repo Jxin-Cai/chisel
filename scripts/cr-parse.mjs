@@ -2,6 +2,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readFrontmatter } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const VALID_RESULTS = ['approved', 'needs_rework', 'blocked'];
 const VALID_SPEC_RESULTS = ['pass', 'fail'];
@@ -79,7 +80,7 @@ function main() {
     args.splice(typeIdx, 2);
   }
 
-  const ideaDir = args[0];
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   const taskId = args[1];
 
   if (dim) {

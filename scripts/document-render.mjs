@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { durableAtomicWrite } from './file-transaction.mjs';
 import { completeDocumentJob, prepareDocumentJob } from './document-job.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function readJson(ideaDir, rel, fallback = {}) {
   const file = join(ideaDir, rel);
@@ -334,7 +335,7 @@ export function renderHumanDocuments(ideaDir, mode) {
 }
 
 function main() {
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
   const mode = process.argv[3];
   if (!ideaDir || !mode) {
     process.stderr.write('Usage: document-render.mjs <idea-dir> <as-is|to-be>\n');

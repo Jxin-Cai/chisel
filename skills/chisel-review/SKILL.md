@@ -41,13 +41,16 @@ user-invocable: false
 5. **风险选择（spec 永远必跑）**
    ```bash
    node ${CLAUDE_PLUGIN_ROOT}/scripts/review-selector.mjs \
-     --project-root . --base-ref "{BASE_REF}" --complexity "<complexity>"
+     {IDEA_DIR} --write --project-root . --base-ref "{BASE_REF}" --complexity "<complexity>"
    ```
    选择器读取实际 diff、路径和内容：≤2 个路径且 ≤80 行、无高风险信号时
    使用 `review:cr-light`；auth/payment/migration/concurrency/external boundary/
-   verification mechanism 任一命中都强制升级并输出理由。结果中的
-   `dimension_batches` 直接传给 Dynamic Workflow；`skipped_dimensions` 以
-   `status: skipped, result: auto-pass` 投影为旧 D2-D9 文件，保持旧 gate 兼容。
+   verification mechanism 任一命中都强制升级并输出理由。选择器会用同一事务写入
+   `{IDEA_DIR}/cr/review-selection.json` 和
+   `{IDEA_DIR}/cr/review-workflow-input.json`。后者是 Workflow 的唯一入参来源；
+   `dimension_batches` 只包含质量维度（spec 已由独立 hard gate 执行），不得手工重建。
+   `skipped_dimensions` 在 `compatibility_projection` 中以
+   `status: skipped, result: auto-pass` 表示，供 gate 兼容旧 D2-D9 模型。
 
 6. **增量复审判断**（rework_cycle > 0 时）
    读取 cr-context-prev.json，对上轮 pass 且 repair 未触及的维度写入 pass-cached。
@@ -59,24 +62,15 @@ user-invocable: false
 
 8. **调用 Dynamic Workflow**
    调用前记录 spec 与维度 reviewer：`node ${CLAUDE_PLUGIN_ROOT}/scripts/session-metrics.mjs {IDEA_DIR} --agent-call <cr-step> reviewer <1 + activeDimensions.length>`。如果产生 fail findings，再记录初步 Opus 汇总、实际 targeted skeptic votes 和最终 Opus 裁决的调用次数。
-   ```
+   ```text
    Workflow({
      scriptPath: "${CLAUDE_PLUGIN_ROOT}/workflows/chisel-review.js",
-     args: {
-       pluginRoot: "${CLAUDE_PLUGIN_ROOT}",
-       ideaDir: "{IDEA_DIR}",
-       baseRef: "{BASE_REF}",
-       projectRoot: ".",
-       complexity: "<complexity>",
-       riskLevel: "<risk_level>",
-       taskIds: [<task-ids>],
-       reworkCycle: <n>,
-       activeDimensions: [<activated-dims>],
-       dimensionBatches: [[<batch1>], [<batch2>], ...],
-       reviewPolicy: <review-selector 返回的 review_policy>
-     }
+     args: JSON.stringify(<完整读取并解析 review-workflow-input.json 得到的对象>)
    })
    ```
+   `args` 不得使用 `"{}"`、不得省略字段、不得把 spec 加入 `activeDimensions`。
+   如果 Workflow 调用失败，使用同一个规范 `scriptPath` 和同一份 input 文件重新调用；
+   禁止定位、复制、修改或 resume `~/.claude/projects/.../workflows/scripts/` 下的临时生成脚本。
 
 9. **处理多维 CR 结果并完成返修闭环**
 

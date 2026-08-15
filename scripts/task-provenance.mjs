@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { execFileSync } from 'node:child_process';
 import { basename, join, resolve } from 'node:path';
 import { verificationRoots } from './verify-run.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function git(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: 20 * 1024 * 1024 }).trim();
@@ -214,7 +215,7 @@ export function changedFilesForProject(ideaDir, taskId, projectRoot = '.') {
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = args[0];
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   const taskId = args[1];
   const mode = args[2];
   if (!ideaDir || !taskId || !['--start', '--rebase-baseline', '--heartbeat', '--preview', '--finish'].includes(mode)) {

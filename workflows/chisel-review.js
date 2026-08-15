@@ -105,6 +105,7 @@ const TARGETED_SKEPTIC_SCHEMA = {
 
 const schemas = { spec: SPEC_RESULT_SCHEMA, dim: DIM_CR_SCHEMA, aggregate: AGGREGATE_ASSESSMENT_SCHEMA, skeptic: TARGETED_SKEPTIC_SCHEMA }
 
+const workflowArgs = typeof args === 'undefined' ? null : typeof args === 'string' ? JSON.parse(args) : args
 const {
   pluginRoot,
   ideaDir,
@@ -117,10 +118,16 @@ const {
   activeDimensions,
   dimensionBatches,
   reviewPolicy,
-} = args
+} = workflowArgs || {}
 
-if (!pluginRoot || !ideaDir || !taskIds) {
+if (!pluginRoot || !ideaDir || !Array.isArray(taskIds) || taskIds.length === 0) {
   throw new Error('args.pluginRoot, args.ideaDir, and args.taskIds are required')
+}
+if (!Array.isArray(activeDimensions) || activeDimensions.includes('spec')) {
+  throw new Error('args.activeDimensions must be a quality-dimension array and must not include spec')
+}
+if (!Array.isArray(dimensionBatches) || dimensionBatches.flat().includes('spec')) {
+  throw new Error('args.dimensionBatches must contain quality dimensions only')
 }
 
 log(`chisel-review: ${taskIds.length} task(s), complexity=${complexity}, risk=${riskLevel}, rework_cycle=${reworkCycle}`)
@@ -145,6 +152,13 @@ Write your full CR report to ${ideaDir}/cr/dim-spec-cr.md with YAML frontmatter 
 - result: pass or fail
 - affected_tasks: array of task IDs that have issues (empty if pass)
 - rework_count: ${reworkCycle}
+
+The Markdown body MUST always include these exact headings from dim-spec.md:
+- ## 结论
+- ## Acceptance Criteria 覆盖
+- ## Expected Files 覆盖
+- ## Scope Check Proof
+Do not return until the report file contains every heading, even when the result is pass.
 
 Then return your structured result via the schema.`
 

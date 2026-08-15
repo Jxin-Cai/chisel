@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { basename, extname, join, resolve } from 'node:path';
 import { generateRepoMap } from './repo-map.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte', '.py', '.go', '.rb', '.php', '.java', '.kt', '.rs', '.cs', '.swift', '.dart']);
 const ENTRY_NAMES = /^(?:src\/|lib\/|cmd\/[^/]+\/)?(?:index|main|cli|server|app|routes?|router)(?:\.[^/]+)?$|(?:^|\/)__init__\.py$|(?:^|\/)Program\.cs$/i;
@@ -142,7 +143,7 @@ export function prepareOracle(ideaDir, projectRoot) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const ideaDir = process.argv[2] && resolve(process.argv[2]);
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.argv[3] || '.') : '';
   const projectRoot = resolve(process.argv[3] || '.');
   if (!ideaDir) fail('用法: oracle-prepare.mjs <idea-dir> [project-root]');
   console.log(JSON.stringify(prepareOracle(ideaDir, projectRoot)));

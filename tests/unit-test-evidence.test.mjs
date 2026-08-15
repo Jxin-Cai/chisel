@@ -63,6 +63,7 @@ describe('unit-test coverage evidence', () => {
 
     const result = buildUnitTestEvidence(ideaDir, root);
     assert.equal(result.status, 'pass');
+    assert.equal(result.result_file, join(ideaDir, 'unit-test-result.json'));
     assert.equal(result.run_summary.repair_count, 1);
     assert.equal(result.run_summary.anomalies[0].failed_tests[0], 'rejects invalid input');
     assert.equal(result.repositories[0].coverage.lines.pct, 92);

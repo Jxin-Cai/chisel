@@ -8,6 +8,7 @@ import { initWorkflowState, readWorkflowRevision, renderWorkflowPhaseUpdate } fr
 import { recordStepTransition } from './session-metrics.mjs';
 import { WORKFLOW_STEPS } from './workflow-definition.mjs';
 import { computeStatus } from './orchestration-status.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function option(args, name) {
   const index = args.indexOf(name);
@@ -127,7 +128,7 @@ export function performTransition(ideaDir, step, {
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = args[0];
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   const step = args[1];
   const expectedRevisionRaw = option(args, '--expected-revision');
   if (!ideaDir || !step || expectedRevisionRaw === undefined) {

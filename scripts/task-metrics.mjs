@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { readTaskExpectedFiles, readTaskState, taskStateFile, writeTaskState } from './workflow-lib.mjs';
 import { changedFilesForProject } from './task-provenance.mjs';
 import { checkScope } from './scope-check.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ error: message })}\n`);
@@ -161,13 +162,19 @@ ${scope.risk_signals?.length ? scope.risk_signals.map(signal => `- ${signal.type
 }
 
 function main(argv) {
-  const ideaDir = argv[0];
+  const ideaDir = argv[0] ? resolveExistingIdeaDirectory(argv[0], process.cwd()) : '';
   const taskId = argv[1] || '';
   if (!ideaDir) fail('用法: task-metrics.mjs <idea-dir> [task-id] [--escalated-model <model>]');
   const emIdx = argv.indexOf('--escalated-model');
   const escalatedModel = emIdx >= 0 ? argv[emIdx + 1] : undefined;
   try {
-    console.log(JSON.stringify(updateTaskMetrics(ideaDir, taskId, { escalatedModel })));
+    const summary = updateTaskMetrics(ideaDir, taskId, { escalatedModel });
+    console.log(JSON.stringify({
+      ...summary,
+      idea_dir: resolve(ideaDir),
+      metrics_file: resolve(ideaDir, 'metrics/task-summary.json'),
+      report_file: taskId ? resolve(ideaDir, `task-reports/${taskId}-report.md`) : null,
+    }));
   } catch (error) {
     fail(error.message);
   }

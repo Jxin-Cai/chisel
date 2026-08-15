@@ -530,6 +530,45 @@ describe('gate-check integration-cr-complete', () => {
   });
 });
 
+describe('gate-check dynamic review selection contract', () => {
+  let ideaDir;
+  beforeEach(() => {
+    ideaDir = makeTmpDir();
+    mkdirSync(join(ideaDir, 'cr'), { recursive: true });
+    writeFileSync(join(ideaDir, 'task-workflow-state.yaml'), [
+      'idea: dynamic-review', 'tasks:', '  task-001:', '    status: approved',
+      '    file: tasks/task-001.md', '    depends_on: []', '',
+    ].join('\n'));
+  });
+  afterEach(() => rmSync(ideaDir, { recursive: true, force: true }));
+
+  it('validates only selected dimensions and accepts their reference to the spec scope proof', () => {
+    writeFileSync(join(ideaDir, 'cr', 'review-selection.json'), JSON.stringify({
+      schema_version: 1,
+      dimensions: ['spec', 'd8'],
+      skipped_dimensions: ['d2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd9'],
+      reasons: [{ rule: 'external-boundary', reason: 'API change', dimensions: ['d8'] }],
+      compatibility_projection: Object.fromEntries(['d2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd9'].map(dimension => [dimension, { status: 'skipped', result: 'auto-pass' }])),
+    }));
+    writeFileSync(join(ideaDir, 'cr', 'dim-spec-cr.md'), [
+      '---', 'dimension: spec', 'result: pass', 'affected_tasks: []', 'rework_count: 0', '---',
+      '## 结论', 'PASS', '## Acceptance Criteria 覆盖', 'pass', '## Expected Files 覆盖', 'pass',
+      '## Scope Check Proof', '- Command: `node scripts/scope-check.mjs /tmp/idea task-001`',
+      '- Result: pass', '- schema_version: 4', '- violations_count: 0',
+      '#### Hit Proofs Reviewed', '无变更', '#### Invariant Proofs', '无声明的不变量',
+    ].join('\n'));
+    writeFileSync(join(ideaDir, 'cr', 'dim-d8-cr.md'), [
+      '---', 'dimension: d8', 'result: pass', 'affected_tasks: []', 'rework_count: 0', '---',
+      '## 结论', 'PASS', '## 检查结果', '全部通过',
+      '## Scope Check Proof', '见 `cr/dim-spec-cr.md`。', '## Rework Items', '无',
+    ].join('\n'));
+
+    const result = checkGate(ideaDir, 'cr-complete');
+    assert.equal(result.pass, true, result.reason);
+    assert.deepEqual(result.dimensions, ['spec', 'd8']);
+  });
+});
+
 describe('gate-check done state integrity', () => {
   let ideaDir;
   beforeEach(() => { ideaDir = makeTmpDir(); });

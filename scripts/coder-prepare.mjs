@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { requirementConfirmationStatus } from './requirement-context.mjs';
 import { discoverRelatedFiles, importDependencies, preloadSourceContext, unique } from './source-discovery.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function fail(msg) {
   process.stderr.write(`${JSON.stringify({ error: msg })}\n`);
@@ -90,7 +91,7 @@ export function buildDecisionRefs(ideaDir, task, taskFrontmatter = {}) {
 }
 
 function main() {
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
   const taskId = process.argv[3];
   const projectRoot = resolve(process.argv[4] || '.');
   if (!ideaDir || !taskId) fail('用法: coder-prepare.mjs <idea-dir> <task-id> [project-root]');

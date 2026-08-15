@@ -10,6 +10,7 @@ import { recordReportConfirmation } from './report-confirm.mjs';
 import { confirmRequirement } from './requirement-context.mjs';
 import { atomicWriteFile, ensureDir } from './workflow-lib.mjs';
 import { toBeDecisionConfirmation } from './to-be-confirmation.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function readJson(path, fallback = null) {
   if (!existsSync(path)) return fallback;
@@ -77,7 +78,7 @@ function option(args, name) {
 }
 
 function main(args) {
-  const ideaDir = args[0] && resolve(args[0]);
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   if (!ideaDir) throw new Error('Usage: hotol-approve.mjs <idea-dir> <--requirement|--to-be|--merge|--complete-delivery> [--expected-sha <sha256>]');
   if (args.includes('--requirement')) return approveRequirement(ideaDir);
   if (args.includes('--to-be')) return approveToBe(ideaDir, option(args, '--expected-sha'));

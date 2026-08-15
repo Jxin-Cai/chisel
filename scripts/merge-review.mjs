@@ -9,6 +9,7 @@ import { collectDimResults } from './cr-report.mjs';
 import { validateVerificationResult, workspaceIdentity } from './verification-lib.mjs';
 import { reportSourceFingerprint } from './report-confirm.mjs';
 import { HOTOL_CONFIRMATION_ACTOR, isValidConfirmationActor } from './execution-mode.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const REPORT_JSON = 'cr/current-change-report.json';
 const LEGACY_REPORT_MD = 'cr/current-change-report.md';
@@ -396,7 +397,7 @@ function option(args, name) {
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = args[0];
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   if (!ideaDir || !existsSync(ideaDir)) {
     process.stderr.write('Usage: merge-review.mjs <idea-dir> [project-root] [--confirm approve|request_changes|comment] [--comment text]\n');
     process.exit(1);

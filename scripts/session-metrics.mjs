@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { durableAtomicWrite } from './file-transaction.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const METRICS_FILE = 'metrics.json';
 
@@ -187,7 +188,7 @@ export function summary(ideaDir) {
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = args[0];
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
 
   if (!ideaDir || args.includes('--help')) {
     console.log('用法: node session-metrics.mjs <idea-dir> [--summary|--finalize|--agent-call <step> <type> [count]|--span-start <category> <name>|--span-finish <id> [status]|--duration <category> <name> <ms>]');

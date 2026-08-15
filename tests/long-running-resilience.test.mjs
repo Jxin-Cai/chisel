@@ -139,4 +139,33 @@ describe('long-running resilience', () => {
       assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
     }
   });
+
+  it('blocks the failure-recovery anti-patterns observed in execution logs', () => {
+    const commands = [
+      'cp /plugin/scripts/gate-check.mjs .chisel/tmp-scripts/gate-check.mjs',
+      'node .chisel/tmp-scripts/workflow-definition.mjs',
+      'node /Users/definitely-wrong/.claude/plugins/cache/chisel/chisel/0.54.0/scripts/gate-check.mjs /tmp/idea cr-complete',
+      'head -20 workflow.js; echo ===; head -5 journal.jsonl',
+      'python3 fix.py .chisel/idea/confirmations/to-be.json',
+    ];
+    for (const command of commands) {
+      const result = spawnSync(process.execPath, ['hooks/pre-tool-write-guard.mjs'], {
+        cwd: process.cwd(), encoding: 'utf8',
+        input: JSON.stringify({ tool_name: 'Bash', cwd: root, tool_input: { command } }),
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny', command);
+    }
+  });
+
+  it('blocks direct Write/Edit creation of a To-Be confirmation receipt', () => {
+    mkdirSync(join(root, '.chisel', 'idea', 'confirmations'), { recursive: true });
+    writeFileSync(join(root, '.chisel', 'idea', 'workflow-state.yaml'), 'current_step: plan:confirm\n');
+    const result = spawnSync(process.execPath, ['hooks/pre-tool-write-guard.mjs'], {
+      cwd: process.cwd(), encoding: 'utf8',
+      input: JSON.stringify({ tool_name: 'Write', cwd: root, tool_input: { file_path: join(root, '.chisel', 'idea', 'confirmations', 'to-be.json') } }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision, 'deny');
+  });
 });

@@ -21,6 +21,7 @@ import {
 import { checkGate } from './gate-check.mjs';
 import { WORKFLOW_PATHS } from './workflow-definition.mjs';
 import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function readPreviousStep(ideaDir) {
   const p = join(ideaDir, 'workflow-state.yaml');
@@ -519,7 +520,7 @@ function formatOutput(result, compact) {
 }
 
 function main() {
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
   const compact = process.argv.includes('--compact');
   const dryRun = process.argv.includes('--dry-run');
 

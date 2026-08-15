@@ -3,8 +3,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { detectComplexity, initTaskState, atomicWriteFile, ensureDir, readRequirementClassification } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
-const IDEA_DIR = process.argv[2];
+const IDEA_DIR = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
 const modeFlag = process.argv.find(arg => arg === '--current-branch' || arg === '--worktree');
 const requestedMode = process.env.CHISEL_QUICK_DEV_MODE || (modeFlag === '--current-branch' ? 'current-branch' : modeFlag === '--worktree' ? 'worktree' : 'worktree');
 

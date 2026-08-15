@@ -6,6 +6,7 @@ import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFrontmatter } from './workflow-lib.mjs';
 import { isValidConfirmationActor } from './execution-mode.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const DEFAULT_LIMIT = 20;
 const DEFAULT_MAX_CHARS = 24_000;
@@ -226,8 +227,8 @@ export function readSlice(root, path, lines = '', offset = 0, maxCharacters = DE
 function main(argv) {
   const [ideaArg, command, subject, ...args] = argv;
   if (!ideaArg || !command) fail('用法: context-query.mjs <idea-dir> <task|decision|refs|source|read> ...');
-  const ideaDir = resolve(ideaArg);
   const projectRoot = resolve(option(args, '--project-root', '.'));
+  const ideaDir = resolveExistingIdeaDirectory(ideaArg, projectRoot);
   const allArgs = subject === undefined ? args : [subject, ...args];
   const maxCharacters = Number(option(allArgs, '--max-chars', DEFAULT_MAX_CHARS));
   const limit = Number(option(allArgs, '--limit', DEFAULT_LIMIT));

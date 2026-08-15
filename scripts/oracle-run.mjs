@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, join, relative, resolve } from 'node:path';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function fail(message) {
   process.stderr.write(`${JSON.stringify({ status: 'fail', error: message })}\n`);
@@ -67,7 +68,7 @@ export function runOracle(ideaDir, projectRoot) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const ideaDir = process.argv[2] && resolve(process.argv[2]);
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.argv[3] || '.') : '';
   const projectRoot = resolve(process.argv[3] || '.');
   if (!ideaDir) fail('用法: oracle-run.mjs <idea-dir> [project-root]');
   try {

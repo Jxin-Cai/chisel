@@ -5,6 +5,7 @@ import { computeScore } from './as-is-score.mjs';
 import { completeDocumentJob, prepareDocumentJob } from './document-job.mjs';
 import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
 import { atomicWriteFile } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function write(ideaDir, relativePath, content) {
   if (relativePath === 'as-is/overview.md') {
@@ -113,7 +114,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(1);
   }
   try {
-    console.log(JSON.stringify(generateGreenfieldAsIs(resolve(rawIdeaDir)), null, 2));
+    console.log(JSON.stringify(generateGreenfieldAsIs(resolveExistingIdeaDirectory(rawIdeaDir, process.cwd())), null, 2));
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exit(2);

@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { adversarialReviewRequirements, checkGate } from './gate-check.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const MAX_ATTEMPTS = 5;
 
@@ -101,7 +102,7 @@ export function reviewStatus(ideaDir) {
 }
 
 function main(argv) {
-  const ideaDir = argv[0];
+  const ideaDir = argv[0] ? resolveExistingIdeaDirectory(argv[0], process.cwd()) : '';
   if (!ideaDir) {
     process.stderr.write('用法: node adversarial-review.mjs <idea-dir> [--init [--attempt N] [--force] | --check]\n');
     process.exit(1);

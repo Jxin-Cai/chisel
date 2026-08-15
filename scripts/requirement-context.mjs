@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { atomicWriteFile, ensureDir } from './workflow-lib.mjs';
 import { HOTOL_CONFIRMATION_ACTOR, isValidConfirmationActor } from './execution-mode.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const ORIGINAL = 'requirement-original.md';
 const CANONICAL = 'requirement.md';
@@ -150,7 +151,7 @@ function option(args, name) {
 }
 
 function main(args) {
-  const ideaDir = args[0] && resolve(args[0]);
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   if (!ideaDir) throw new Error('用法: requirement-context.mjs <idea-dir> <--init|--status|--confirm|--append-file>');
   if (args.includes('--init')) return initializeRequirementContext(ideaDir);
   if (args.includes('--status')) return requirementConfirmationStatus(ideaDir);

@@ -2,8 +2,11 @@
 // PreToolUse hook: guards Write/Edit to protected .chisel/ paths.
 // Fail-open: non-chisel paths are always allowed.
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve, relative } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { controlRoot } from '../scripts/control-plane.mjs';
+
+const PLUGIN_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 function readStdin() {
   try {
@@ -64,6 +67,35 @@ export function mutatesProtectedState(command) {
   return new RegExp(String.raw`(?:writeFileSync|appendFileSync|truncateSync|renameSync|unlinkSync|rmSync|writeFile|appendFile|truncate|rename|unlink)\s*\([^\n]*${PROTECTED_STATE_FILE}`).test(text);
 }
 
+export function unsafePluginCommand(command) {
+  const text = String(command || '');
+  if (/\.chisel[/\\]tmp-scripts[/\\][^\s;&|"']+\.mjs\b/.test(text)
+      || /\b(?:cp|mv|install)\b[^\n;&|]*\.mjs\b[^\n;&|]*(?:\/tmp\/|\.chisel[/\\]tmp-scripts)/.test(text)) {
+    return 'Do not copy or execute plugin ESM scripts from /tmp or .chisel/tmp-scripts; run the script from ${CLAUDE_PLUGIN_ROOT}/scripts so relative imports and assets remain intact.';
+  }
+
+  const cachedScriptPaths = text.match(/\/[^\s;|"']*\.claude\/plugins\/cache\/chisel\/chisel\/[^\s;|"']+\.mjs/g) || [];
+  for (const scriptPath of cachedScriptPaths) {
+    if (!existsSync(scriptPath)) {
+      const canonical = join(PLUGIN_ROOT, 'scripts', basename(scriptPath));
+      return `Plugin script path does not exist: ${scriptPath}. Use the current plugin path: ${canonical}`;
+    }
+  }
+
+  if (/(?:^|[;&|]\s*)(?:={2,}[A-Za-z0-9_-]*|[A-Za-z0-9_-]*={2,})(?=\s|[;&|]|$)/.test(text)
+      || /\becho\s+["']?={2,}["']?(?=\s|[;&|]|$)/.test(text)) {
+    return 'Bare ===-style separators are parsed as shell commands. Remove them or quote them as data.';
+  }
+  return '';
+}
+
+function mutatesManagedReceipt(command, receiptPattern) {
+  const text = String(command || '');
+  if (!receiptPattern.test(text)) return false;
+  return /(?:^|[;&|]\s*)(?:python\d*|node|ruby|perl|sed|tee|cp|mv|install|touch|truncate|rm|unlink)\b/.test(text)
+    || /(?:^|\s)(?:\d*>>?|&>)\s*/.test(text);
+}
+
 function main() {
   const raw = readStdin();
   if (!raw) return;
@@ -81,12 +113,22 @@ function main() {
 
   if (toolName === 'Bash') {
     const command = String(input.tool_input?.command || '');
+    const unsafeReason = unsafePluginCommand(command);
+    if (unsafeReason) {
+      deny(unsafeReason);
+      return;
+    }
     if (mutatesProtectedState(command)) {
       deny('Machine state and event history may not be mutated through Bash; use the Chisel state transition scripts.');
       return;
     }
     if (/confirmations[/\\]merge-review\.json/.test(command)) {
       deny('merge-review confirmation must be written through merge-review.mjs --confirm after an explicit user decision.');
+      return;
+    }
+    if (mutatesManagedReceipt(command, /confirmations[/\\]to-be\.json/)) {
+      deny('To-Be confirmation must be written through report-confirm.mjs or hotol-approve.mjs; do not hand-build the receipt.');
+      return;
     }
     return;
   }
@@ -132,6 +174,11 @@ function main() {
 
   if (subPath === 'confirmations/merge-review.json') {
     deny('merge-review confirmation must be written through merge-review.mjs --confirm after an explicit user decision.');
+    return;
+  }
+
+  if (subPath === 'confirmations/to-be.json') {
+    deny('To-Be confirmation must be written through report-confirm.mjs or hotol-approve.mjs; do not hand-build the receipt.');
     return;
   }
 

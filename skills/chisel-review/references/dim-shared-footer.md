@@ -6,9 +6,9 @@
 
 ---
 
-## Scope / Wiki / Invariant Proof
+## Scope Check Proof
 
-见 `cr/dim-spec-cr.md`（spec 维度已执行全局 Scope Check 和 Wiki 查询，本维度不重复执行）。
+见 `cr/dim-spec-cr.md`（spec 维度已执行全局 Scope Check、Wiki 查询和 invariant proof，本维度不重复执行或复制 scope-check 输出）。
 
 N/A 只用于正文检查项；frontmatter `result` 仍只能是 `pass | fail`。`pass` 表示该维度无阻塞问题，不表示所有检查项都适用。
 
@@ -17,6 +17,8 @@ N/A 只用于正文检查项；frontmatter `result` 仍只能是 `pass | fail`�
 ## Rework Items
 
 置信度 ≥80 的问题进入此表，触发返修。
+
+本标题无论 pass/fail 都必须保留；pass 时在标题下写“无”。
 
 | ID | affected_task_id | 问题描述 | 修复建议 | 严重度 | 置信度 |
 |----|------------------|---------|---------|--------|--------|

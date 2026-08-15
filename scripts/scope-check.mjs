@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readFrontmatter, readTaskState, resolveProjectName, taskStateFile } from './workflow-lib.mjs';
 import { changedFilesForProject } from './task-provenance.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function parseListSection(text, heading) {
   const lines = String(text || '').split('\n');
@@ -336,7 +337,7 @@ function check(ideaDir, taskId, projectRoot = '.') {
 }
 
 function main() {
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.argv[4] || '.') : '';
   const taskId = process.argv[3];
   const projectRoot = process.argv[4] || '.';
 

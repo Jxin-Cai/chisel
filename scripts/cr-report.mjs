@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { readFrontmatter, atomicWriteFile, detectComplexity } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const DIM_NAMES = {
   spec: 'Spec 合规',
@@ -243,7 +244,7 @@ function oneLine(text, maxLen = 120) {
 }
 
 function main() {
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
   if (!ideaDir || !existsSync(ideaDir)) {
     process.stderr.write('Usage: cr-report.mjs <idea-dir>\n');
     process.exit(1);

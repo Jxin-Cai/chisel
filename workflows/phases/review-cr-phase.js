@@ -51,7 +51,15 @@ Write your full CR report to ${ideaDir}/cr/dim-${dim}-cr.md with YAML frontmatte
 - affected_tasks: array of task IDs with issues (empty if pass)
 - rework_count: ${reworkCycle}
 
-Include Rework Items table (if fail) and Observations table (non-blocking notes).
+The Markdown body MUST always include these exact headings:
+- ## 结论
+- ## 检查结果
+- ## Scope Check Proof
+- ## Rework Items
+- ## Observations (non-blocking)
+Use the shared footer's reference to dim-spec-cr.md under Scope Check Proof; do not duplicate or invent scope-check output.
+Keep ## Rework Items present when the result is pass and write "无" below it. When rework_count > 0, also include ## Rework Verification.
+Do not return until the report file contains every required heading.
 Each finding must have: id, affected_task_id, description, severity (critical/high/medium/low), confidence (0-100), suggestion.
 
 Then return your structured result via the schema. Include all findings with confidence >= 60 in the findings array.`

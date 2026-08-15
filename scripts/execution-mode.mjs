@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { atomicWriteFile } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 export const EXECUTION_MODE_FILE = 'execution-mode.json';
 export const EXECUTION_MODES = Object.freeze(['interactive', 'hotol']);
@@ -85,7 +86,7 @@ function option(args, name) {
 }
 
 function main(args) {
-  const ideaDir = args[0] && resolve(args[0]);
+  const ideaDir = args[0] ? resolveExistingIdeaDirectory(args[0], process.cwd()) : '';
   if (!ideaDir) throw new Error('Usage: execution-mode.mjs <idea-dir> <--enable-hotol|--status> [--target <default|branch>] [--push]');
   if (args.includes('--enable-hotol')) {
     return enableHotolMode(ideaDir, { targetBranch: option(args, '--target') || 'default', push: args.includes('--push') });

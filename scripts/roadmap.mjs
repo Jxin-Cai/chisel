@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { STEP_GATE_MAP, WORKFLOW_PATHS } from './workflow-definition.mjs';
 import { detectComplexity } from './workflow-lib.mjs';
 import { checkGate } from './gate-check.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const STEP_DESCRIPTIONS = {
   'receive-requirement': '接收并结构化需求，产出 requirement.md',
@@ -36,7 +37,7 @@ function resolveStepStatus(ideaDir, step, gateId) {
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = resolve(args[0] || '.');
+  const ideaDir = resolveExistingIdeaDirectory(args[0] || '.', process.cwd());
 
   if (!existsSync(ideaDir)) {
     console.log(JSON.stringify({ error: 'idea-dir does not exist', idea_dir: ideaDir }));

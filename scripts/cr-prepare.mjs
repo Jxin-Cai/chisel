@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { readFrontmatter, readTaskState, taskStateFile } from './workflow-lib.mjs';
 import { checkScope } from './scope-check.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function fail(msg) {
   process.stderr.write(`${JSON.stringify({ error: msg })}\n`);
@@ -93,9 +94,9 @@ function archivePreviousCrResults(ideaDir) {
 }
 
 function main() {
-  const ideaDir = process.argv[2];
   const baseRef = process.argv[3] || '';
   const projectRoot = process.argv[4] || '.';
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], projectRoot) : '';
   const pathsOnly = process.argv.includes('--paths-only');
   const compactMode = process.argv.includes('--compact');
 

@@ -7,6 +7,7 @@ import {
 } from './workflow-lib.mjs';
 import { requirementConfirmationStatus } from './requirement-context.mjs';
 import { readRepositoryEvidence, writeRepositoryEvidence } from './repository-evidence.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function listSize(value) {
   if (Array.isArray(value)) return value.length;
@@ -190,7 +191,7 @@ export function writeRequirementClassification(ideaDir, projectRoot = ideaDir) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.argv[3] || '.') : '';
   const projectRoot = process.argv[3] || '.';
   if (!ideaDir) {
     process.stderr.write('Usage: node requirement-classify.mjs <idea-dir>\n');

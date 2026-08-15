@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { atomicWriteFile, ensureDir, initTaskState, normalizeImpactSurface, readFrontmatter } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const VALID_RISK_LEVELS = new Set(['low', 'medium', 'high']);
 const VALID_TASK_COMPLEXITIES = new Set(['trivial', 'standard', 'complex']);
@@ -352,7 +353,12 @@ function initFromTasksJson(options) {
 function main(argv) {
   try {
     const options = parseArgs(argv);
-    console.log(JSON.stringify(initFromTasksJson(options)));
+    options.ideaDir = resolveExistingIdeaDirectory(options.ideaDir, process.cwd());
+    console.log(JSON.stringify({
+      ...initFromTasksJson(options),
+      idea_dir: resolve(options.ideaDir),
+      task_state_file: resolve(options.ideaDir, 'task-workflow-state.yaml'),
+    }));
   } catch (error) {
     fail(error.message);
   }

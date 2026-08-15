@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 export const DEBUG_PHASES = Object.freeze([
   'triage',
@@ -145,6 +146,7 @@ function parseArgs(argv) {
 export function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
   if (!args.ideaDir || !args.taskId) throw new Error('usage: debug-workflow.mjs --idea-dir <dir> --task <task-id> [--standalone|--return-diagnosis]');
+  args.ideaDir = resolveExistingIdeaDirectory(args.ideaDir, process.cwd());
   const file = debugReportPath(args.ideaDir, args.taskId);
   let report = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : createDebugReport({ ideaDir: args.ideaDir, taskId: args.taskId, mode: args.mode || 'return-diagnosis' });
   if (args.phase) {

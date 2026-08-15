@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { durableAtomicWrite } from './file-transaction.mjs';
 import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
 import { validateVerificationResult, workspaceIdentity } from './verification-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const RESULT_FILE = 'unit-test-result.json';
 const HISTORY_FILE = 'unit-test-runs.json';
@@ -257,6 +258,7 @@ export function buildUnitTestEvidence(ideaDir, fallbackRoot = '.') {
       failedCaseEvidence.length ? `requirement cases did not produce PASS evidence: ${failedCaseEvidence.join(', ')}` : '',
       uncoveredTestFiles.length ? `changed requirement test files lack case evidence: ${uncoveredTestFiles.join(', ')}` : '',
     ].filter(Boolean),
+    result_file: resolve(ideaDir, RESULT_FILE),
   };
   durableAtomicWrite(join(ideaDir, RESULT_FILE), `${JSON.stringify(result, null, 2)}\n`);
   return result;
@@ -292,8 +294,8 @@ export function validateUnitTestEvidence(ideaDir, fallbackRoot = '.') {
 }
 
 function main() {
-  const ideaDir = process.argv[2];
   const projectRoot = process.argv[3] || '.';
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], projectRoot) : '';
   if (!ideaDir) {
     process.stderr.write('Usage: unit-test-evidence.mjs <idea-dir> [project-root]\n');
     process.exit(1);

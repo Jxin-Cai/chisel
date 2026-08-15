@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { atomicWriteFile } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const JOBS = Object.freeze({
   'as-is': {
@@ -118,7 +119,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.stderr.write('Usage: node document-job.mjs <prepare|complete|check> <idea-dir> <as-is|to-be>\n'); process.exit(1);
   }
   try {
-    const ideaDir = resolve(rawDir);
+    const ideaDir = resolveExistingIdeaDirectory(rawDir, process.cwd());
     const result = command === 'prepare' ? prepareDocumentJob(ideaDir, kind)
       : command === 'complete' ? completeDocumentJob(ideaDir, kind)
         : command === 'check' ? checkDocumentJob(ideaDir, kind) : (() => { throw new Error(`unknown command: ${command}`); })();

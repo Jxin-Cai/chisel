@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { resolveExistingIdeaDirectory } from '../scripts/control-plane.mjs';
+import { initTaskState } from '../scripts/workflow-lib.mjs';
 
 const ROOT = process.cwd();
 const SCRIPT = join(ROOT, 'scripts/multi-repo-worktree.mjs');
@@ -64,6 +65,19 @@ describe('registry-backed multi-repo locator', () => {
       const firstWorktree = created.repos[0].worktree_path;
       const mistypedParent = join(dirname(outer), 'definitely-wrong-parent', '.chisel', 'multi-change');
       assert.equal(resolveExistingIdeaDirectory(mistypedParent, firstWorktree), created.idea_dir);
+      mkdirSync(join(created.idea_dir, 'tasks'), { recursive: true });
+      writeFileSync(join(created.idea_dir, 'tasks', 'task-001.md'), [
+        '---', 'task_id: task-001', 'starting_points: [README.md]', 'forbidden_files: []', '---',
+        '# Task', '## 目标行为', '更新说明。',
+      ].join('\n'));
+      initTaskState(created.idea_dir, 'multi-change', [{ taskId: 'task-001', file: 'tasks/task-001.md', expected_files: ['README.md'] }]);
+      const scope = runNode(join(ROOT, 'scripts/scope-check.mjs'), [mistypedParent, 'task-001', firstWorktree], firstWorktree);
+      assert.equal(scope.pass, true);
+      const metrics = runNode(join(ROOT, 'scripts/task-metrics.mjs'), [mistypedParent, 'task-001'], firstWorktree);
+      assert.equal(metrics.task_id, 'task-001');
+      assert.equal(metrics.idea_dir, created.idea_dir);
+      assert.equal(metrics.report_file, join(created.idea_dir, 'task-reports', 'task-001-report.md'));
+      assert.equal(existsSync(join(created.idea_dir, 'task-reports', 'task-001-report.md')), true);
       const located = runNode(CONTROL, ['--locate', '--project-root', firstWorktree, '--idea', 'multi-change'], outer);
       assert.equal(located.record.branch, 'feat/multi-change');
       assert.equal(located.record.workspace_root, outer);

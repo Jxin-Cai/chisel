@@ -7,6 +7,7 @@ import {
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { verificationRoots } from './verify-run.mjs';
 import { workspaceIdentity } from './verification-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const MAX_SNAPSHOTS = 8;
 const MAX_TOTAL_SNAPSHOT_BYTES = 25 * 1024 * 1024;
@@ -187,14 +188,15 @@ function createGitTag(ideaDir, { projectRoot = '.' } = {}) {
 
 function main() {
   const args = process.argv.slice(2);
-  const ideaDir = args.find(arg => !arg.startsWith('--'));
+  const rawIdeaDir = args.find(arg => !arg.startsWith('--'));
   const command = args.find(arg => arg.startsWith('--'));
   const rootIndex = args.indexOf('--project-root');
   const projectRoot = rootIndex >= 0 ? args[rootIndex + 1] : '.';
-  if (!ideaDir || args.includes('--help')) {
+  if (!rawIdeaDir || args.includes('--help')) {
     console.log('用法: node checkpoint.mjs <idea-dir> [--create|--list|--restore <file>|--tag] [--project-root <path>] [--force-state-only]');
     process.exit(0);
   }
+  const ideaDir = resolveExistingIdeaDirectory(rawIdeaDir, projectRoot);
   if (!existsSync(ideaDir)) {
     process.stderr.write(`idea-dir not found: ${ideaDir}\n`);
     process.exit(1);

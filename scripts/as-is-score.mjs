@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PROJECT_MODES, readProjectProfile } from './project-profile.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 const AS_IS_MAIN_FILES = [
   'as-is/repo-map.json',
@@ -378,7 +379,7 @@ function printSummary(result) {
 const isMain = process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
 
 if (isMain) {
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
   if (!ideaDir) {
     process.stderr.write('用法: node as-is-score.mjs <idea-dir>\n');
     process.exit(1);

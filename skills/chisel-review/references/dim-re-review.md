@@ -68,6 +68,21 @@ review_mode: scoped-rework
 ```markdown
 # {DIMENSION} Scoped Re-review (Rework Round {N})
 
+## 检查结果
+
+| 检查项 | 结果 | 说明 |
+|--------|------|------|
+| 上轮问题修复 | PASS/FAIL | <说明> |
+| 修复 diff 新问题 | PASS/FAIL | <说明> |
+
+## Scope Check Proof
+
+见 `cr/dim-spec-cr.md`（spec 维度已执行全局 Scope Check、Wiki 查询和 invariant proof，本维度不重复执行或复制 scope-check 输出）。
+
+## Rework Items
+
+（保留的 NOT_ADDRESSED/PARTIAL 项与新发现；全部通过时写“无”）
+
 ## Rework Verification
 
 | CR Item | 上次问题 | 修复结果 | file:line 证据 | 状态 |

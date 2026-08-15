@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, readdirSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { ensureDir } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
 function parseReworkItems(crText) {
   const items = [];
@@ -52,7 +53,7 @@ function categorizeFromDimension(dimension) {
 }
 
 function main() {
-  const ideaDir = process.argv[2];
+  const ideaDir = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
   const taskId = process.argv[3];
   const dimension = process.argv[4];
 

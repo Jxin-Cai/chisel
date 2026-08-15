@@ -650,7 +650,15 @@ function validateDimensionCrFile(ideaDir, dimension) {
   if (missing.length > 0) return { valid: false, reason: `cr/dim-${dimension}-cr.md missing sections: ${missing.join(', ')}` };
 
   const invariants = behaviorInvariantsForTasks(ideaDir, affectedTasks(fm));
-  const scopeProofReason = validateScopeProof(text, 'cr', { behaviorInvariants: invariants, requireAllInvariantPass: fm.result === 'pass' });
+  const scopeSection = sectionTextAnyDepth(text, 'Scope Check Proof');
+  const referencesSpecProof = dimension !== 'spec' && /cr\/dim-spec-cr\.md/.test(scopeSection || '');
+  let scopeProofReason = '';
+  if (referencesSpecProof) {
+    const spec = validateDimensionCrFile(ideaDir, 'spec');
+    if (!spec.valid) scopeProofReason = `references invalid spec scope proof: ${spec.reason}`;
+  } else {
+    scopeProofReason = validateScopeProof(text, 'cr', { behaviorInvariants: invariants, requireAllInvariantPass: fm.result === 'pass' });
+  }
   if (scopeProofReason) return { valid: false, reason: `cr/dim-${dimension}-cr.md ${scopeProofReason}` };
 
   const reworkCount = Number(fm.rework_count || 0);

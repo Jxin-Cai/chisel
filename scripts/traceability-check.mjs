@@ -2,8 +2,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readTaskState, taskStateFile } from './workflow-lib.mjs';
+import { resolveExistingIdeaDirectory } from './control-plane.mjs';
 
-const IDEA_DIR = process.argv[2];
+const IDEA_DIR = process.argv[2] ? resolveExistingIdeaDirectory(process.argv[2], process.cwd()) : '';
 const FINAL_MODE = process.argv.includes('--final');
 
 if (!IDEA_DIR) {
